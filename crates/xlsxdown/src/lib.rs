@@ -1,0 +1,25 @@
+//! SpreadsheetML workbooks: an `.xlsx` read into a sparse cell model.
+//!
+//! [`Workbook::open`] takes the bytes of a file. The package layer (`ooxmldown`) opens the zip
+//! within limits and resolves parts through relationships; `workbook` reads the parts into
+//! sheets of typed cells; `format` renders display text from number-format codes and says which
+//! codes are dates; `formula` writes a shared formula out for the cells that follow it;
+//! `geometry` lays a sheet out in points. Nothing here depends on Node.
+
+mod error;
+mod format;
+mod formula;
+pub mod geometry;
+mod reference;
+mod workbook;
+
+pub use error::SpreadsheetError;
+pub use geometry::{
+  CellBox, SheetColumn, SheetGeometry, SheetRow, column_width_points, sheet_geometry,
+};
+pub use reference::{CellRange, MAX_COLS, MAX_ROWS, cell_ref, parse_cell_ref};
+pub use workbook::{
+  Cell, CellValue, ColSpec, FontSpec, Horizontal, MAX_CELLS, MAX_EXPANDED_FORMULA_BYTES,
+  MAX_FORMULA_CHARS, MAX_MERGES, RowSpec, Sheet, Styles, Vertical, Workbook, Xf, format_code,
+  parse_workbook,
+};

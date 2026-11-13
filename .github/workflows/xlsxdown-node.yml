@@ -1,0 +1,193 @@
+# CI for @d0paminedriven/xlsxdown (crates/xlsxdown-node).
+#
+# GitHub only runs workflows from this directory, so this file holds the triggers and the
+# job graph and nothing else. What each job does lives with the package, as composite
+# actions in crates/xlsxdown-node/ci, and the build and test matrices are derived from
+# `napi.targets` in its package.json by ci/matrix.ts.
+name: xlsxdown-node
+env:
+  DEBUG: napi:*
+  # The oldest macOS that Node 24, this package's floor, runs on.
+  MACOSX_DEPLOYMENT_TARGET: "13.5"
+  CARGO_INCREMENTAL: "1"
+  # The git hooks are for local commits.
+  HUSKY: "0"
+on:
+  push:
+    branches:
+      - main
+    tags-ignore:
+      - "**"
+    paths:
+      - crates/xlsxdown-node/**
+      - crates/xlsxdown/**
+      - crates/ooxmldown/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/xlsxdown-node.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - crates/xlsxdown-node/**
+      - crates/xlsxdown/**
+      - crates/ooxmldown/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/xlsxdown-node.yml
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+    working-directory: crates/xlsxdown-node
+jobs:
+  plan:
+    name: Plan targets
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      test_host: ${{ steps.plan.outputs.test_host }}
+      test_docker: ${{ steps.plan.outputs.test_docker }}
+      wasi: ${{ steps.plan.outputs.wasi }}
+      freebsd: ${{ steps.plan.outputs.freebsd }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 26
+      - name: Read napi.targets
+        id: plan
+        run: node ci/matrix.ts >> "$GITHUB_OUTPUT"
+  lint:
+    name: Lint and Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/xlsxdown-node/ci/setup
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Oxlint
+        run: yarn lint
+      - name: Clippy
+        working-directory: .
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Rust tests
+        working-directory: .
+        run: cargo test --workspace
+  build:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        settings: ${{ fromJSON(needs.plan.outputs.build) }}
+    name: Build ${{ matrix.settings.target }}
+    runs-on: ${{ matrix.settings.host }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/xlsxdown-node/ci/setup
+      - uses: ./crates/xlsxdown-node/ci/build
+        with:
+          target: ${{ matrix.settings.target }}
+          flags: ${{ matrix.settings.flags }}
+  build-freebsd:
+    needs: plan
+    if: ${{ needs.plan.outputs.freebsd == 'true' }}
+    name: Build x86_64-unknown-freebsd
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/xlsxdown-node/ci/build-freebsd
+  test-host:
+    needs:
+      - plan
+      - build
+    if: ${{ needs.plan.outputs.test_host != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings: ${{ fromJSON(needs.plan.outputs.test_host) }}
+    name: Test ${{ matrix.settings.target }} - node@${{ matrix.settings.node }}
+    runs-on: ${{ matrix.settings.host }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/xlsxdown-node/ci/setup
+        with:
+          node-version: ${{ matrix.settings.node }}
+          architecture: ${{ matrix.settings.architecture }}
+      - uses: ./crates/xlsxdown-node/ci/test
+        with:
+          target: ${{ matrix.settings.target }}
+          mode: host
+  test-docker:
+    needs:
+      - plan
+      - build
+    if: ${{ needs.plan.outputs.test_docker != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings: ${{ fromJSON(needs.plan.outputs.test_docker) }}
+    name: Test ${{ matrix.settings.target }} - node@${{ matrix.settings.node }}
+    runs-on: ${{ matrix.settings.host }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/xlsxdown-node/ci/setup
+        with:
+          node-version: ${{ matrix.settings.node }}
+          # The tests run in a container that may differ from the runner in libc, so
+          # install the native parts of the dev dependencies for both.
+          cpu: '["current", "arm64", "x64", "arm"]'
+          libc: '["current", "musl", "gnu"]'
+      - uses: ./crates/xlsxdown-node/ci/test
+        with:
+          target: ${{ matrix.settings.target }}
+          mode: docker
+          image: ${{ matrix.settings.image }}
+          platform: ${{ matrix.settings.platform }}
+          typecheck: ${{ matrix.settings.typecheck }}
+  test-wasi:
+    needs:
+      - plan
+      - build
+    if: ${{ needs.plan.outputs.wasi == 'true' }}
+    name: Test wasm32-wasip1-threads - node@26
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/xlsxdown-node/ci/setup
+      - uses: ./crates/xlsxdown-node/ci/test
+        with:
+          target: wasm32-wasip1-threads
+          mode: wasi
+  publish:
+    name: Publish
+    needs:
+      - lint
+      - build-freebsd
+      - test-host
+      - test-docker
+      - test-wasi
+    # Runs when nothing it waits on failed, including when one of them was skipped
+    # because package.json lists no target of that kind.
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # For npm provenance.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/xlsxdown-node/ci/setup
+      - uses: ./crates/xlsxdown-node/ci/publish
+        with:
+          release-name: xlsxdown
+          # Only a push to main may publish; pull requests and manual runs rehearse.
+          allow-release: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          npm-token: ${{ secrets.NPM_TOKEN }}

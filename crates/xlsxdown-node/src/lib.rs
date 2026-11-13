@@ -1,0 +1,163 @@
+//! Node bindings for xlsxdown.
+//!
+//! `XlsxDown` holds a parsed workbook. Build one with the constructor, or with `openAsync` to
+//! parse off the JavaScript thread, then read from it as often as needed; nothing is parsed
+//! twice. The free functions take a buffer and parse it for that one call. Every reader has an
+//! `...Async` form that does its work on the libuv thread pool.
+
+mod cells;
+mod types;
+
+use std::sync::Arc;
+
+use napi::bindgen_prelude::{AsyncTask, Buffer, Error, Result};
+use napi::{Env, Task};
+use napi_derive::napi;
+use xlsxdown::{SpreadsheetError, Workbook};
+
+use crate::cells::cells_of;
+use crate::types::{SheetCells, SpreadsheetOptions};
+
+// A parsed workbook is handed to worker threads behind an `Arc`.
+const _: () = {
+  fn assert_send_sync<T: Send + Sync>() {}
+  let _ = assert_send_sync::<Workbook>;
+};
+
+/// A workbook error as the JavaScript error it is thrown or rejected with. The message is the
+/// error's own text: `unsupported format: …`, `limit exceeded: …` or `malformed workbook: …`.
+fn js_error(error: SpreadsheetError) -> Error {
+  Error::from_reason(error.to_string())
+}
+
+fn open(bytes: Vec<u8>) -> Result<Workbook> {
+  Workbook::open(bytes).map_err(js_error)
+}
+
+/// Parses a workbook on a worker thread, for `XlsxDown.openAsync`.
+pub struct OpenWorkbookTask(Vec<u8>);
+
+#[napi]
+impl Task for OpenWorkbookTask {
+  type Output = Workbook;
+  type JsValue = XlsxDown;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    open(std::mem::take(&mut self.0))
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(XlsxDown {
+      inner: Arc::new(output),
+    })
+  }
+}
+
+/// Reads cells from the workbook an `XlsxDown` holds, for its `spreadsheetCellsAsync`.
+pub struct SharedCellsTask {
+  inner: Arc<Workbook>,
+  opts: SpreadsheetOptions,
+}
+
+#[napi]
+impl Task for SharedCellsTask {
+  type Output = Vec<SheetCells>;
+  type JsValue = Vec<SheetCells>;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    Ok(cells_of(&self.inner, &self.opts))
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output)
+  }
+}
+
+/// Parses a buffer and reads its cells, for the standalone `spreadsheetCellsAsync`.
+pub struct SpreadsheetCellsTask {
+  bytes: Vec<u8>,
+  opts: SpreadsheetOptions,
+}
+
+#[napi]
+impl Task for SpreadsheetCellsTask {
+  type Output = Vec<SheetCells>;
+  type JsValue = Vec<SheetCells>;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    let workbook = open(std::mem::take(&mut self.bytes))?;
+    Ok(cells_of(&workbook, &self.opts))
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output)
+  }
+}
+
+/// A parsed workbook. Parsing happens once, in the constructor or in `openAsync`; every method
+/// reads from the parsed workbook.
+#[napi]
+pub struct XlsxDown {
+  inner: Arc<Workbook>,
+}
+
+#[napi]
+impl XlsxDown {
+  /// Parse a workbook from the bytes of an `.xlsx` file. Throws `unsupported format: …` for a
+  /// package that is not a plain workbook, `limit exceeded: …` for one past the size limits and
+  /// `malformed workbook: …` for anything else that cannot be read.
+  #[napi(constructor)]
+  pub fn new(buffer: Buffer) -> Result<Self> {
+    Ok(XlsxDown {
+      inner: Arc::new(open(buffer.to_vec())?),
+    })
+  }
+
+  /// Parse a workbook off the JavaScript thread; resolves to an `XlsxDown`, or rejects with the
+  /// errors the constructor throws.
+  #[napi]
+  pub fn open_async(buffer: Buffer) -> AsyncTask<OpenWorkbookTask> {
+    AsyncTask::new(OpenWorkbookTask(buffer.to_vec()))
+  }
+
+  /// The cells of the selected sheets, typed, with their display text, formulas and geometry.
+  #[napi]
+  pub fn spreadsheet_cells(&self, opts: Option<SpreadsheetOptions>) -> Vec<SheetCells> {
+    cells_of(&self.inner, &opts.unwrap_or_default())
+  }
+
+  /// `spreadsheetCells` on a worker thread.
+  #[napi]
+  pub fn spreadsheet_cells_async(
+    &self,
+    opts: Option<SpreadsheetOptions>,
+  ) -> AsyncTask<SharedCellsTask> {
+    AsyncTask::new(SharedCellsTask {
+      inner: Arc::clone(&self.inner),
+      opts: opts.unwrap_or_default(),
+    })
+  }
+}
+
+/// The cells of a workbook buffer's selected sheets. Parses the buffer for this call; hold an
+/// `XlsxDown` to read the same workbook more than once.
+#[napi]
+pub fn spreadsheet_cells(
+  buffer: Buffer,
+  opts: Option<SpreadsheetOptions>,
+) -> Result<Vec<SheetCells>> {
+  let workbook = open(buffer.to_vec())?;
+  Ok(cells_of(&workbook, &opts.unwrap_or_default()))
+}
+
+/// `spreadsheetCells` on a worker thread: the buffer is copied, then parsed and read there.
+#[napi]
+pub fn spreadsheet_cells_async(
+  buffer: Buffer,
+  opts: Option<SpreadsheetOptions>,
+) -> AsyncTask<SpreadsheetCellsTask> {
+  AsyncTask::new(SpreadsheetCellsTask {
+    bytes: buffer.to_vec(),
+    opts: opts.unwrap_or_default(),
+  })
+}

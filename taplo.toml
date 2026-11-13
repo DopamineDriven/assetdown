@@ -1,0 +1,11 @@
+[formatting]
+array_trailing_comma = false
+align_entries=true
+
+[[rule]]
+include = ["**/Cargo.toml"]
+
+[rule.formatting]
+reorder_keys=true
+align_entries=true
+array_trailing_comma=false

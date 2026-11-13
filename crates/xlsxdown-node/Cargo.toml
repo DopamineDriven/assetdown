@@ -1,0 +1,19 @@
+[package]
+description            = "Node bindings for xlsxdown: xlsx extraction, workbook cells, formulas, and sheet geometry"
+edition.workspace      = true
+license.workspace      = true
+name                   = "xlsxdown-node"
+publish                = false
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi.workspace        = true
+napi-derive.workspace = true
+xlsxdown.workspace    = true
+
+[build-dependencies]
+napi-build.workspace = true

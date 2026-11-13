@@ -1,0 +1,21 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "lib",
+    "lib": [
+      "ES2024",
+      "ScriptHost",
+      "ESNext",
+      "ES2018.AsyncGenerator",
+      "ES2024.Collection",
+      "ES2024.Object",
+      "ESNext.Iterator",
+      "ESNext.AsyncIterable",
+      "ESNext.Collection",
+      "ES2018.AsyncIterable",
+      "DOM"
+    ]
+  },
+  "include": ["."],
+  "exclude": ["lib"]
+}

@@ -1,0 +1,41 @@
+[workspace]
+members  = ["crates/ooxmldown", "crates/xlsxdown", "crates/xlsxdown-node"]
+resolver = "3"
+
+[workspace.package]
+edition      = "2024"
+license      = "MIT"
+repository   = "https://github.com/DopamineDriven/assetdown"
+rust-version = "1.99.1"
+
+[workspace.dependencies]
+flate2      = "1.1.11"
+napi        = { version = "3.16.2", features = ["napi10"] }
+napi-build  = "2.6.0"
+napi-derive = "3.7.1"
+rayon       = "1.12.0"
+# CCITT Group 3/4 fax decoding (pure Rust, WASI-safe)
+hayro-ccitt = "0.5.0"
+hayro-jpeg2000 = { version = "0.5.0", features = ["image"] }
+image = { version = "0.25.10", default-features = false, features = [
+  "png",
+  "jpeg"
+] }
+roxmltree = "0.21.2"
+# OOXML (xlsx) is a zip of XML parts that Excel writes with Deflate or Stored only; the pure-Rust
+# deflate backend keeps the wasm32-wasip1 build free of C codecs.
+zip = { version = "9.5.1", default-features = false, features = [
+  "deflate-flate2-zlib-rs"
+] }
+
+thiserror = { version = "2.0.21" }
+# CII / UBL e-invoice XML (pure Rust, WASI-safe)
+lopdf = "0.47.0"
+
+ooxmldown     = { path = "crates/ooxmldown" }
+xlsxdown      = { path = "crates/xlsxdown" }
+xlsxdown-node = { path = "crates/xlsxdown-node" }
+
+[profile.release]
+lto   = true
+strip = "symbols"

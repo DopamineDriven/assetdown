@@ -1,0 +1,530 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+
+import { WorkupService } from "@/__test__/workup.ts";
+import { XlsxDown, spreadsheetCells, spreadsheetCellsAsync } from "@/index.js";
+import type { CellBox, SheetCells, SheetColumn, SheetRow } from "@/index.js";
+
+/**
+ *
+ * the WorkupService base can be regenerated with `yarn tsx __test__/gen.ts --gen workup`
+ *
+ */
+class TestXlsx extends WorkupService {
+  /** The first sheet of a result; every fixture has one. */
+  public first(sheets: SheetCells[]) {
+    const [sheet] = sheets;
+    assert.ok(sheet, "the workbook returned no sheets");
+    return sheet;
+  }
+
+  /** The cell at `ref`, failing the test when the sheet has none there. */
+  public cell(sheet: SheetCells, ref: string) {
+    const found = sheet.cells.find((c) => c.ref === ref);
+    assert.ok(found, `${ref} is not among the cells of ${sheet.sheet}`);
+    return found;
+  }
+
+  public hasCell(sheet: SheetCells, ref: string) {
+    return sheet.cells.some((c) => c.ref === ref);
+  }
+
+  public sheetNames(sheets: SheetCells[]) {
+    return sheets.map((s) => s.sheet);
+  }
+}
+
+const t = new TestXlsx();
+const form = t.getFixtureBuff("form");
+const doc = new XlsxDown(form);
+const sheet = t.first(doc.spreadsheetCells());
+
+describe("XlsxDown constructor", () => {
+  it("should return an XlsxDown for the form fixture", {}, () => {
+    assert.equal(doc instanceof XlsxDown, true);
+  });
+  it(
+    "should throw unsupported format for macro.xlsm, a macro-enabled workbook",
+    {},
+    () => {
+      assert.throws(() => new XlsxDown(t.getFixtureBuff("macro")), {
+        message:
+          "unsupported format: macro-enabled workbook (not supported in this release)"
+      });
+    }
+  );
+  it(
+    "should throw unsupported format for strict.xlsx, a Strict OOXML workbook",
+    {},
+    () => {
+      assert.throws(() => new XlsxDown(t.getFixtureBuff("strict")), {
+        message:
+          "unsupported format: Strict OOXML workbook (not supported in this release)"
+      });
+    }
+  );
+  it(
+    "should throw unsupported format for not-a-workbook.docx and say it is a Word document",
+    {},
+    () => {
+      assert.throws(() => new XlsxDown(t.getFixtureBuff("not-a-workbook")), {
+        message: "unsupported format: Word document package"
+      });
+    }
+  );
+  it(
+    "should throw malformed workbook for ole.bin, which is not a zip",
+    {},
+    () => {
+      assert.throws(() => new XlsxDown(t.getFixtureBuff("ole")), {
+        message: /^malformed workbook: not a readable zip package/
+      });
+    }
+  );
+  it(
+    "should throw malformed workbook for bytes that are not a file at all",
+    {},
+    () => {
+      assert.throws(() => new XlsxDown(Buffer.from("hello")), {
+        message: /^malformed workbook: /
+      });
+    }
+  );
+});
+
+describe("XlsxDown.openAsync", () => {
+  it(
+    "should resolve to an XlsxDown that reads the same cells as the constructor",
+    {},
+    async () => {
+      const opened = await XlsxDown.openAsync(form);
+      assert.equal(opened instanceof XlsxDown, true);
+      assert.deepEqual(opened.spreadsheetCells(), doc.spreadsheetCells());
+    }
+  );
+  it(
+    "should reject with the constructor's message for macro.xlsm",
+    {},
+    async () => {
+      await assert.rejects(XlsxDown.openAsync(t.getFixtureBuff("macro")), {
+        message:
+          "unsupported format: macro-enabled workbook (not supported in this release)"
+      });
+    }
+  );
+  it("should reject with malformed workbook for ole.bin", {}, async () => {
+    await assert.rejects(XlsxDown.openAsync(t.getFixtureBuff("ole")), {
+      message: /^malformed workbook: not a readable zip package/
+    });
+  });
+});
+
+describe("spreadsheetCells sheet selection", () => {
+  it("should return only the visible sheet Form with no options", {}, () => {
+    assert.deepEqual(
+      doc.spreadsheetCells().map((s) => [s.sheet, s.index, s.hidden]),
+      [["Form", 0, false]]
+    );
+  });
+  it(
+    "should return the same sheets for null and for an empty object",
+    {},
+    () => {
+      assert.deepEqual(doc.spreadsheetCells(null), doc.spreadsheetCells());
+      assert.deepEqual(doc.spreadsheetCells({}), doc.spreadsheetCells());
+    }
+  );
+  it("should return Form and Notes with hiddenSheets set to true", {}, () => {
+    assert.deepEqual(
+      t.sheetNames(doc.spreadsheetCells({ hiddenSheets: true })),
+      ["Form", "Notes"]
+    );
+  });
+  it(
+    "should return the hidden sheet Notes when it is asked for by name",
+    {},
+    () => {
+      const notes = t.first(doc.spreadsheetCells({ sheets: ["Notes"] }));
+      assert.equal(notes.hidden, true);
+      assert.equal(notes.index, 1);
+      assert.deepEqual(
+        notes.cells.map((c) => c.text),
+        ["secret"]
+      );
+    }
+  );
+  it(
+    "should return sheets in workbook order whatever order they are asked for in",
+    {},
+    () => {
+      assert.deepEqual(
+        t.sheetNames(doc.spreadsheetCells({ sheets: ["Notes", "Form"] })),
+        ["Form", "Notes"]
+      );
+    }
+  );
+  it(
+    "should return no sheets for a name the workbook does not have",
+    {},
+    () => {
+      assert.deepEqual(doc.spreadsheetCells({ sheets: ["Nope"] }), []);
+    }
+  );
+});
+
+describe("spreadsheetCells sheet facts", () => {
+  it("should return A1:H30 for the declared dimension", {}, () => {
+    assert.equal(sheet.dimension, "A1:H30");
+  });
+  it("should return A1:F12 for the print area", {}, () => {
+    assert.equal(sheet.printArea, "A1:F12");
+  });
+  it("should return the two merged ranges in A1 form", {}, () => {
+    assert.deepEqual(sheet.merges, ["A1:F1", "A11:A12"]);
+  });
+  it("should warn that C22 holds serial 60, the 1900 leap day", {}, () => {
+    assert.equal(
+      sheet.warnings.some((w) => /C22.*serial 60/.test(w)),
+      true
+    );
+  });
+});
+
+describe("spreadsheetCells cell values", () => {
+  it("should return Text for A1 with its merge and position", {}, () => {
+    assert.partialDeepStrictEqual(t.cell(sheet, "A1"), {
+      type: "Text",
+      value: "Maintenance Reimbursement Form",
+      text: "Maintenance Reimbursement Form",
+      merge: "A1:F1",
+      row: 0,
+      col: 0
+    });
+  });
+  it(
+    "should return Number for C3 with its stored spelling and format code",
+    {},
+    () => {
+      const c3 = t.cell(sheet, "C3");
+      assert.partialDeepStrictEqual(c3, {
+        type: "Number",
+        value: 142.5,
+        raw: "142.5",
+        format: '#,##0.00"/hr"',
+        formatSupported: true,
+        cached: true
+      });
+      assert.equal(c3.formula, undefined);
+    }
+  );
+  it("should return Float with no currency symbol for C3", {}, () => {
+    const c3 = t.cell(sheet, "C3");
+    assert.partialDeepStrictEqual(c3, { type: "Number", subtype: "Float" });
+    assert.equal("currencySymbol" in c3, false);
+  });
+  it("should return Integer for C4", {}, () => {
+    assert.partialDeepStrictEqual(t.cell(sheet, "C4"), {
+      type: "Number",
+      subtype: "Integer"
+    });
+  });
+  it("should return Integer with the $ currency symbol for C8", {}, () => {
+    assert.partialDeepStrictEqual(t.cell(sheet, "C8"), {
+      type: "Number",
+      subtype: "Integer",
+      currencySymbol: "$"
+    });
+  });
+  it("should return Float for C9", {}, () => {
+    assert.partialDeepStrictEqual(t.cell(sheet, "C9"), {
+      type: "Number",
+      subtype: "Float"
+    });
+  });
+  it("should return Text 000123 for C7, keeping the leading zeros", {}, () => {
+    assert.partialDeepStrictEqual(t.cell(sheet, "C7"), {
+      type: "Text",
+      value: "000123",
+      text: "000123",
+      raw: "000123"
+    });
+  });
+  it("should return Date for C6 as an ISO date with no time zone", {}, () => {
+    const c6 = t.cell(sheet, "C6");
+    if (c6.type !== "Date") assert.fail(`C6 is ${c6.type}, not Date`);
+    assert.match(c6.value, /^\d{4}-\d{2}-\d{2}$/);
+  });
+  it("should return Error #DIV/0! for D20", {}, () => {
+    assert.partialDeepStrictEqual(t.cell(sheet, "D20"), {
+      type: "Error",
+      value: "#DIV/0!",
+      text: "#DIV/0!"
+    });
+  });
+  it("should return Boolean true for E21 with text TRUE", {}, () => {
+    assert.partialDeepStrictEqual(t.cell(sheet, "E21"), {
+      type: "Boolean",
+      value: true,
+      text: "TRUE"
+    });
+  });
+  it("should return both lines of text for the merged cell A11", {}, () => {
+    assert.partialDeepStrictEqual(t.cell(sheet, "A11"), {
+      text: "Line one\nLine two",
+      merge: "A11:A12"
+    });
+  });
+  it("should return no cell for G20, which is styled but empty", {}, () => {
+    assert.equal(t.hasCell(sheet, "G20"), false);
+  });
+});
+
+describe("spreadsheetCells formulas", () => {
+  it("should return the formula C3*C4 and its cached 427.5 for C5", {}, () => {
+    const c5 = t.cell(sheet, "C5");
+    assert.partialDeepStrictEqual(c5, {
+      type: "Number",
+      value: 427.5,
+      formula: "C3*C4",
+      cached: true
+    });
+    assert.equal(c5.sharedFormula, undefined);
+  });
+  it("should return C3*2 for B16, the master of a shared formula", {}, () => {
+    const b16 = t.cell(sheet, "B16");
+    assert.partialDeepStrictEqual(b16, {
+      type: "Number",
+      value: 285,
+      subtype: "Integer",
+      formula: "C3*2",
+      cached: true
+    });
+    assert.equal(b16.sharedFormula, undefined);
+  });
+  it(
+    "should return C4*2 for B17, the master's formula moved one row down, and name B16",
+    {},
+    () => {
+      assert.partialDeepStrictEqual(t.cell(sheet, "B17"), {
+        type: "Text",
+        value: "",
+        text: "",
+        formula: "C4*2",
+        sharedFormula: "B16",
+        cached: true
+      });
+    }
+  );
+  it(
+    "should return Blank with formula C5*2 and cached false for B18, which stores no result",
+    {},
+    () => {
+      const b18 = t.cell(sheet, "B18");
+      assert.partialDeepStrictEqual(b18, {
+        type: "Blank",
+        text: "",
+        formula: "C5*2",
+        sharedFormula: "B16",
+        cached: false
+      });
+      assert.equal("value" in b18, false);
+    }
+  );
+});
+
+describe("spreadsheetCells hidden cells", () => {
+  it("should return B10 with hidden true by default", {}, () => {
+    assert.partialDeepStrictEqual(t.cell(sheet, "B10"), {
+      text: "hidden value",
+      hidden: true
+    });
+  });
+  it("should return no B10 with hiddenCells set to false", {}, () => {
+    const visible = t.first(doc.spreadsheetCells({ hiddenCells: false }));
+    assert.equal(t.hasCell(visible, "B10"), false);
+    assert.equal(visible.cells.length, sheet.cells.length - 1);
+  });
+  it(
+    "should return height 330 and a zero-height row 10 with hiddenCells set to false",
+    {},
+    () => {
+      const visible = t.first(doc.spreadsheetCells({ hiddenCells: false }));
+      assert.equal(visible.height, 330);
+      assert.deepEqual(visible.rows, [
+        { index: 9, height: 0, hidden: true },
+        { index: 10, height: 30, hidden: false }
+      ] satisfies SheetRow[]);
+    }
+  );
+});
+
+describe("spreadsheetCells geometry", () => {
+  it("should return a 385.5 by 345 point frame for A1:F22", {}, () => {
+    assert.partialDeepStrictEqual(sheet, {
+      width: 385.5,
+      height: 345,
+      defaultColumnWidth: 48,
+      defaultRowHeight: 15
+    });
+  });
+  it(
+    "should return only the three columns that differ from the default",
+    {},
+    () => {
+      assert.deepEqual(sheet.columns, [
+        { index: 0, width: 105, hidden: false },
+        { index: 1, width: 63, hidden: false },
+        { index: 2, width: 73.5, hidden: false }
+      ] satisfies SheetColumn[]);
+    }
+  );
+  it("should return the hidden row 10 and the taller row 11", {}, () => {
+    assert.deepEqual(sheet.rows, [
+      { index: 9, height: 15, hidden: true },
+      { index: 10, height: 30, hidden: false }
+    ] satisfies SheetRow[]);
+  });
+  it("should return the box of C3 in points, y up", {}, () => {
+    assert.deepEqual(t.cell(sheet, "C3").box, {
+      x0: 168,
+      y0: 300,
+      x1: 241.5,
+      y1: 315
+    } satisfies CellBox);
+  });
+  it("should return a box spanning A1:F1 for the merged anchor A1", {}, () => {
+    assert.deepEqual(t.cell(sheet, "A1").box, {
+      x0: 0,
+      y0: 330,
+      x1: 385.5,
+      y1: 345
+    } satisfies CellBox);
+  });
+  it(
+    "should return a box spanning two rows for the merged anchor A11",
+    {},
+    () => {
+      assert.deepEqual(t.cell(sheet, "A11").box, {
+        x0: 0,
+        y0: 150,
+        x1: 105,
+        y1: 195
+      } satisfies CellBox);
+    }
+  );
+  it("should return a box inside the sheet frame for every cell", {}, () => {
+    for (const { ref, box } of sheet.cells) {
+      assert.equal(
+        box.x0 <= box.x1 &&
+          box.y0 < box.y1 &&
+          box.x1 <= sheet.width &&
+          box.y1 <= sheet.height,
+        true,
+        `${ref} lies outside the frame`
+      );
+    }
+  });
+});
+
+describe("spreadsheetCells other fixtures", () => {
+  it(
+    "should return 4 cells and no columns for minimal.xlsx, which has no shared strings or styles",
+    {},
+    () => {
+      const minimal = t.first(spreadsheetCells(t.getFixtureBuff("minimal")));
+      assert.equal(minimal.cells.length, 4);
+      assert.deepEqual(minimal.columns, []);
+    }
+  );
+  it(
+    "should return Date 1904-01-01 for serial 0 in date1904.xlsx, a 1904-system workbook",
+    {},
+    () => {
+      const dates = t.first(spreadsheetCells(t.getFixtureBuff("date1904")));
+      assert.equal(dates.sheet, "Dates");
+      assert.partialDeepStrictEqual(t.cell(dates, "A1"), {
+        type: "Date",
+        value: "1904-01-01",
+        text: "1/1/1904",
+        raw: "0",
+        format: "m/d/yyyy"
+      });
+    }
+  );
+});
+
+describe("spreadsheetCellsAsync and the free functions", () => {
+  it(
+    "should resolve to the same cells as spreadsheetCells on one XlsxDown",
+    {},
+    async () => {
+      assert.deepEqual(
+        await doc.spreadsheetCellsAsync(),
+        doc.spreadsheetCells()
+      );
+    }
+  );
+  it("should pass its options through to the worker thread", {}, async () => {
+    assert.deepEqual(
+      t.sheetNames(await doc.spreadsheetCellsAsync({ hiddenSheets: true })),
+      ["Form", "Notes"]
+    );
+  });
+  it(
+    "should return the same cells from the free function as from the class",
+    {},
+    () => {
+      assert.deepEqual(spreadsheetCells(form), doc.spreadsheetCells());
+      assert.deepEqual(
+        spreadsheetCells(form, { hiddenSheets: true }),
+        doc.spreadsheetCells({ hiddenSheets: true })
+      );
+    }
+  );
+  it(
+    "should resolve to the same cells from the async free function as from the class",
+    {},
+    async () => {
+      assert.deepEqual(
+        await spreadsheetCellsAsync(form),
+        doc.spreadsheetCells()
+      );
+    }
+  );
+  it(
+    "should throw from the free function and reject from the async one for macro.xlsm",
+    {},
+    async () => {
+      const message =
+        "unsupported format: macro-enabled workbook (not supported in this release)";
+      const macro = t.getFixtureBuff("macro");
+      assert.throws(() => spreadsheetCells(macro), { message });
+      await assert.rejects(spreadsheetCellsAsync(macro), { message });
+    }
+  );
+  it(
+    "should return the same cells to 32 readers running at once",
+    {},
+    async () => {
+      const expected = doc.spreadsheetCells({ hiddenSheets: true });
+      const readers = Array.of<Promise<SheetCells[]>>();
+      for (let i = 0; i < 16; i++) {
+        readers.push(doc.spreadsheetCellsAsync({ hiddenSheets: true }));
+        readers.push(spreadsheetCellsAsync(form, { hiddenSheets: true }));
+      }
+      for (const result of await Promise.all(readers)) {
+        assert.deepEqual(result, expected);
+      }
+    }
+  );
+  it(
+    "should not be affected when the caller overwrites its buffer after the async call",
+    {},
+    async () => {
+      const scratch = Buffer.from(form);
+      const pending = spreadsheetCellsAsync(scratch);
+      scratch.fill(0);
+      assert.deepEqual(await pending, doc.spreadsheetCells());
+    }
+  );
+});

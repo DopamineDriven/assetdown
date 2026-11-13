@@ -1,0 +1,10 @@
+[package]
+edition.workspace    = true
+keywords             = ["xlsx", "extract", "extraction", "spreadsheet"]
+license              = { workspace = true }
+name                 = "ooxmldown"
+repository.workspace = true
+[dependencies]
+roxmltree.workspace = true
+thiserror.workspace = true
+zip.workspace       = true

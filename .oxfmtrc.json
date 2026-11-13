@@ -1,0 +1,23 @@
+{
+  "$schema": "crates/xlsxdown-node/node_modules/oxfmt/configuration_schema.json",
+  "arrowParens": "always",
+  "insertFinalNewline": true,
+  "trailingComma": "none",
+  "semi": true,
+  "printWidth": 80,
+  "tabWidth": 2,
+  "sortImports": true,
+  "useTabs": false,
+  "singleQuote": false,
+  "ignorePatterns": [
+    "**/target",
+    "**/.yarn",
+    "**/index.js",
+    "**/wasi-worker*",
+    "**/.yarnrc.yml",
+    "**/*.toml",
+    "**/*.wasi.cjs",
+    "**/*.wasi-browser.js",
+    "**/*.wasi.d.cts"
+  ]
+}

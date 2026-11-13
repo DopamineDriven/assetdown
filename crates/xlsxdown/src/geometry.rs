@@ -11,7 +11,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use crate::reference::CellRange;
+use crate::address::CellRange;
 use crate::workbook::{Cell, Horizontal, Sheet, Styles, Vertical};
 
 /// A rectangle in the sheet frame: points, y up, with A1's top-left corner at `(0, height)`.

@@ -8,7 +8,7 @@
 //! that merely looks like one: text in quotes, sheet names, function names such as `LOG10`,
 //! defined names, numbers such as `1E5`, and the brackets of a table reference.
 
-use crate::reference::{MAX_COLS, MAX_ROWS, column_index, column_letters, row_index};
+use crate::address::{MAX_COLS, MAX_ROWS, column_index, column_letters, row_index};
 
 /// What a reference that moves off the grid becomes, as it does in Excel.
 const OFF_GRID: &str = "#REF!";

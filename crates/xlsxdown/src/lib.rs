@@ -6,18 +6,18 @@
 //! codes are dates; `formula` writes a shared formula out for the cells that follow it;
 //! `geometry` lays a sheet out in points. Nothing here depends on Node.
 
+mod address;
 mod error;
 mod format;
 mod formula;
 pub mod geometry;
-mod reference;
 mod workbook;
 
+pub use address::{CellRange, MAX_COLS, MAX_ROWS, cell_ref, parse_cell_ref};
 pub use error::SpreadsheetError;
 pub use geometry::{
   CellBox, SheetColumn, SheetGeometry, SheetRow, column_width_points, sheet_geometry,
 };
-pub use reference::{CellRange, MAX_COLS, MAX_ROWS, cell_ref, parse_cell_ref};
 pub use workbook::{
   Cell, CellValue, ColSpec, FontSpec, Horizontal, MAX_CELLS, MAX_EXPANDED_FORMULA_BYTES,
   MAX_FORMULA_CHARS, MAX_MERGES, RowSpec, Sheet, Styles, Vertical, Workbook, Xf, format_code,

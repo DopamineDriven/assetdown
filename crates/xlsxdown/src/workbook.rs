@@ -11,10 +11,10 @@ use std::collections::{BTreeMap, HashMap};
 use ooxmldown::{Package, PackageError, PackageKind, parse_xml, rels_path};
 use roxmltree::Node;
 
+use crate::address::{CellRange, MAX_COLS, MAX_ROWS, cell_ref, parse_cell_ref};
 use crate::error::SpreadsheetError;
 use crate::format::{NumberFormat, SerialKind, iso_date, iso_time, render_general, serial_kind};
 use crate::formula::shift_formula;
-use crate::reference::{CellRange, MAX_COLS, MAX_ROWS, cell_ref, parse_cell_ref};
 
 /// A workbook with more cells or merges than this is refused rather than modelled.
 pub const MAX_CELLS: usize = 2_000_000;

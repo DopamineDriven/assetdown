@@ -14,7 +14,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/DopamineDriven/assetdown"
+    "url": "git+https://github.com/DopamineDriven/assetdown.git"
   },
   "resolutions": {
     "@napi-rs/wasm-runtime": "1.2.7"
@@ -26,6 +26,7 @@
   ],
   "type": "module",
   "main": "index.js",
+  "types": "index.d.ts",
   "browser": "browser.js",
   "publishConfig": {
     "access": "public",

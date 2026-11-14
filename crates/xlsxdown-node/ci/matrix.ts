@@ -1,5 +1,50 @@
-import { readFileSync } from "node:fs";
+import pkgJson from "../package.json" with { type: "json" };
+interface RepositoryEntity {
+  type: string;
+  url: string;
+}
 
+interface PublishConfigEntity {
+  access: string;
+  registry: string;
+}
+
+interface NapiEntity {
+  binaryName: string;
+  packageName: string;
+  constEnum: boolean;
+  dtsHeader: string;
+  targets: string[];
+}
+
+interface EnginesEntity {
+  node: string;
+}
+
+interface ConfigObjEntity {
+  [record: string]: string;
+}
+
+export interface PkgJsonEntity {
+  name: string;
+  version: string;
+  description: string;
+  packageManager: string;
+  keywords: string[];
+  license: string;
+  repository: RepositoryEntity;
+  resolutions: ConfigObjEntity;
+  files: string[];
+  type: string;
+  main: string;
+  types: string;
+  browser: string;
+  publishConfig: PublishConfigEntity;
+  scripts: ConfigObjEntity;
+  devDependencies: ConfigObjEntity;
+  napi: NapiEntity;
+  engines: EnginesEntity;
+}
 /**
  * The CI plan for this package, derived from `napi.targets` in package.json.
  *
@@ -164,41 +209,6 @@ const plans = new Map<string, TargetPlan>(
   } as const satisfies Record<string, TargetPlan>)
 );
 
-/** `package.json` as parsed JSON, of no known shape yet. */
-function readManifest(): unknown {
-  return JSON.parse(
-    readFileSync(new URL("../package.json", import.meta.url), "utf8")
-  );
-}
-
-/** The target triples in `napi.targets`, or an error saying what is wrong. */
-function napiTargets(manifest: unknown) {
-  if (
-    typeof manifest !== "object" ||
-    manifest === null ||
-    !("napi" in manifest)
-  ) {
-    throw new Error("package.json has no napi section");
-  }
-  const { napi } = manifest;
-  if (
-    typeof napi !== "object" ||
-    napi === null ||
-    !("targets" in napi) ||
-    !Array.isArray(napi.targets)
-  ) {
-    throw new Error("package.json napi.targets is not an array");
-  }
-  const targets = Array.of<string>();
-  for (const target of napi.targets) {
-    if (typeof target !== "string") {
-      throw new Error("package.json napi.targets holds a non-string entry");
-    }
-    targets.push(target);
-  }
-  return targets;
-}
-
 function dockerImage(node: string, libc: DockerTest["libc"]) {
   return `node:${node}-${libc === "musl" ? "alpine" : "slim"}`;
 }
@@ -218,10 +228,56 @@ const testDocker = Array.of<{
   node: string;
   typecheck: boolean;
 }>();
+
+export const allPossibleTargets = [
+  "aarch64-apple-darwin",
+  "aarch64-linux-android",
+  "aarch64-unknown-linux-gnu",
+  "aarch64-unknown-linux-musl",
+  "aarch64-unknown-linux-ohos",
+  "aarch64-pc-windows-msvc",
+  "x86_64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+  "x86_64-pc-windows-gnu",
+  "x86_64-unknown-linux-gnu",
+  "x86_64-unknown-linux-musl",
+  "x86_64-unknown-linux-ohos",
+  "x86_64-unknown-freebsd",
+  "i686-pc-windows-msvc",
+  "armv7-unknown-linux-gnueabihf",
+  "armv7-unknown-linux-musleabihf",
+  "armv7-linux-androideabi",
+  "universal-apple-darwin",
+  "loongarch64-unknown-linux-gnu",
+  "riscv64gc-unknown-linux-gnu",
+  "powerpc64le-unknown-linux-gnu",
+  "s390x-unknown-linux-gnu",
+  "wasm32-wasi-preview1-threads",
+  "wasm32-wasip1-threads"
+];
+
+const both = [...pkgJson.napi.targets, ...allPossibleTargets];
+
+function determineTargets(both: string[]) {
+  const arr = Array.of<string>();
+  let record: Record<string, number> = {};
+  both.forEach(function (t) {
+    record[t] = (record[t] ?? 0) + 1;
+  });
+  for (const [target, count] of Object.entries(record)) {
+    if (count > 1) {
+      arr.push(target);
+    } else continue;
+  }
+  return arr;
+}
+
+const verifiableTargets = determineTargets(both);
+
 let wasi = false;
 let freebsd = false;
 
-for (const target of napiTargets(readManifest())) {
+for (const target of verifiableTargets) {
   const plan = plans.get(target);
   if (plan === undefined) {
     throw new Error(
@@ -270,8 +326,8 @@ process.stdout.write(
     `build=${JSON.stringify(build)}`,
     `test_host=${JSON.stringify(testHost)}`,
     `test_docker=${JSON.stringify(testDocker)}`,
-    `wasi=${String(wasi)}`,
-    `freebsd=${String(freebsd)}`
+    `wasi=${wasi}`,
+    `freebsd=${freebsd}`
   ]
     .join("\n")
     .concat("\n")

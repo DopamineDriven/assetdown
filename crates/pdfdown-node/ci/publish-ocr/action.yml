@@ -1,7 +1,9 @@
 name: Publish pdfdown-node with OCR
 description: >-
   Assemble the OCR package's per-platform packages from this run's builds, then publish
-  them with the OCR package, or rehearse every step without publishing anything. The OCR
+  them with the OCR package, when the commit is a release. Any other commit stops once the packages are assembled:
+  nothing is sent to npm, not even as a dry run, which npm refuses for a version that is
+  already published. The OCR
   package is built from this crate with its own manifest, ocr/package.json.
 
 inputs:
@@ -13,7 +15,7 @@ inputs:
       version that differs between the two manifests stops this one with an error.
     required: true
   allow-release:
-    description: Whether this run may publish at all. Anything but `true` rehearses.
+    description: Whether this run may publish at all. Anything but `true` publishes nothing.
     default: "false"
   npm-token:
     description: The npm token. Only a real publish needs it.
@@ -59,7 +61,7 @@ runs:
       run: |
         version="$(node -p "require('./ocr/package.json').version")"
         subject="$(git log -1 --pretty=%s)"
-        mode=rehearsal
+        mode=skip
         if [ "$ALLOW_RELEASE" = "true" ]; then
           if [ "$subject" = "$RELEASE_NAME@$version" ]; then
             mode=release
@@ -97,13 +99,3 @@ runs:
         yarn napi pre-publish -t npm --no-gh-release --package-json-path ocr/package.json --npm-dir ocr/npm
         cd ocr
         npm publish --ignore-scripts
-    - name: Rehearse the publish
-      if: ${{ steps.release.outputs.mode == 'rehearsal' }}
-      shell: bash
-      working-directory: crates/pdfdown-node
-      # Runs the same two commands with --dry-run: nothing is uploaded, and the second one
-      # prints exactly which files the main package would contain.
-      run: |
-        yarn napi pre-publish -t npm --no-gh-release --dry-run --package-json-path ocr/package.json --npm-dir ocr/npm
-        cd ocr
-        npm publish --dry-run --ignore-scripts --access public

@@ -172,6 +172,77 @@ impl From<pdfdown::BoxType> for BoxType {
   }
 }
 
+/// Declares the two paper-size unions from one list of sizes, so they cannot drift apart: the
+/// standard sizes on their own, and the same sizes with `UNKNOWN` beside them.
+macro_rules! paper_sizes {
+  ($($size:ident),+ $(,)?) => {
+    /// A standard paper size, as a union keyed on `type`, with its own dimensions in points,
+    /// portrait: `width` is the short side.
+    #[napi(discriminant_case = "UPPERCASE")]
+    pub enum StandardPaperSize {
+      $($size { width: f64, height: f64 },)+
+    }
+
+    /// The standard paper size nearest to a page box, as a union keyed on `type`. The values of
+    /// `type` are spelled the way a database enum spells them (`A4`, `LETTER`, `UNKNOWN`). A
+    /// standard size carries its own dimensions in points, portrait: `width` is the short side.
+    /// They are the standard's, not the page's; the page's are on the box.
+    ///
+    /// `UNKNOWN` carries `closestTo`, the standard sizes the page lies between by area: first the
+    /// largest one no larger than the page, then the smallest one larger. A side is `null` when
+    /// the page is beyond that end of the list (smaller than A10, or larger than B0).
+    #[napi(discriminant_case = "UPPERCASE")]
+    pub enum PaperSize {
+      $($size { width: f64, height: f64 },)+
+      Unknown {
+        closest_to: (Option<StandardPaperSize>, Option<StandardPaperSize>),
+      },
+    }
+
+    impl StandardPaperSize {
+      /// `None` for the unknown size, which has no dimensions of its own.
+      fn new(size: pdfdown::PaperSize) -> Option<Self> {
+        let (width, height) = size.dimensions()?;
+        match size {
+          $(pdfdown::PaperSize::$size => Some(StandardPaperSize::$size { width, height }),)+
+          pdfdown::PaperSize::Unknown => None,
+        }
+      }
+    }
+
+    impl From<StandardPaperSize> for PaperSize {
+      fn from(value: StandardPaperSize) -> Self {
+        match value {
+          $(StandardPaperSize::$size { width, height } => PaperSize::$size { width, height },)+
+        }
+      }
+    }
+  };
+}
+
+paper_sizes!(
+  A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, B0, B1, B2, B3, B4, B5, B6, B7, B8, B9, B10, Letter,
+  Legal, Tabloid, Executive, Statement
+);
+
+impl PaperSize {
+  /// The union for the size of a `width` by `height` page box.
+  fn new(size: pdfdown::PaperSize, width: f64, height: f64) -> Self {
+    match StandardPaperSize::new(size) {
+      Some(standard) => standard.into(),
+      None => {
+        let (smaller, larger) = contentdown::paper_neighbors(width, height);
+        PaperSize::Unknown {
+          closest_to: (
+            smaller.and_then(StandardPaperSize::new),
+            larger.and_then(StandardPaperSize::new),
+          ),
+        }
+      }
+    }
+  }
+}
+
 #[napi(object)]
 pub struct PageBox {
   /// Number of pages that share these dimensions.
@@ -183,6 +254,9 @@ pub struct PageBox {
   pub width: f64,
   pub height: f64,
   pub box_type: BoxType,
+  /// The standard paper size nearest to `width` by `height`, in either orientation; its `type`
+  /// is `UNKNOWN` when none is within 3% on both sides.
+  pub paper_size: PaperSize,
   /// Present only on non-dominant boxes — lists the specific pages with these
   /// dimensions. `None` on the first (most frequent) entry means "all pages
   /// not listed in any other entry's `pages` array."
@@ -200,6 +274,7 @@ impl From<pdfdown::PageBox> for PageBox {
       width: value.width,
       height: value.height,
       box_type: value.box_type.into(),
+      paper_size: PaperSize::new(value.paper_size, value.width, value.height),
       pages: value.pages,
     }
   }

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import type { UTR } from "@d0paminedriven/type-utils";
+
 import { WorkupService } from "@/__test__/workup.ts";
 import {
   PdfDown,
@@ -28,6 +30,7 @@ import {
   pdfMetadata,
   pdfMetadataAsync
 } from "@/index.js";
+import type { PaperSize } from "@/index.js";
 
 // WorkupService extends Fs
 class PdfTest extends WorkupService {
@@ -115,6 +118,42 @@ describe("metadata", () => {
       2
     );
   });
+  it(
+    "should name the standard paper size each page box is nearest to",
+    {},
+    () => {
+      // The union turns into a record keyed by `type`, each member still tied to its key.
+      const a4 = {
+        type: "A4",
+        width: 595,
+        height: 842
+      } satisfies UTR<PaperSize, "type">["A4"];
+      const letter = {
+        type: "LETTER",
+        width: 612,
+        height: 792
+      } satisfies UTR<PaperSize, "type">["LETTER"];
+      assert.deepEqual(t.at(meta.pageBoxes, 0).paperSize, a4);
+      assert.deepEqual(
+        t.at(new PdfDown(form).metadata().pageBoxes, 0).paperSize,
+        letter
+      );
+      // The second page of this one is 300 by 500 points, which is no standard size. Only an
+      // unknown size says which two it lies between.
+      const unknown = {
+        type: "UNKNOWN",
+        closestTo: [
+          { type: "A6", width: 298, height: 420 },
+          { type: "B6", width: 354, height: 499 }
+        ]
+      } satisfies UTR<PaperSize, "type">["UNKNOWN"];
+      assert.deepEqual(
+        new PdfDown(layoutSample).metadata().pageBoxes.map((b) => b.paperSize),
+        [letter, unknown]
+      );
+      assert.equal("closestTo" in a4, false);
+    }
+  );
   it("should carry AcroForm facts when the document has a form", {}, () => {
     assert.ok(new PdfDown(form).metadata().form);
     assert.equal(meta.form, undefined);

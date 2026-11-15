@@ -351,6 +351,11 @@ export interface PageBox {
   height: number
   boxType: BoxType
   /**
+   * The standard paper size nearest to `width` by `height`, in either orientation; its `type`
+   * is `UNKNOWN` when none is within 3% on both sides.
+   */
+  paperSize: PaperSize
+  /**
    * Present only on non-dominant boxes — lists the specific pages with these
    * dimensions. `None` on the first (most frequent) entry means "all pages
    * not listed in any other entry's `pages` array."
@@ -419,6 +424,46 @@ export interface PageText {
   page: number
   text: string
 }
+
+/**
+ * The standard paper size nearest to a page box, as a union keyed on `type`. The values of
+ * `type` are spelled the way a database enum spells them (`A4`, `LETTER`, `UNKNOWN`). A
+ * standard size carries its own dimensions in points, portrait: `width` is the short side.
+ * They are the standard's, not the page's; the page's are on the box.
+ *
+ * `UNKNOWN` carries `closestTo`, the standard sizes the page lies between by area: first the
+ * largest one no larger than the page, then the smallest one larger. A side is `null` when
+ * the page is beyond that end of the list (smaller than A10, or larger than B0).
+ */
+export type PaperSize =
+  | { type: 'A0'; width: number; height: number }
+  | { type: 'A1'; width: number; height: number }
+  | { type: 'A2'; width: number; height: number }
+  | { type: 'A3'; width: number; height: number }
+  | { type: 'A4'; width: number; height: number }
+  | { type: 'A5'; width: number; height: number }
+  | { type: 'A6'; width: number; height: number }
+  | { type: 'A7'; width: number; height: number }
+  | { type: 'A8'; width: number; height: number }
+  | { type: 'A9'; width: number; height: number }
+  | { type: 'A10'; width: number; height: number }
+  | { type: 'B0'; width: number; height: number }
+  | { type: 'B1'; width: number; height: number }
+  | { type: 'B2'; width: number; height: number }
+  | { type: 'B3'; width: number; height: number }
+  | { type: 'B4'; width: number; height: number }
+  | { type: 'B5'; width: number; height: number }
+  | { type: 'B6'; width: number; height: number }
+  | { type: 'B7'; width: number; height: number }
+  | { type: 'B8'; width: number; height: number }
+  | { type: 'B9'; width: number; height: number }
+  | { type: 'B10'; width: number; height: number }
+  | { type: 'LETTER'; width: number; height: number }
+  | { type: 'LEGAL'; width: number; height: number }
+  | { type: 'TABLOID'; width: number; height: number }
+  | { type: 'EXECUTIVE'; width: number; height: number }
+  | { type: 'STATEMENT'; width: number; height: number }
+  | { type: 'UNKNOWN'; closestTo: [StandardPaperSize | undefined | null, StandardPaperSize | undefined | null] }
 
 export interface PaymentDetail {
   iban?: StringField
@@ -500,6 +545,39 @@ export interface RenderOptions {
 }
 
 export declare function renderPagesAsync(buffer: Buffer, opts?: RenderOptions | undefined | null): Promise<Array<RenderedPage>>
+
+/**
+ * A standard paper size, as a union keyed on `type`, with its own dimensions in points,
+ * portrait: `width` is the short side.
+ */
+export type StandardPaperSize =
+  | { type: 'A0'; width: number; height: number }
+  | { type: 'A1'; width: number; height: number }
+  | { type: 'A2'; width: number; height: number }
+  | { type: 'A3'; width: number; height: number }
+  | { type: 'A4'; width: number; height: number }
+  | { type: 'A5'; width: number; height: number }
+  | { type: 'A6'; width: number; height: number }
+  | { type: 'A7'; width: number; height: number }
+  | { type: 'A8'; width: number; height: number }
+  | { type: 'A9'; width: number; height: number }
+  | { type: 'A10'; width: number; height: number }
+  | { type: 'B0'; width: number; height: number }
+  | { type: 'B1'; width: number; height: number }
+  | { type: 'B2'; width: number; height: number }
+  | { type: 'B3'; width: number; height: number }
+  | { type: 'B4'; width: number; height: number }
+  | { type: 'B5'; width: number; height: number }
+  | { type: 'B6'; width: number; height: number }
+  | { type: 'B7'; width: number; height: number }
+  | { type: 'B8'; width: number; height: number }
+  | { type: 'B9'; width: number; height: number }
+  | { type: 'B10'; width: number; height: number }
+  | { type: 'LETTER'; width: number; height: number }
+  | { type: 'LEGAL'; width: number; height: number }
+  | { type: 'TABLOID'; width: number; height: number }
+  | { type: 'EXECUTIVE'; width: number; height: number }
+  | { type: 'STATEMENT'; width: number; height: number }
 
 export interface StringField {
   value: string

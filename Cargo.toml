@@ -8,6 +8,8 @@ members = [
   "crates/pdfdown-meta",
   "crates/pdfdown-ocr",
   "crates/pdfdown-node",
+  "crates/videodown",
+  "crates/videodown-node",
   "crates/xlsxdown",
   "crates/xlsxdown-node"
 ]
@@ -27,9 +29,11 @@ hayro-jbig2 = { version = "0.4.0" }
 hayro-jpeg2000 = { version = "0.5.0", features = ["image"] }
 image = { version = "0.25.10", default-features = false, features = [
   "png",
-  "jpeg"
+  "jpeg",
+  "webp"
 ] }
 lopdf = "0.47.0"
+mp4parse = "0.17.0"
 napi = { version = "3.16.2", features = ["napi10"] }
 napi-build = "2.6.0"
 napi-derive = "3.7.1"
@@ -40,15 +44,14 @@ pdfium-render = { version = "0.9.5", default-features = false, features = [
 ] }
 rayon = "1.12.0"
 roxmltree = "0.21.2"
+rust_h264 = "=0.6.1"
+rust_h265 = "=0.4.1"
 symphonia = { version = "0.6.1", default-features = false, features = [
-  "mpa",
-  "wav",
   "pcm",
   "adpcm",
-  "id3v1",
-  "id3v2",
   "opt-simd"
 ] }
+symphonia-opus = "=0.1.2"
 tesseract-rs = { version = "0.4.0", default-features = false, features = [
   "use-system-tesseract"
 ] }
@@ -65,6 +68,8 @@ pdfdown        = { path = "crates/pdfdown" }
 pdfdown-meta   = { path = "crates/pdfdown-meta" }
 pdfdown-node   = { path = "crates/pdfdown-node" }
 pdfdown-ocr    = { path = "crates/pdfdown-ocr" }
+videodown      = { path = "crates/videodown" }
+videodown-node = { path = "crates/videodown-node" }
 xlsxdown       = { path = "crates/xlsxdown" }
 xlsxdown-node  = { path = "crates/xlsxdown-node" }
 

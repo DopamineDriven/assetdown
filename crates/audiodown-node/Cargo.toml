@@ -3,6 +3,7 @@ description            = "rust-powered mp3/wav metadata, pcm decoding, and wavef
 edition.workspace      = true
 license.workspace      = true
 name                   = "audiodown-node"
+publish                = false
 repository.workspace   = true
 rust-version.workspace = true
 version                = "0.2.0"

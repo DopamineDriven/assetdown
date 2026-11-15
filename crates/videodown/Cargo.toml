@@ -1,0 +1,17 @@
+[package]
+description            = "MP4/MOV/WebM/MKV demux, metadata, keyframe index, and audio-track waveform peaks"
+edition.workspace      = true
+license.workspace      = true
+name                   = "videodown"
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.2.0"
+
+[dependencies]
+image.workspace          = true
+mp4parse.workspace       = true
+rayon.workspace          = true
+rust_h264.workspace      = true
+rust_h265.workspace      = true
+symphonia                = { workspace = true, features = ["isomp4", "mkv", "aac", "vorbis"] }
+symphonia-opus.workspace = true

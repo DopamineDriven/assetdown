@@ -1,0 +1,20 @@
+[package]
+description            = "Rust-powered MP4/MOV/WebM/MKV demux, metadata, keyframe index, and audio-track waveform peaks for node"
+edition.workspace      = true
+license.workspace      = true
+name                   = "videodown-node"
+publish                = false
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.2.0"
+
+[dependencies]
+napi                  = { workspace = true, features = ["tokio_rt"] }
+napi-derive.workspace = true
+videodown.workspace   = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[build-dependencies]
+napi-build.workspace = true

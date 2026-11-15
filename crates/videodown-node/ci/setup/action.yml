@@ -1,0 +1,58 @@
+name: Set up videodown-node
+description: Yarn 4 through Corepack, Node, and this package's dependencies.
+
+inputs:
+  node-version:
+    description: Node.js version to install.
+    default: "26"
+  architecture:
+    description: Node.js architecture; empty for the runner's own.
+    default: ""
+  cpu:
+    description: >-
+      JSON array for yarn's supportedArchitectures.cpu, for a job that runs the
+      tests on another architecture. Empty keeps what .yarnrc.yml says.
+    default: ""
+  libc:
+    description: >-
+      JSON array for yarn's supportedArchitectures.libc, for a job that runs the
+      tests in a musl container. Empty keeps what .yarnrc.yml says.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # Runners ship Yarn 1.x globally, which refuses a packageManager of yarn@4. Enable
+    # Corepack before setup-node so its `cache: yarn` probe already resolves Yarn 4.
+    - name: Enable Corepack
+      shell: bash
+      # Shims go to a fresh directory prepended to PATH: on Windows the preinstalled
+      # Yarn 1 and Node's bundled corepack.cmd share the npm prefix and collide with
+      # `npm i -g` / `corepack enable` writing into it.
+      run: |
+        npm i -g corepack@latest --force
+        mkdir -p "$RUNNER_TEMP/corepack-bin"
+        corepack enable --install-directory "$RUNNER_TEMP/corepack-bin"
+        echo "$RUNNER_TEMP/corepack-bin" >> "$GITHUB_PATH"
+    - name: Setup node
+      uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node-version }}
+        architecture: ${{ inputs.architecture }}
+        cache: yarn
+        # The yarn project is this package, not the repository root.
+        cache-dependency-path: crates/videodown-node/yarn.lock
+    - name: Widen the architectures yarn installs for
+      if: ${{ inputs.cpu != '' || inputs.libc != '' }}
+      shell: bash
+      working-directory: crates/videodown-node
+      env:
+        CPU: ${{ inputs.cpu }}
+        LIBC: ${{ inputs.libc }}
+      run: |
+        if [ -n "$CPU" ]; then yarn config set --json supportedArchitectures.cpu "$CPU"; fi
+        if [ -n "$LIBC" ]; then yarn config set --json supportedArchitectures.libc "$LIBC"; fi
+    - name: Install dependencies
+      shell: bash
+      working-directory: crates/videodown-node
+      run: yarn install

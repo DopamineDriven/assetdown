@@ -1,12 +1,12 @@
 [package]
-description = "MP3/WAV metadata, PCM decoding, and waveform peaks"
-license.workspace=true
-name        = "audiodown"
-version     = "0.2.0"
-edition.workspace=true
+description            = "MP3/WAV metadata, PCM decoding, and waveform peaks"
+edition.workspace      = true
+license.workspace      = true
+name                   = "audiodown"
 repository.workspace   = true
 rust-version.workspace = true
+version                = "0.2.0"
 [dependencies]
 encoding_rs.workspace = true
 rayon.workspace       = true
-symphonia.workspace   = true
+symphonia             = { workspace = true, features = ["mpa", "wav", "id3v1", "id3v2"] }

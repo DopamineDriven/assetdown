@@ -27,7 +27,7 @@ const values = mixed.filter(Boolean) as string[];
 
 // ❌ WRONG & WRONG — typescript narrows this automatically (inferred type predicates). It's 2026 and we're on TS 6.0.3 (not living in 2023 pre TS 5.5).
 // [inferred type predicates](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-5.html#inferred-type-predicates)
-const values = mixed.filter((v): v is string => v != null);
+const values = mixed.filter((v): v is string => v != null); 
 function isValidOpenAIBg(b: string): b is "auto" | "transparent" | "opaque" {
     return b === "auto" || b === "transparent" || b === "opaque";
 }
@@ -39,7 +39,7 @@ function isDefined<T>(value: T | null | undefined): value is T {
   return value != null;
 }
 const values = mixed.filter(isDefined);
-``` 
+```
 
 ```ts
 // ✅ CORRECT

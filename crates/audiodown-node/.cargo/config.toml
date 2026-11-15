@@ -1,0 +1,6 @@
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+# napi's tokio runtime for the async functions is only built on wasm with this flag.
+[target.wasm32-wasip1-threads]
+rustflags = ["--cfg", "tokio_unstable"]

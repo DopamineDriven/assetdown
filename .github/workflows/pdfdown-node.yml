@@ -232,7 +232,7 @@ jobs:
       - uses: ./crates/pdfdown-node/ci/publish
         with:
           release-name: pdfdown
-          # Only a push to main may publish; pull requests and manual runs rehearse.
+          # Only a push to main may publish; pull requests and manual runs never do.
           allow-release: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           npm-token: ${{ secrets.NPM_TOKEN }}
   publish-ocr:
@@ -257,6 +257,6 @@ jobs:
         with:
           # Released by the base package's commit; ocr/package.json must be at the same version.
           release-name: pdfdown
-          # Only a push to main may publish; pull requests and manual runs rehearse.
+          # Only a push to main may publish; pull requests and manual runs never do.
           allow-release: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           npm-token: ${{ secrets.NPM_TOKEN }}

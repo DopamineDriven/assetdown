@@ -1,5 +1,6 @@
 use crate::forms::extract_forms;
 use crate::types::{BoxType, FormInfo, PageBox, PdfMeta};
+use contentdown::paper_size;
 use lopdf::{Document, Object, ObjectId};
 use std::collections::{BTreeMap, HashMap};
 
@@ -207,15 +208,17 @@ pub(crate) fn extract_page_boxes(doc: &Document, pages: &BTreeMap<u32, ObjectId>
       } else {
         Some(g.page_nums)
       };
+      let (width, height) = (g.right - g.left, g.top - g.bottom);
       PageBox {
         page_count: count,
         left: g.left,
         bottom: g.bottom,
         right: g.right,
         top: g.top,
-        width: g.right - g.left,
-        height: g.top - g.bottom,
+        width,
+        height,
         box_type: g.box_type,
+        paper_size: paper_size(width, height),
         pages,
       }
     })

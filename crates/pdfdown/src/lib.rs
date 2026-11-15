@@ -29,5 +29,5 @@ pub use pdf::Pdf;
 pub use types::RenderedPage;
 pub use types::{
   Attachment, BoxType, ChoiceOption, FormInfo, PageAnnotation, PageBox, PageFormField, PageImage,
-  PageText, PdfDocument, PdfMeta, StructuredPageText, UnplacedFormField,
+  PageText, PaperSize, PdfDocument, PdfMeta, StructuredPageText, UnplacedFormField,
 };

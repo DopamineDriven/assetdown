@@ -2,6 +2,7 @@
 
 mod forms;
 
+pub use contentdown::PaperSize;
 pub use forms::{ChoiceOption, FormInfo, PageFormField, UnplacedFormField};
 pub(crate) use forms::{FieldCommon, FieldKind};
 
@@ -51,6 +52,8 @@ pub struct PageBox {
   pub width: f64,
   pub height: f64,
   pub box_type: BoxType,
+  /// The standard paper size nearest to `width` by `height`, in either orientation.
+  pub paper_size: PaperSize,
   /// Present only on non-dominant boxes — lists the specific pages with these
   /// dimensions. `None` on the first (most frequent) entry means "all pages
   /// not listed in any other entry's `pages` array."

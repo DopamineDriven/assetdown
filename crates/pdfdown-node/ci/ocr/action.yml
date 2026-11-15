@@ -1,0 +1,79 @@
+name: Build and test pdfdown-node with OCR
+description: >-
+  Build the OCR package's addon for one target on a runner of that platform, run the OCR
+  tests against it, and upload it as an artifact.
+
+inputs:
+  target:
+    description: The Rust target triple, as listed in ocr/package.json napi.targets.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        targets: ${{ inputs.target }}
+    - name: Cache cargo
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          ~/.napi-rs
+          .cargo-cache
+          target/
+        key: pdfdown-node-ocr-${{ inputs.target }}-cargo-${{ runner.os }}
+    - name: Install Tesseract (Linux)
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      # Stock apt ships Tesseract 4.1 on 22.04 and 5.x from 24.04 on. The alex-p PPA is added
+      # only where the stock version is older than 5.
+      run: |
+        sudo apt-get update
+        if apt-cache policy tesseract-ocr | grep -qE 'Candidate: 5\.'; then
+          echo "stock tesseract 5 available"
+        else
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository -y ppa:alex-p/tesseract-ocr5
+          sudo apt-get update
+        fi
+        sudo apt-get install -y \
+          tesseract-ocr tesseract-ocr-eng \
+          libtesseract-dev libleptonica-dev \
+          pkg-config build-essential
+        tesseract --version | head -n1 | grep -q "tesseract 5"
+    - name: Install Tesseract (macOS)
+      if: ${{ runner.os == 'macOS' }}
+      shell: bash
+      run: |
+        brew update
+        brew install tesseract
+        tesseract --version
+    - name: Build
+      shell: bash
+      working-directory: crates/pdfdown-node
+      env:
+        TARGET: ${{ inputs.target }}
+      run: >-
+        yarn napi build --platform --esm --release --features ocr,render
+        --package-json-path ocr/package.json --output-dir ocr --js pdfdown_ocr.napi.js
+        --target "$TARGET"
+    - name: Test
+      shell: bash
+      working-directory: crates/pdfdown-node
+      run: yarn test:ocr
+    - name: Upload artifact
+      uses: actions/upload-artifact@v6
+      with:
+        name: ocr-bindings-${{ inputs.target }}
+        # The loader and its declarations travel with the addon, so the publish step uses the
+        # files this run generated.
+        path: |
+          crates/pdfdown-node/ocr/pdfdown-node-ocr.*.node
+          crates/pdfdown-node/ocr/pdfdown_ocr.napi.js
+          crates/pdfdown-node/ocr/index.d.ts
+        if-no-files-found: error

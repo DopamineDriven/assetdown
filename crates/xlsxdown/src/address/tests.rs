@@ -63,7 +63,7 @@ fn every_column_survives_a_round_trip() {
 }
 
 #[test]
-fn ranges_are_normalised_and_a_single_cell_is_a_range_of_one() {
+fn ranges_are_normalized_and_a_single_cell_is_a_range_of_one() {
   let expected = CellRange {
     r0: 1,
     c0: 1,

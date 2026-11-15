@@ -528,3 +528,181 @@ describe("spreadsheetCellsAsync and the free functions", () => {
     }
   );
 });
+
+describe("layout", () => {
+  const pages = doc.layout();
+  const [page] = pages;
+  assert.ok(page, "the form workbook has one visible sheet");
+
+  it(
+    "should lay the visible sheet out as page 1 with the sheet's facts beside it",
+    {},
+    () => {
+      assert.equal(pages.length, 1);
+      assert.equal(page.page, 1);
+      assert.equal(page.sheet, "Form");
+      assert.equal(page.index, 0);
+      assert.equal(page.hidden, false);
+      assert.equal(page.dimension, "A1:H30");
+      assert.equal(page.printArea, "A1:F12");
+      assert.deepEqual(page.merges, ["A1:F1", "A11:A12"]);
+      assert.equal(page.width, 385.5);
+      assert.equal(page.height, 180);
+    }
+  );
+  it("should name the cell every word was laid out from", {}, () => {
+    assert.deepEqual(
+      page.words.slice(0, 4).map((w) => [w.text, w.cell]),
+      [
+        ["Maintenance", "A1"],
+        ["Reimbursement", "A1"],
+        ["Form", "A1"],
+        ["Rate", "B3"]
+      ]
+    );
+    for (const word of page.words) {
+      assert.match(word.cell, /^[A-Z]+[0-9]+$/);
+    }
+  });
+  it("should carry the cell's font on each word", {}, () => {
+    const [title] = page.words;
+    assert.ok(title);
+    assert.equal(title.fontName, "Arial");
+    assert.equal(title.fontSize, 10);
+    assert.equal(title.bold, true);
+  });
+  it(
+    "should group the words into lines that each address a slice of the words",
+    {},
+    () => {
+      assert.equal(page.lines.length, 10);
+      const [first] = page.lines;
+      assert.ok(first);
+      assert.equal(first.text, "Maintenance Reimbursement Form");
+      for (const [index, line] of page.lines.entries()) {
+        const words = page.words.slice(
+          line.firstWord,
+          line.firstWord + line.wordCount
+        );
+        assert.equal(words.map((w) => w.text).join(" "), line.text);
+        for (const word of words) {
+          assert.equal(word.line, index);
+        }
+      }
+    }
+  );
+  it("should keep every word inside the page", {}, () => {
+    for (const word of page.words) {
+      assert.ok(word.x0 >= 0 && word.x1 <= page.width, word.text);
+      assert.ok(word.y0 >= 0 && word.y1 <= page.height, word.text);
+    }
+  });
+  it("should warn about the cells the page leaves out", {}, () => {
+    assert.ok(
+      page.warnings.some((w) => w.includes("outside it are off the page"))
+    );
+    assert.ok(
+      page.warnings.some((w) =>
+        w.includes("hidden rows or columns are omitted")
+      )
+    );
+  });
+  it(
+    "should put cells of hidden rows and columns on the page when hiddenCells is set",
+    {},
+    () => {
+      const [withHidden] = doc.layout({ hiddenCells: true });
+      assert.ok(withHidden);
+      assert.ok(withHidden.words.length > page.words.length);
+    }
+  );
+  it(
+    "should number the pages in selection order when hidden sheets are included",
+    {},
+    () => {
+      assert.deepEqual(
+        doc.layout({ hiddenSheets: true }).map((p) => [p.sheet, p.page]),
+        [
+          ["Form", 1],
+          ["Notes", 2]
+        ]
+      );
+    }
+  );
+  it("layoutAsync should resolve to what layout returns", {}, async () => {
+    assert.deepEqual(await doc.layoutAsync(), pages);
+    assert.deepEqual(
+      await doc.layoutAsync({ hiddenSheets: true }),
+      doc.layout({ hiddenSheets: true })
+    );
+  });
+});
+
+describe("invoice", () => {
+  const invoice = doc.invoice();
+
+  it("should read the form's invoice fields from its cells", {}, () => {
+    assert.equal(invoice.source, "Native");
+    assert.equal(invoice.documentType, "Invoice");
+    assert.equal(invoice.fields.invoiceId?.value, "000123");
+    assert.equal(invoice.fields.invoiceDate?.value, "2015-08-31");
+    assert.equal(invoice.fields.invoiceTotal?.value, 427.5);
+    assert.equal(invoice.embeddedXml, undefined);
+  });
+  it("should give the same result with empty options", {}, () => {
+    assert.deepEqual(doc.invoice({}), invoice);
+  });
+  it("invoiceAsync should resolve to what invoice returns", {}, async () => {
+    assert.deepEqual(await doc.invoiceAsync(), invoice);
+  });
+});
+
+describe("spreadsheetGrid", () => {
+  const [grid] = doc.spreadsheetGrid();
+  assert.ok(grid, "the form workbook has one visible sheet");
+
+  it(
+    "should hold exactly the cells spreadsheetCells returns, keyed by row then column",
+    {},
+    () => {
+      let count = 0;
+      for (const row of Object.values(grid.rows)) {
+        count += Object.keys(row).length;
+      }
+      assert.equal(count, sheet.cells.length);
+      for (const cell of sheet.cells) {
+        const column = cell.ref.replace(/[0-9]+$/, "");
+        const row = cell.ref.slice(column.length);
+        assert.deepEqual(grid.rows[row]?.[column], cell);
+      }
+    }
+  );
+  it("should give a whole row in column order", {}, () => {
+    const third = grid.rows["3"];
+    assert.ok(third);
+    assert.deepEqual(Object.keys(third), ["B", "C"]);
+    assert.deepEqual(
+      Object.values(third).map((c) => c.ref),
+      ["B3", "C3"]
+    );
+  });
+  it("should list the rows in sheet order and skip empty ones", {}, () => {
+    const rows = Object.keys(grid.rows);
+    assert.deepEqual(rows.slice(0, 3), ["1", "3", "4"]);
+    assert.equal(grid.rows["2"], undefined);
+  });
+  it("should carry the sheet's facts", {}, () => {
+    assert.equal(grid.sheet, "Form");
+    assert.equal(grid.index, 0);
+    assert.equal(grid.hidden, false);
+    assert.equal(grid.dimension, "A1:H30");
+    assert.deepEqual(grid.merges, ["A1:F1", "A11:A12"]);
+  });
+  it(
+    "spreadsheetGridAsync should resolve to what spreadsheetGrid returns",
+    {},
+    async () => {
+      assert.deepEqual(await doc.spreadsheetGridAsync(), [grid]);
+    }
+  );
+});

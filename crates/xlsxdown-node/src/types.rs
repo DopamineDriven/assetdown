@@ -1,6 +1,9 @@
 //! The shapes JavaScript sees. Plain data: each value is built from `xlsxdown`'s model in `cells`
 //! and copied out. Only the options are ever read back from JavaScript.
 
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
+
 use napi_derive::napi;
 
 /// Which sheets and cells a reader returns.
@@ -204,4 +207,52 @@ pub struct SheetCells {
   pub rows: Vec<SheetRow>,
   pub warnings: Vec<String>,
   pub cells: Vec<SheetCell>,
+}
+
+/// A column's letters, ordered the way columns are: `Z` before `AA`. Plain text order would put
+/// `AA` before `B`, and JavaScript keeps an object's letter keys in the order they were added.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ColumnKey(pub String);
+
+impl AsRef<str> for ColumnKey {
+  fn as_ref(&self) -> &str {
+    &self.0
+  }
+}
+
+impl Ord for ColumnKey {
+  fn cmp(&self, other: &Self) -> Ordering {
+    self
+      .0
+      .len()
+      .cmp(&other.0.len())
+      .then_with(|| self.0.cmp(&other.0))
+  }
+}
+
+impl PartialOrd for ColumnKey {
+  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+    Some(self.cmp(other))
+  }
+}
+
+/// One selected worksheet's cells keyed for lookup: `rows["12"]["C"]` is cell C12, and
+/// `rows["12"]` is the whole of row 12. Only non-empty cells are present, so a row or a column
+/// with nothing in it has no key.
+#[derive(Debug, Clone)]
+#[napi(object, object_from_js = false)]
+pub struct SheetGrid {
+  pub sheet: String,
+  /// Position in the workbook, 0-based.
+  pub index: u32,
+  pub hidden: bool,
+  /// The declared `<dimension>`, which a producer may overstate.
+  pub dimension: Option<String>,
+  /// Merged ranges in A1 form.
+  pub merges: Vec<String>,
+  pub warnings: Vec<String>,
+  /// Keyed by row number as a reference writes it (`"12"`), then by column letters (`"C"`), each
+  /// in sheet order.
+  #[napi(ts_type = "Record<string, Record<string, SheetCell>>")]
+  pub rows: BTreeMap<String, BTreeMap<ColumnKey, SheetCell>>,
 }

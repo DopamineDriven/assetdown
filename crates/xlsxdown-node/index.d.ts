@@ -27,6 +27,55 @@ export declare class XlsxDown {
   spreadsheetCells(opts?: SpreadsheetOptions | undefined | null): Array<SheetCells>
   /** `spreadsheetCells` on a worker thread. */
   spreadsheetCellsAsync(opts?: SpreadsheetOptions | undefined | null): Promise<Array<SheetCells>>
+  /**
+   * The cells of the selected sheets keyed by row and then column, so a cell, or a whole row,
+   * is one lookup: `rows["12"]["C"]`.
+   */
+  spreadsheetGrid(opts?: SpreadsheetOptions | undefined | null): Array<SheetGrid>
+  /** `spreadsheetGrid` on a worker thread. */
+  spreadsheetGridAsync(opts?: SpreadsheetOptions | undefined | null): Promise<Array<SheetGrid>>
+  /**
+   * The selected sheets laid out as pages: each cell's text placed in its rectangle, broken
+   * into words and grouped into lines, every word naming its cell. Cells in hidden rows and
+   * columns are left off the page unless `hiddenCells` is set.
+   */
+  layout(opts?: SpreadsheetOptions | undefined | null): Array<SheetPage>
+  /** `layout` on a worker thread. */
+  layoutAsync(opts?: SpreadsheetOptions | undefined | null): Promise<Array<SheetPage>>
+  /** Invoice fields read from the workbook's visible sheets, each laid out as a page. */
+  invoice(opts?: InvoiceOptions | undefined | null): InvoiceResult
+  /** `invoice` on a worker thread. */
+  invoiceAsync(opts?: InvoiceOptions | undefined | null): Promise<InvoiceResult>
+}
+
+/** `value` is `lines` joined with `
+`. */
+export interface AddressField {
+  value: string
+  text: string
+  confidence: number
+  span?: FieldSpan
+  lines: Array<string>
+}
+
+/**
+ * An aircraft or engine the invoice relates to. Maintenance, parts and
+ * program invoices identify the asset by airframe (model, manufacturer serial
+ * number, registration) and/or by engine (model, engine serial number); one
+ * invoice can cover several assets, so `InvoiceFields.aircraft` is a list.
+ */
+export interface AircraftReference {
+  /** Airframe model, e.g. "Challenger 350", "Global 6000", "Phenom 300". */
+  model?: StringField
+  /** Manufacturer serial number (MSN). */
+  serialNumber?: StringField
+  /** Registration / tail number, e.g. "N123AB", "C-GXYZ". */
+  registration?: StringField
+  /** Engine model, e.g. "BR710", "AE 3007", "PW308C". */
+  engineModel?: StringField
+  /** Engine serial number (ESN). */
+  engineSerialNumber?: StringField
+  span?: FieldSpan
 }
 
 /** A rectangle in the sheet frame: points, y up, with A1's top-left corner at `(0, height)`. */
@@ -38,10 +87,182 @@ export interface CellBox {
 }
 
 /**
+ * Which tier named the currency: evidence on the page (an ISO code or an unambiguous glyph),
+ * content priors such as the vendor's country, the caller's option, or nothing.
+ */
+export type CurrencySource = 'Page' | 'Content' | 'Option' | 'Unknown'
+
+/** `value` is an ISO 8601 calendar date, `YYYY-MM-DD`. */
+export interface DateField {
+  value: string
+  text: string
+  confidence: number
+  span?: FieldSpan
+}
+
+export type DateOrder = 'Auto' | 'MDY' | 'DMY' | 'YMD'
+
+export type EInvoiceStandard = 'FacturX' | 'ZUGFeRD' | 'XRechnung' | 'UBL' | 'Unknown'
+
+export interface EmbeddedInvoiceXml {
+  filename: string
+  standard: EInvoiceStandard
+  /**
+   * The guideline / customization identifier, e.g.
+   * `urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:basic`.
+   */
+  profile?: string
+  xml: string
+}
+
+/** Where a field was read from, in PDF user space on a 1-based page. */
+export interface FieldSpan {
+  page: number
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+}
+
+export type InvoiceDocumentType = 'Invoice' | 'CreditNote' | 'Unknown'
+
+/**
+ * Field names mirror the de-facto vocabulary of common invoice extractors so
+ * consumers can swap sources with a thin mapper. Naming only: nothing here
+ * talks to any service.
+ */
+export interface InvoiceFields {
+  vendorName?: StringField
+  vendorAddress?: AddressField
+  vendorTaxId?: StringField
+  vendorEmail?: StringField
+  vendorPhone?: StringField
+  vendorWebsite?: StringField
+  customerName?: StringField
+  customerId?: StringField
+  customerAddress?: AddressField
+  customerTaxId?: StringField
+  billingAddress?: AddressField
+  shippingAddress?: AddressField
+  remittanceAddress?: AddressField
+  invoiceId?: StringField
+  invoiceDate?: DateField
+  dueDate?: DateField
+  purchaseOrder?: StringField
+  paymentTerm?: StringField
+  serviceStartDate?: DateField
+  serviceEndDate?: DateField
+  currencyCode?: string
+  subTotal?: MoneyField
+  totalDiscount?: MoneyField
+  totalTax?: MoneyField
+  shippingCost?: MoneyField
+  invoiceTotal?: MoneyField
+  amountDue?: MoneyField
+  previousUnpaidBalance?: MoneyField
+  /** MRO work order / shop order the invoice bills against. */
+  workOrder?: StringField
+  /** Aircraft and engines the invoice relates to; empty when none is identified. */
+  aircraft: Array<AircraftReference>
+  taxDetails: Array<TaxDetail>
+  paymentDetails: Array<PaymentDetail>
+  items: Array<InvoiceItem>
+}
+
+export interface InvoiceItem {
+  description?: StringField
+  productCode?: StringField
+  quantity?: NumberField
+  unit?: StringField
+  unitPrice?: MoneyField
+  taxRate?: NumberField
+  tax?: MoneyField
+  discount?: MoneyField
+  date?: DateField
+  amount?: MoneyField
+  /** Absent when the item came from embedded XML (no page geometry). */
+  span?: FieldSpan
+}
+
+/**
+ * Options accepted by every invoice entry point. `preferEmbeddedXml` picks the embedded
+ * XML over the pages when both exist; `languages`, `currency`, `dateOrder` and
+ * `decimalSeparator` steer the page reader where the page leaves a choice;
+ * `includeCandidates` lists, in `warnings`, the candidates each field was chosen from;
+ * `includeLayout` is reserved.
+ */
+export interface InvoiceOptions {
+  /** Label lexicons to enable; default `["en"]`. */
+  languages?: Array<string>
+  /** ISO 4217 hint when the page shows only symbols. */
+  currency?: string
+  dateOrder?: DateOrder
+  decimalSeparator?: "Auto" | "." | ","
+  /** Default `true`. Embedded Factur-X / ZUGFeRD / XRechnung / UBL XML is used when present. */
+  preferEmbeddedXml?: boolean
+  /** Reserved; accepted and ignored. */
+  includeLayout?: boolean
+  /**
+   * Default `false`. Lists, in `warnings`, the candidates each field was chosen from, with
+   * their scores.
+   */
+  includeCandidates?: boolean
+}
+
+export interface InvoiceResult {
+  source: InvoiceSource
+  documentType: InvoiceDocumentType
+  /** Document-level confidence, 0..1. */
+  confidence: number
+  fields: InvoiceFields
+  warnings: Array<string>
+  embeddedXml?: EmbeddedInvoiceXml
+  /** Which tier named `fields.currencyCode`; absent when no layout pass ran. */
+  currencySource?: CurrencySource
+  /** The evidence behind `documentType: CreditNote`; empty otherwise. */
+  creditSignals: Array<string>
+}
+
+/**
+ * Which extraction path produced the result: embedded XML, the page text (native, OCR,
+ * rendered or mixed), or `None` when the document had no readable
+ * pages and no embedded XML.
+ */
+export type InvoiceSource = 'EmbeddedXml' | 'Native' | 'Ocr' | 'Rendered' | 'Mixed' | 'None'
+
+/**
+ * Money as a JS number plus the exact printed text; `text` is authoritative
+ * when cents matter.
+ */
+export interface MoneyField {
+  value: number
+  text: string
+  confidence: number
+  span?: FieldSpan
+  currencyCode?: string
+  currencySymbol?: string
+}
+
+export interface NumberField {
+  value: number
+  text: string
+  confidence: number
+  span?: FieldSpan
+}
+
+/**
  * Whether a Number cell's value is a whole number JavaScript can hold exactly, or a fraction.
  * A percentage is a fraction (50% is 0.5); the subtype is about the value, not the format.
  */
 export type NumberSubtype = 'Integer' | 'Float'
+
+export interface PaymentDetail {
+  iban?: StringField
+  swift?: StringField
+  bankName?: StringField
+  accountNumber?: StringField
+  routingNumber?: StringField
+}
 
 /**
  * One cell of a worksheet: a discriminated union on `type` whose typed value is `value`
@@ -106,6 +327,69 @@ export interface SheetColumn {
 }
 
 /**
+ * One selected worksheet's cells keyed for lookup: `rows["12"]["C"]` is cell C12, and
+ * `rows["12"]` is the whole of row 12. Only non-empty cells are present, so a row or a column
+ * with nothing in it has no key.
+ */
+export interface SheetGrid {
+  sheet: string
+  /** Position in the workbook, 0-based. */
+  index: number
+  hidden: boolean
+  /** The declared `<dimension>`, which a producer may overstate. */
+  dimension?: string
+  /** Merged ranges in A1 form. */
+  merges: Array<string>
+  warnings: Array<string>
+  /**
+   * Keyed by row number as a reference writes it (`"12"`), then by column letters (`"C"`), each
+   * in sheet order.
+   */
+  rows: Record<string, Record<string, SheetCell>>
+}
+
+/**
+ * Words sharing a baseline band, left to right. `firstWord` / `wordCount` address a contiguous
+ * slice of `SheetPage.words`.
+ */
+export interface SheetLine {
+  text: string
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+  firstWord: number
+  wordCount: number
+}
+
+/**
+ * One selected sheet laid out as a page: every cell's text placed inside the cell's rectangle,
+ * broken into words and grouped into lines, with the sheet facts a reader needs beside them.
+ */
+export interface SheetPage {
+  /** 1-based, in selection order. */
+  page: number
+  sheet: string
+  /** Position in the workbook, 0-based. */
+  index: number
+  hidden: boolean
+  /** The declared `<dimension>`, which a producer may overstate. */
+  dimension?: string
+  printArea?: string
+  /** Merged ranges in A1 form. */
+  merges: Array<string>
+  /**
+   * The page's size in points: the print area when the sheet has one, else A1 to the last
+   * non-empty cell, with rows grown to fit their text.
+   */
+  width: number
+  height: number
+  words: Array<SheetWord>
+  lines: Array<SheetLine>
+  warnings: Array<string>
+}
+
+/**
  * A row whose height differs from the sheet default (auto-fit growth included), or that is
  * hidden. 0-based.
  */
@@ -114,6 +398,30 @@ export interface SheetRow {
   /** Points; zero for a hidden row when hidden cells are excluded. */
   height: number
   hidden: boolean
+}
+
+/**
+ * One word of a sheet's logical page, with its box in the page frame: points, y up, the page's
+ * bottom-left corner at the origin.
+ */
+export interface SheetWord {
+  text: string
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+  /** Index into `SheetPage.lines`. */
+  line: number
+  /** The cell's font: its size in points, its name, and whether it is bold or italic. */
+  fontSize?: number
+  fontName?: string
+  bold?: boolean
+  italic?: boolean
+  /**
+   * The reference of the cell this word was laid out from (`"C3"`); the anchor for a merged
+   * range.
+   */
+  cell: string
 }
 
 /**
@@ -139,4 +447,19 @@ export interface SpreadsheetOptions {
    * false they are left out, and their rows and columns have no extent.
    */
   hiddenCells?: boolean
+}
+
+export interface StringField {
+  value: string
+  /** The exact source text the value was derived from. */
+  text: string
+  confidence: number
+  span?: FieldSpan
+}
+
+export interface TaxDetail {
+  rate?: NumberField
+  amount?: MoneyField
+  base?: MoneyField
+  category?: StringField
 }

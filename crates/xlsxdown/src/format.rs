@@ -2,7 +2,7 @@
 //! produces for a value, in the en-US spellings the design settles on.
 //!
 //! Supported: General, fixed decimals with and without grouping, zero padding, percent, quoted and
-//! escaped literals, padding (`_x`, one space) and fill (`*x`, dropped) tokens, colour tags
+//! escaped literals, padding (`_x`, one space) and fill (`*x`, dropped) tokens, color tags
 //! (dropped), currency and accounting codes with negative sections, the date and time tokens
 //! `y m d h s AM/PM` (where `m` is minutes next to `h` or `s`), the text section `@`. Unsupported,
 //! returning `None` from `parse`: elapsed durations, scientific notation, fractions (a bare slash
@@ -111,7 +111,7 @@ const CURRENCY_GLYPHS: &[char] = &[
   '$', '€', '£', '¥', '₹', '₽', '₩', '₪', '₺', '฿', '₫', '₦', '₴', '₱', '₡', '₲', '₵', '₸', '₼',
   '¢', '֏', '៛',
 ];
-const COLOURS: [&str; 8] = [
+const COLORS: [&str; 8] = [
   "black", "blue", "cyan", "green", "magenta", "red", "white", "yellow",
 ];
 
@@ -188,8 +188,8 @@ fn parse_section(text: &str) -> Option<Section> {
             return None;
           }
           tokens.push(Token::Literal(symbol.to_string()));
-        } else if COLOURS.contains(&lower.as_str()) || lower.starts_with("color") {
-          // colour tags carry no text
+        } else if COLORS.contains(&lower.as_str()) || lower.starts_with("color") {
+          // color tags carry no text
         } else {
           // elapsed time, conditions and anything else bracketed
           return None;
@@ -480,7 +480,7 @@ pub(crate) fn serial_kind(code: &str) -> SerialKind {
         if elapsed {
           return SerialKind::Duration;
         }
-        // Colours, conditions, currency symbols and locale directives.
+        // Colors, conditions, currency symbols and locale directives.
         i += inner.chars().count() + 2;
       }
       'g' if spells("general") => i += 7,

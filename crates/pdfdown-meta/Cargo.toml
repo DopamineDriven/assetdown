@@ -1,0 +1,8 @@
+[package]
+description            = "Plain data types for PDF pages: the positioned-text page model shared by pdfdown and pdfdown-ocr"
+edition.workspace      = true
+license.workspace      = true
+name                   = "pdfdown-meta"
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.13.0"

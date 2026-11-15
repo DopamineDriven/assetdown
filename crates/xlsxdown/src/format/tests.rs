@@ -62,7 +62,7 @@ fn review_findings_hostile_and_unusual_codes() {
   assert_eq!(r("0 a€", 5.0), "5 a€");
   assert_eq!(r("0 aaé", 5.0), "5 aaé");
   assert_eq!(r("0 A中", 5.0), "5 A中");
-  // Digits inside colour tags and after padding markers are not placeholders.
+  // Digits inside color tags and after padding markers are not placeholders.
   assert_eq!(r("[Color10]0.00", 1.5), "1.50");
   assert_eq!(r("[Color50]#,##0", 1234.0), "1,234");
   assert_eq!(r("_00.00", 1.5), "1.50");

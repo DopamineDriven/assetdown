@@ -1441,6 +1441,11 @@ try {
 }
 export default __napiModule.exports
 export const XlsxDown = __napiModule.exports.XlsxDown
+export const CurrencySource = __napiModule.exports.CurrencySource
+export const DateOrder = __napiModule.exports.DateOrder
+export const EInvoiceStandard = __napiModule.exports.EInvoiceStandard
+export const InvoiceDocumentType = __napiModule.exports.InvoiceDocumentType
+export const InvoiceSource = __napiModule.exports.InvoiceSource
 export const NumberSubtype = __napiModule.exports.NumberSubtype
 export const spreadsheetCells = __napiModule.exports.spreadsheetCells
 export const spreadsheetCellsAsync = __napiModule.exports.spreadsheetCellsAsync

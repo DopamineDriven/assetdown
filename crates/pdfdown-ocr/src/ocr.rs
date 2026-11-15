@@ -1,0 +1,1185 @@
+//! The OCR cascade: a page's own text where it has enough, recognized text from its embedded
+//! images where it does not, and, with the `render` feature, recognized text from the rasterized
+//! page as the last tier.
+
+use contentdown::{FontMeta, PageLayout, PlacedImage, TextSource, Word, words_to_lines};
+use image::DynamicImage;
+use lopdf::{Document, ObjectId};
+use pdfdown::PageText;
+use pdfdown::images::{collect_page_decoded_images_named, page_path_op_count};
+#[cfg(feature = "render")]
+use pdfdown::images::{page_has_form_xobjects, page_has_image_xobjects};
+use pdfdown::layout::{NativeLayout, PageGeometry, native_layout, page_geometry, page_layout};
+#[cfg(feature = "render")]
+use pdfdown::render;
+use pdfdown::text::{detect_headers_footers, strip_footer_artifacts};
+use rayon::prelude::*;
+use std::sync::Arc;
+
+use crate::types::{OcrPageText, OcrStructuredPageText};
+
+pub fn normalize_max_threads(v: Option<u32>) -> u32 {
+  let default = 4u32;
+  let max = std::thread::available_parallelism()
+    .map(|n| n.get() as u32)
+    .unwrap_or(default);
+  v.unwrap_or(default).clamp(1, max)
+}
+
+fn get_ocr_pool(threads: usize) -> Arc<rayon::ThreadPool> {
+  use std::collections::HashMap;
+  use std::sync::{Mutex, OnceLock};
+
+  static POOLS: OnceLock<Mutex<HashMap<usize, Arc<rayon::ThreadPool>>>> = OnceLock::new();
+  let map = POOLS.get_or_init(|| Mutex::new(HashMap::new()));
+  let mut guard = map.lock().unwrap();
+  Arc::clone(guard.entry(threads).or_insert_with(|| {
+    Arc::new(
+      rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .expect("failed to build OCR thread pool"),
+    )
+  }))
+}
+
+/// Auto-detect tessdata path, cached for the lifetime of the process.
+fn get_tessdata_prefix() -> Option<&'static str> {
+  use std::sync::OnceLock;
+  static TESSDATA_PATH: OnceLock<Option<String>> = OnceLock::new();
+
+  TESSDATA_PATH
+    .get_or_init(|| {
+      if let Ok(path) = std::env::var("TESSDATA_PREFIX") {
+        return Some(path);
+      }
+
+      let output = std::process::Command::new("tesseract")
+        .arg("--list-langs")
+        .output()
+        .ok()?;
+
+      let stderr = String::from_utf8_lossy(&output.stderr);
+      let text = if stderr.contains('"') {
+        stderr
+      } else {
+        String::from_utf8_lossy(&output.stdout)
+      };
+
+      let start = text.find('"')?;
+      let end = text[start + 1..].find('"')?;
+      Some(text[start + 1..start + 1 + end].to_string())
+    })
+    .as_deref()
+}
+
+/// Mean Tesseract confidence (0..100) below which a page that did produce
+/// text is OCR'd again rotated. Upright copier scans score 80-95; a landscape
+/// page scanned in portrait scores 35-45 and comes back as punctuation soup.
+const ROTATION_RETRY_CONFIDENCE: f32 = 55.0;
+
+/// Tesseract's orientation detector is trusted from this confidence; below it the blind retry
+/// loop decides. Measured on copier scans: upright pages 3.9–13.8, turned pages 6.0–12.2.
+const OSD_MIN_CONFIDENCE: f32 = 3.0;
+/// An upright pass scoring at least this mean word confidence is accepted without consulting the
+/// detector. Measured: correctly oriented reads score ~96 on real and synthetic rasters; upside-down
+/// and sideways reads scored 40–62. Keeps the ~1 s detector off the common, upright page.
+const OSD_SKIP_CONFIDENCE: f32 = 80.0;
+
+/// Whether an upright pass is good enough to skip orientation detection altogether.
+fn upright_is_convincing(words: usize, mean_confidence: f32) -> bool {
+  words > 0 && mean_confidence >= OSD_SKIP_CONFIDENCE
+}
+
+/// Who decided a raster's orientation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OrientationSource {
+  /// The first pass read upright well enough.
+  Upright,
+  /// Tesseract's orientation and script detector named the turn.
+  Osd,
+  /// The confidence retry over the quarter and half turns found a better score.
+  Retry,
+}
+
+impl OrientationSource {
+  fn label(self) -> &'static str {
+    match self {
+      OrientationSource::Upright => "upright",
+      OrientationSource::Osd => "by OSD",
+      OrientationSource::Retry => "by retry",
+    }
+  }
+}
+
+/// `detect_os` reports how the text currently lies (0, 90, 180 or 270 degrees); the clockwise turn
+/// that puts it upright is the complement. The CLI prints "Orientation 270 / Rotate 90".
+fn osd_correction(orient_deg: i32) -> u32 {
+  ((360 - orient_deg.rem_euclid(360)) % 360) as u32
+}
+
+/// The turn to try first, when the detector is confident enough to be worth one OCR pass.
+fn pick_first_rotation(osd: Option<(u32, f32)>) -> Option<u32> {
+  osd
+    .filter(|(_, confidence)| *confidence >= OSD_MIN_CONFIDENCE)
+    .map(|(degrees, _)| degrees)
+}
+
+/// Orientation and confidence from Tesseract's OSD model, or `None` when `osd.traineddata` is not
+/// installed, the image is too sparse for the detector, or anything else goes wrong. The detector
+/// sees the full raster: shrinking it to 1200 px drops its confidence below the trust threshold
+/// while saving almost no time.
+fn osd_rotation(img: &DynamicImage, datapath: &str, ppi: Option<i32>) -> Option<(u32, f32)> {
+  use tesseract_rs::TessPageSegMode;
+
+  let rgb = img.to_rgb8();
+  let (w, h) = rgb.dimensions();
+  let tess = tesseract_rs::TesseractAPI::new();
+  tess.init(datapath, "osd").ok()?;
+  tess.set_page_seg_mode(TessPageSegMode::PSM_OSD_ONLY).ok()?;
+  tess
+    .set_image(rgb.as_raw(), w as i32, h as i32, 3, (w * 3) as i32)
+    .ok()?;
+  // The detector's non-text filter reads the resolution off the Leptonica image itself, which a
+  // raw-pixel image lacks, so Tesseract still prints its "Invalid resolution 0 dpi" line here;
+  // the settings below reach everything else the detector does.
+  set_resolution(&tess, ppi.unwrap_or(DEFAULT_SOURCE_PPI));
+  let (orient_deg, orient_conf, _script, _script_conf) = tess.detect_os().ok()?;
+  Some((osd_correction(orient_deg), orient_conf))
+}
+
+/// One OCR pass over the raster at a given turn.
+struct OrientedPass {
+  words: Vec<OcrWord>,
+  degrees: u32,
+  dims: (u32, u32),
+  confidence: f32,
+  source: OrientationSource,
+}
+
+/// Rotations tried, in order, when the upright pass scores too low. Most
+/// rotated scans are a landscape sheet fed in portrait, so the quarter turns
+/// come first and the half turn is only tried when neither of them is good.
+const ROTATIONS: [u32; 3] = [90, 270, 180];
+
+fn rotate_image(img: &DynamicImage, degrees: u32) -> DynamicImage {
+  match degrees {
+    90 => img.rotate90(),
+    180 => img.rotate180(),
+    270 => img.rotate270(),
+    _ => img.clone(),
+  }
+}
+
+/// Plain-text OCR of one image plus Tesseract's mean confidence (0..100).
+/// Resolution assumed for a raster whose painted size is unknown: a scan, not Tesseract's 70.
+const DEFAULT_SOURCE_PPI: i32 = 300;
+const MIN_SOURCE_PPI: i32 = 70;
+const MAX_SOURCE_PPI: i32 = 1200;
+
+/// Pixels per inch of a raster painted `points` wide. Tesseract sizes its text estimates from
+/// the source resolution and guesses 70 dpi when told nothing, which is wrong for every scan.
+fn source_ppi(pixels: u32, points: f64) -> i32 {
+  if pixels == 0 || !points.is_finite() || points <= 0.0 {
+    return DEFAULT_SOURCE_PPI;
+  }
+  (f64::from(pixels) / (points / 72.0))
+    .round()
+    .clamp(f64::from(MIN_SOURCE_PPI), f64::from(MAX_SOURCE_PPI)) as i32
+}
+
+/// Tell a Tesseract instance the raster's resolution. `user_defined_dpi` is read before the
+/// image's own resolution on every path, the orientation detector included, and the source
+/// resolution after `set_image` covers the recognizer's size estimates.
+fn set_resolution(tess: &tesseract_rs::TesseractAPI, ppi: i32) {
+  let _ = tess.set_variable("user_defined_dpi", &ppi.to_string());
+  let _ = tess.set_source_resolution(ppi);
+}
+
+fn ocr_image_text(img: &DynamicImage, lang: &str, ppi: i32) -> (String, f32) {
+  let datapath = get_tessdata_prefix().unwrap_or("");
+  let rgb = img.to_rgb8();
+  let (w, h) = rgb.dimensions();
+  let pixels = rgb.as_raw();
+
+  let tess = tesseract_rs::TesseractAPI::new();
+  if tess.init(datapath, lang).is_err()
+    || tess
+      .set_image(pixels, w as i32, h as i32, 3, (w * 3) as i32)
+      .is_err()
+  {
+    return (String::new(), 0.0);
+  }
+  set_resolution(&tess, ppi);
+  let text = tess
+    .get_utf8_text()
+    .map(|t| t.trim().to_string())
+    .unwrap_or_default();
+  let conf = tess.mean_text_conf().unwrap_or(0) as f32;
+  (text, conf)
+}
+
+/// OCR a single DynamicImage and return extracted text. The OSD detector names the turn first when
+/// confident; otherwise the upright pass and the retry over the other turns decide.
+fn ocr_dynamic_image(img: &DynamicImage, lang: &str, ppi: i32) -> String {
+  let datapath = get_tessdata_prefix().unwrap_or("");
+  let mut tried: Vec<u32> = Vec::new();
+  let mut best: Option<(String, f32)> = None;
+  let mut consider = |degrees: u32, tried: &mut Vec<u32>| -> (bool, bool) {
+    tried.push(degrees);
+    let candidate = if degrees == 0 {
+      ocr_image_text(img, lang, ppi)
+    } else {
+      ocr_image_text(&rotate_image(img, degrees), lang, ppi)
+    };
+    if best.as_ref().is_none_or(|b| candidate.1 > b.1) {
+      best = Some(candidate);
+    }
+    let b = best.as_ref().expect("a pass was recorded");
+    (
+      !b.0.is_empty() && b.1 >= ROTATION_RETRY_CONFIDENCE,
+      upright_is_convincing(b.0.split_whitespace().count(), b.1),
+    )
+  };
+  let (upright_ok, convincing) = consider(0, &mut tried);
+  if convincing {
+    return best.expect("a pass was recorded").0;
+  }
+  if let Some(degrees) = pick_first_rotation(osd_rotation(img, datapath, Some(ppi)))
+    && degrees != 0
+    && consider(degrees, &mut tried).0
+  {
+    return best.expect("a pass was recorded").0;
+  }
+  if upright_ok {
+    return best.expect("a pass was recorded").0;
+  }
+  for degrees in ROTATIONS {
+    if !tried.contains(&degrees) && consider(degrees, &mut tried).0 {
+      break;
+    }
+  }
+  best.map(|b| b.0).unwrap_or_default()
+}
+
+/// OCR the page's rasters at the resolution their painted size implies.
+fn ocr_page_images(
+  doc: &Document,
+  page_id: ObjectId,
+  lang: &str,
+  placements: &[PlacedImage],
+) -> String {
+  let mut texts = Vec::new();
+  for (name, img) in collect_page_decoded_images_named(doc, page_id) {
+    let ppi = placements
+      .iter()
+      .find(|p| p.xobject_name == name)
+      .map(|p| source_ppi(img.width(), p.x1 - p.x0))
+      .unwrap_or(DEFAULT_SOURCE_PPI);
+    let text = ocr_dynamic_image(&img, lang, ppi);
+    if !text.is_empty() {
+      texts.push(text);
+    }
+  }
+  texts.join("\n")
+}
+
+// The render modes a caller passes. With the `render` feature they are `pdfdown`'s; without it
+// they are still accepted as parameters and ignored, so they are defined here.
+#[cfg(feature = "render")]
+pub use pdfdown::render::{RENDER_MODE_ALWAYS, RENDER_MODE_AUTO, RENDER_MODE_NEVER};
+
+#[cfg(not(feature = "render"))]
+pub const RENDER_MODE_AUTO: u8 = 0;
+#[cfg(not(feature = "render"))]
+pub const RENDER_MODE_NEVER: u8 = 1;
+#[cfg(not(feature = "render"))]
+pub const RENDER_MODE_ALWAYS: u8 = 2;
+
+/// Extract text with OCR fallback, with optional render tier.
+///
+/// `render_dpi` and `render_mode` are always accepted as params.
+/// When the `render` feature is disabled they are silently ignored.
+pub fn extract_text_with_ocr(
+  doc: &Document,
+  pdf_bytes: &[u8],
+  lang: &str,
+  min_len: u32,
+  max_threads: u32,
+  render_dpi: u32,
+  render_mode: u8,
+) -> Vec<OcrPageText> {
+  let pages = doc.get_pages();
+  let page_count_str = pages.len().to_string();
+  let page_entries: Vec<(u32, ObjectId)> = pages.iter().map(|(&k, &v)| (k, v)).collect();
+
+  let pool = get_ocr_pool(max_threads as usize);
+
+  #[cfg(feature = "render")]
+  let pdf_arc: Arc<Vec<u8>> = Arc::new(pdf_bytes.to_vec());
+  #[cfg(not(feature = "render"))]
+  let _ = (pdf_bytes, render_dpi, render_mode);
+  #[cfg(not(feature = "render"))]
+  let render_available = false;
+  #[cfg(feature = "render")]
+  let render_available = render_mode != RENDER_MODE_NEVER;
+
+  #[cfg(feature = "render")]
+  let token_count = |s: &str| s.split_whitespace().count();
+
+  let mut results: Vec<OcrPageText> = pool.install(|| {
+    page_entries
+      .par_iter()
+      .map(|&(page_num, page_id)| {
+        // Tier 1: native text; the routing decision is made on the page's geometry.
+        let raw = doc.extract_text(&[page_num]).unwrap_or_default();
+        let native = strip_footer_artifacts(&raw, &page_count_str);
+        let layout = page_layout(doc, page_num, page_id);
+        let path_ops = page_path_op_count(doc, page_id);
+        #[cfg(feature = "render")]
+        let outline = path_ops >= OUTLINE_PATH_OPS;
+        let geo = page_geometry(doc, page_id);
+        let decision = page_needs_ocr(&layout, min_len, path_ops, geo.bbox);
+
+        // Forced rendering replaces the page wholesale, as in the layout cascade; a render that
+        // read nothing falls through to the cascade and is not repeated by tier 3.
+        #[cfg(feature = "render")]
+        let mut rendered_already = false;
+        #[cfg(feature = "render")]
+        if render_mode == RENDER_MODE_ALWAYS
+          && let Some(rendered_text) = try_render_ocr_page(&pdf_arc, page_num, render_dpi, lang)
+        {
+          rendered_already = true;
+          if !rendered_text.is_empty() {
+            return OcrPageText {
+              page: page_num,
+              text: rendered_text,
+              source: TextSource::Rendered,
+            };
+          }
+        }
+
+        if decision == OcrDecision::Native {
+          return OcrPageText {
+            page: page_num,
+            text: native,
+            source: TextSource::Native,
+          };
+        }
+
+        // Tier 2: OCR extracted raster images
+        #[cfg_attr(not(feature = "render"), allow(unused_mut))]
+        let mut text = if decision == OcrDecision::Ocr {
+          ocr_page_images(doc, page_id, lang, &layout.images)
+        } else {
+          String::new()
+        };
+        #[cfg_attr(not(feature = "render"), allow(unused_mut))]
+        let mut source = TextSource::Ocr;
+
+        // Tier 3: render + OCR (render feature only). The text path carries no word boxes or
+        // confidences, so unlike the layout cascade a weak tier 2 is a token count, the render
+        // wins by token count rather than `ocr_score`, and the native stamp below is concatenated
+        // in front of the OCR text rather than deduplicated against it.
+        #[cfg(feature = "render")]
+        if render_available && !rendered_already {
+          let escalate = decision == OcrDecision::RenderOnly
+            || (outline && token_count(&text) < WEAK_TIER2_WORDS)
+            || (text.is_empty()
+              && (path_ops > 10
+                || page_has_form_xobjects(doc, page_id)
+                || page_has_image_xobjects(doc, page_id)));
+          if escalate
+            && let Some(rendered_text) = try_render_ocr_page(&pdf_arc, page_num, render_dpi, lang)
+            && token_count(&rendered_text) > token_count(&text)
+          {
+            text = rendered_text;
+            source = TextSource::Rendered;
+          }
+        }
+        let _ = render_available;
+
+        // Hybrid page: the native stamp stays in front of the OCR text.
+        let combined = match (native.trim().is_empty(), text.is_empty()) {
+          (true, _) => text,
+          (false, true) => native,
+          (false, false) => format!("{native}\n{text}"),
+        };
+        OcrPageText {
+          page: page_num,
+          text: combined,
+          source,
+        }
+      })
+      .collect()
+  });
+  results.sort_unstable_by_key(|r| r.page);
+  results
+}
+
+/// Render a page to an image and OCR the result.
+#[cfg(feature = "render")]
+fn try_render_ocr_page(pdf_bytes: &[u8], page_num: u32, dpi: u32, lang: &str) -> Option<String> {
+  if !render::is_pdfium_available() {
+    return None;
+  }
+  // page_num is 1-based, PDFium page index is 0-based
+  let page_index = (page_num - 1) as u16;
+  let img = render::render_page_to_image_from_bytes(pdf_bytes, page_index, dpi)?;
+  let text = ocr_dynamic_image(&img, lang, dpi as i32);
+  Some(text)
+}
+
+pub fn detect_headers_footers_ocr(pages: &[OcrPageText]) -> Vec<OcrStructuredPageText> {
+  let as_page_text: Vec<PageText> = pages
+    .iter()
+    .map(|p| PageText {
+      page: p.page,
+      text: p.text.clone(),
+    })
+    .collect();
+  let structured = detect_headers_footers(&as_page_text);
+  structured
+    .into_iter()
+    .zip(pages.iter())
+    .map(|(s, ocr)| OcrStructuredPageText {
+      page: s.page,
+      header: s.header,
+      body: s.body,
+      footer: s.footer,
+      source: ocr.source,
+    })
+    .collect()
+}
+
+// ── Positioned OCR (phase III) ──────────────────────────────────
+
+/// One Tesseract word in image pixel space (origin top-left).
+struct OcrWord {
+  text: String,
+  left: i32,
+  top: i32,
+  right: i32,
+  bottom: i32,
+  confidence: f32,
+}
+
+fn mean_confidence(words: &[OcrWord]) -> f32 {
+  if words.is_empty() {
+    0.0
+  } else {
+    words.iter().map(|w| w.confidence).sum::<f32>() / words.len() as f32
+  }
+}
+
+/// Word boxes in the frame where the text reads upright: the image as given, or rotated by the
+/// returned clockwise angle. The upright pass runs first and is final when it is convincing
+/// ([`OSD_SKIP_CONFIDENCE`]); otherwise the OSD detector names the turn to try next, and the blind
+/// retry over the remaining turns is the last resort. Boxes are in pixels of the rotated image,
+/// whose size is also returned, together with who decided.
+fn ocr_words_best_orientation(
+  img: &DynamicImage,
+  lang: &str,
+  ppi: Option<i32>,
+) -> (Vec<OcrWord>, u32, (u32, u32), OrientationSource) {
+  let datapath = get_tessdata_prefix().unwrap_or("");
+  let mut tried: Vec<u32> = Vec::new();
+  let mut best: Option<OrientedPass> = None;
+
+  let mut consider =
+    |degrees: u32, source: OrientationSource, tried: &mut Vec<u32>| -> (bool, bool) {
+      tried.push(degrees);
+      let (words, dims) = if degrees == 0 {
+        (
+          ocr_dynamic_image_words(img, lang, ppi),
+          (img.width(), img.height()),
+        )
+      } else {
+        let rotated = rotate_image(img, degrees);
+        (
+          ocr_dynamic_image_words(&rotated, lang, ppi),
+          (rotated.width(), rotated.height()),
+        )
+      };
+      let confidence = mean_confidence(&words);
+      if best.as_ref().is_none_or(|b| confidence > b.confidence) {
+        best = Some(OrientedPass {
+          words,
+          degrees,
+          dims,
+          confidence,
+          source,
+        });
+      }
+      let b = best.as_ref().expect("a pass was recorded");
+      (
+        !b.words.is_empty() && b.confidence >= ROTATION_RETRY_CONFIDENCE,
+        upright_is_convincing(b.words.len(), b.confidence),
+      )
+    };
+
+  // Upright first: a convincing read needs no detector.
+  let (upright_ok, convincing) = consider(0, OrientationSource::Upright, &mut tried);
+  if convincing {
+    let b = best.expect("a pass was recorded");
+    return (b.words, b.degrees, b.dims, b.source);
+  }
+  // Not convincing: ask the detector which turn to try before the blind retry.
+  if let Some(degrees) = pick_first_rotation(osd_rotation(img, datapath, ppi))
+    && degrees != 0
+    && consider(degrees, OrientationSource::Osd, &mut tried).0
+  {
+    let b = best.expect("a pass was recorded");
+    return (b.words, b.degrees, b.dims, b.source);
+  }
+  // An acceptable upright read that the detector did not overturn stands; the blind retry is only
+  // for pages nothing has read well yet.
+  if upright_ok {
+    let b = best.expect("a pass was recorded");
+    return (b.words, b.degrees, b.dims, b.source);
+  }
+  for degrees in ROTATIONS {
+    if tried.contains(&degrees) {
+      continue;
+    }
+    if consider(degrees, OrientationSource::Retry, &mut tried).0 {
+      break;
+    }
+  }
+  let b = best.expect("at least the upright pass ran");
+  (b.words, b.degrees, b.dims, b.source)
+}
+
+/// OCR an image and return every recognized word with its pixel box.
+fn ocr_dynamic_image_words(img: &DynamicImage, lang: &str, ppi: Option<i32>) -> Vec<OcrWord> {
+  use tesseract_rs::TessPageIteratorLevel;
+
+  let datapath = get_tessdata_prefix().unwrap_or("");
+  let rgb = img.to_rgb8();
+  let (w, h) = rgb.dimensions();
+  let pixels = rgb.as_raw();
+
+  let tess = tesseract_rs::TesseractAPI::new();
+  if tess.init(datapath, lang).is_err()
+    || tess
+      .set_image(pixels, w as i32, h as i32, 3, (w * 3) as i32)
+      .is_err()
+  {
+    return Vec::new();
+  }
+  set_resolution(&tess, ppi.unwrap_or(DEFAULT_SOURCE_PPI));
+  if tess.recognize().is_err() {
+    return Vec::new();
+  }
+  let Ok(it) = tess.get_iterator() else {
+    return Vec::new();
+  };
+  let mut out = Vec::new();
+  loop {
+    if let Ok((text, left, top, right, bottom, confidence)) = it.get_word_with_bounds()
+      && !text.trim().is_empty()
+    {
+      out.push(OcrWord {
+        text: text.trim().to_string(),
+        left,
+        top,
+        right,
+        bottom,
+        confidence,
+      });
+    }
+    match it.next(TessPageIteratorLevel::RIL_WORD) {
+      Ok(true) => continue,
+      _ => break,
+    }
+  }
+  out
+}
+
+/// Map pixel boxes of an image of `img_w`×`img_h` pixels onto the user-space
+/// rectangle `dest = [x0, y0, x1, y1]` the image covers (y up).
+fn map_ocr_words(words: Vec<OcrWord>, img_w: u32, img_h: u32, dest: [f64; 4]) -> Vec<Word> {
+  let (iw, ih) = (f64::from(img_w.max(1)), f64::from(img_h.max(1)));
+  let (dw, dh) = (dest[2] - dest[0], dest[3] - dest[1]);
+  words
+    .into_iter()
+    .map(|w| {
+      let x0 = dest[0] + f64::from(w.left) / iw * dw;
+      let x1 = dest[0] + f64::from(w.right) / iw * dw;
+      let y1 = dest[1] + (1.0 - f64::from(w.top) / ih) * dh;
+      let y0 = dest[1] + (1.0 - f64::from(w.bottom) / ih) * dh;
+      Word {
+        text: w.text,
+        x0,
+        y0,
+        x1,
+        y1,
+        baseline: y0,
+        font_size: None,
+        font: None,
+        confidence: Some((f64::from(w.confidence) / 100.0).clamp(0.0, 1.0)),
+      }
+    })
+    .collect()
+}
+
+/// A box in a raster that was turned `degrees` clockwise (now `rotated_w` × `rotated_h` pixels),
+/// mapped back onto the raster as painted. Boxes are `[left, top, right, bottom]`, y down.
+fn unrotate_pixel_box(b: [i32; 4], degrees: u32, rotated_w: i32, rotated_h: i32) -> [i32; 4] {
+  let [l, t, r, bt] = b;
+  match degrees {
+    90 => [t, rotated_w - r, bt, rotated_w - l],
+    270 => [rotated_h - bt, l, rotated_h - t, r],
+    180 => [rotated_w - r, rotated_h - bt, rotated_w - l, rotated_h - t],
+    _ => b,
+  }
+}
+
+/// A user-space box re-expressed in the page frame turned `degrees` clockwise about the page
+/// box `bbox`: the box origin is kept and, for quarter turns, width and height swap.
+fn turn_box(b: [f64; 4], degrees: u32, bbox: [f64; 4]) -> [f64; 4] {
+  let [bx0, by0, bx1, by1] = bbox;
+  let (w, h) = (bx1 - bx0, by1 - by0);
+  let (x0, y0, x1, y1) = (b[0] - bx0, b[1] - by0, b[2] - bx0, b[3] - by0);
+  match degrees {
+    90 => [bx0 + y0, by0 + (w - x1), bx0 + y1, by0 + (w - x0)],
+    270 => [bx0 + (h - y1), by0 + x0, bx0 + (h - y0), by0 + x1],
+    180 => [
+      bx0 + (w - x1),
+      by0 + (h - y1),
+      bx0 + (w - x0),
+      by0 + (h - y0),
+    ],
+    _ => b,
+  }
+}
+
+/// The page's turn is the one carrying the most confident OCR text, summed over the images that
+/// read upright at it (`ocr_score` per image), so the tiles of a tiled scan vote together and one
+/// tile a retry turned cannot outvote them. Ties keep the turn seen first.
+fn dominant_rotation(per_image: &[(u32, f64)]) -> u32 {
+  let mut totals: Vec<(u32, f64)> = Vec::new();
+  for &(degrees, score) in per_image {
+    match totals.iter_mut().find(|(d, _)| *d == degrees) {
+      Some((_, total)) => *total += score,
+      None => totals.push((degrees, score)),
+    }
+  }
+  totals
+    .iter()
+    .fold(None::<(u32, f64)>, |best, &(degrees, total)| match best {
+      Some((_, best_total)) if best_total >= total => best,
+      _ => Some((degrees, total)),
+    })
+    .map(|(degrees, _)| degrees)
+    .unwrap_or(0)
+}
+
+/// Express every word and image placement in the page frame turned `degrees` clockwise.
+/// Baselines follow the turned box's bottom edge: a turned frame has no font baseline to keep.
+fn turn_layout(words: &mut [Word], images: &mut [PlacedImage], degrees: u32, bbox: [f64; 4]) {
+  if degrees == 0 {
+    return;
+  }
+  for w in words.iter_mut() {
+    let b = turn_box([w.x0, w.y0, w.x1, w.y1], degrees, bbox);
+    w.x0 = b[0];
+    w.y0 = b[1];
+    w.x1 = b[2];
+    w.y1 = b[3];
+    w.baseline = b[1];
+  }
+  for i in images.iter_mut() {
+    let b = turn_box([i.x0, i.y0, i.x1, i.y1], degrees, bbox);
+    i.x0 = b[0];
+    i.y0 = b[1];
+    i.x1 = b[2];
+    i.y1 = b[3];
+  }
+}
+
+/// Word boxes from a turned raster, mapped back onto the raster as painted.
+fn words_in_painted_raster(
+  words: Vec<OcrWord>,
+  degrees: u32,
+  rotated_w: u32,
+  rotated_h: u32,
+) -> Vec<OcrWord> {
+  words
+    .into_iter()
+    .map(|w| {
+      let [left, top, right, bottom] = unrotate_pixel_box(
+        [w.left, w.top, w.right, w.bottom],
+        degrees,
+        rotated_w as i32,
+        rotated_h as i32,
+      );
+      OcrWord {
+        left,
+        top,
+        right,
+        bottom,
+        ..w
+      }
+    })
+    .collect()
+}
+
+/// Tier 2: OCR the page's embedded raster images and place each word through the image's `Do`
+/// placement from the native pass, in the frame as painted. Returns the words and the page's
+/// dominant turn; the caller turns the whole page frame by it.
+fn ocr_page_image_words(
+  doc: &Document,
+  page_id: ObjectId,
+  lang: &str,
+  placements: &[PlacedImage],
+  warnings: &mut Vec<String>,
+) -> (Vec<Word>, u32) {
+  let mut per_image: Vec<(String, Vec<Word>, u32, f64)> = Vec::new();
+  for (name, img) in collect_page_decoded_images_named(doc, page_id) {
+    let placed: Vec<&PlacedImage> = placements
+      .iter()
+      .filter(|p| p.xobject_name == name)
+      .collect();
+    let Some(first) = placed.first() else {
+      warnings.push(format!(
+        "image {name}: no placement found; its OCR words were skipped"
+      ));
+      continue;
+    };
+    if placed.len() > 1 {
+      warnings.push(format!(
+        "image {name}: painted {} times; OCR words use the first placement",
+        placed.len()
+      ));
+    }
+    let ppi = source_ppi(img.width(), first.x1 - first.x0);
+    let (words, degrees, (rw, rh), decided) = ocr_words_best_orientation(&img, lang, Some(ppi));
+    let painted = words_in_painted_raster(words, degrees, rw, rh);
+    let mapped = map_ocr_words(
+      painted,
+      img.width(),
+      img.height(),
+      [first.x0, first.y0, first.x1, first.y1],
+    );
+    // A logo or rule that OCR read as a word or two (fewer than WEAK_TIER2_WORDS) has no
+    // orientation worth reporting.
+    if degrees != 0 && mapped.len() >= WEAK_TIER2_WORDS {
+      warnings.push(format!(
+        "image {name}: {} words read upright after a {degrees}° turn ({})",
+        mapped.len(),
+        decided.label()
+      ));
+    }
+    let score = ocr_score(&mapped);
+    per_image.push((name, mapped, degrees, score));
+  }
+  // An image that read as a word or two is no evidence of the page's turn; it does not vote.
+  let votes: Vec<(u32, f64)> = per_image
+    .iter()
+    .filter(|(_, words, _, _)| words.len() >= WEAK_TIER2_WORDS)
+    .map(|(_, _, degrees, score)| (*degrees, *score))
+    .collect();
+  let dominant = dominant_rotation(&votes);
+  let mut out = Vec::new();
+  for (name, words, degrees, _) in per_image {
+    if degrees != dominant && words.len() >= WEAK_TIER2_WORDS {
+      warnings.push(format!(
+        "image {name}: {} words read upright at {degrees}° but the page frame is turned {dominant}°; they read sideways in it",
+        words.len()
+      ));
+    }
+    out.extend(words);
+  }
+  (out, dominant)
+}
+
+/// Tier-3 words from the rendered raster (the page as displayed, `/Rotate` applied, turned
+/// `degrees` more to read upright), mapped back onto the page box in the page's own frame, the
+/// frame native words use. The content's turn from that frame is `/Rotate` plus `degrees`.
+#[cfg_attr(not(feature = "render"), allow(dead_code))]
+fn place_rendered_words(
+  words: Vec<OcrWord>,
+  degrees: u32,
+  turned_dims: (u32, u32),
+  geo: &PageGeometry,
+) -> (Vec<Word>, u32) {
+  let quarter = |d: u32| d == 90 || d == 270;
+  let (tw, th) = turned_dims;
+  // back to the raster as rendered …
+  let displayed = words_in_painted_raster(words, degrees, tw, th);
+  let (dw, dh) = if quarter(degrees) { (th, tw) } else { (tw, th) };
+  // … then to the page as painted, undoing /Rotate
+  let painted = words_in_painted_raster(displayed, geo.rotate, dw, dh);
+  let (pw, ph) = if quarter(geo.rotate) {
+    (dh, dw)
+  } else {
+    (dw, dh)
+  };
+  (
+    map_ocr_words(painted, pw, ph, geo.bbox),
+    (geo.rotate + degrees) % 360,
+  )
+}
+
+/// Tier 3: rasterize the page as displayed and place each OCR word on the page box in the page's
+/// own frame; the caller turns the page frame by `rotation`, which includes `/Rotate`.
+#[cfg(feature = "render")]
+fn render_page_words(
+  pdf_bytes: &[u8],
+  page_num: u32,
+  dpi: u32,
+  lang: &str,
+  geo: &PageGeometry,
+  rotation: &mut u32,
+  warnings: &mut Vec<String>,
+) -> Option<Vec<Word>> {
+  if !render::is_pdfium_available() {
+    return None;
+  }
+  let page_index = (page_num - 1) as u16;
+  let img = render::render_page_to_image_from_bytes(pdf_bytes, page_index, dpi)?;
+  let (words, degrees, turned_dims, decided) =
+    ocr_words_best_orientation(&img, lang, Some(dpi as i32));
+  if degrees != 0 {
+    warnings.push(format!(
+      "page {page_num}: text reads upright after a {degrees}° turn ({})",
+      decided.label()
+    ));
+  }
+  let (placed, content_rotation) = place_rendered_words(words, degrees, turned_dims, geo);
+  *rotation = content_rotation;
+  Some(placed)
+}
+
+fn finish_ocr_layout(
+  mut layout: PageLayout,
+  words: Vec<Word>,
+  fonts: &[FontMeta],
+  source: TextSource,
+  rotation: u32,
+) -> PageLayout {
+  let (words, lines) = words_to_lines(words, fonts);
+  layout.words = words;
+  layout.lines = lines;
+  layout.source = source;
+  layout.content_rotation = rotation;
+  if rotation == 90 || rotation == 270 {
+    std::mem::swap(&mut layout.width, &mut layout.height);
+  }
+  layout
+}
+
+/// Where a page goes in the OCR cascade.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OcrDecision {
+  /// Native glyphs are the page: no OCR.
+  Native,
+  /// OCR the embedded rasters (tier 2), escalating to the render tier when weak.
+  Ocr,
+  /// No glyphs and no rasters but painted paths ("print as paths"): only the render tier can read it.
+  RenderOnly,
+}
+
+/// Native words covering less than this share of the page do not prove the page readable…
+const OCR_WORD_COVERAGE_MAX: f64 = 0.02;
+/// …when image placements cover more than this share: that is a scan with a stamp on it.
+const OCR_IMAGE_COVERAGE_MIN: f64 = 0.5;
+/// Pages carrying at least this many path operators are text printed as outlines (or dense
+/// drawings): not readable from glyphs, and only the render tier can read the paths.
+const OUTLINE_PATH_OPS: usize = 200;
+/// A tier-2 result this thin on a page with painted paths is escalated to the render tier.
+const WEAK_TIER2_WORDS: usize = 3;
+const WEAK_TIER2_CONFIDENCE: f64 = 0.3;
+
+fn clipped_area(b: [f64; 4], bbox: [f64; 4]) -> f64 {
+  let w = b[2].min(bbox[2]) - b[0].max(bbox[0]);
+  let h = b[3].min(bbox[3]) - b[1].max(bbox[1]);
+  if w <= 0.0 || h <= 0.0 { 0.0 } else { w * h }
+}
+
+/// Share of the page box `bbox` covered by `boxes` (clipped to it; overlaps count twice). Boxes are
+/// raw user space, so a CropBox away from the origin must be clipped against, not an origin box.
+fn coverage(boxes: impl Iterator<Item = [f64; 4]>, bbox: [f64; 4]) -> f64 {
+  let page = ((bbox[2] - bbox[0]) * (bbox[3] - bbox[1])).max(1.0);
+  boxes.map(|b| clipped_area(b, bbox)).sum::<f64>() / page
+}
+
+/// Decide by coverage, not by character count alone: a scanned page with a few stamped native
+/// characters is still a scan, an outline-text page with a logo and a stamp is not readable
+/// natively, and a sparse cover sheet without rasters or heavy paths is still native.
+pub(crate) fn page_needs_ocr(
+  native: &PageLayout,
+  min_len: u32,
+  path_ops: usize,
+  bbox: [f64; 4],
+) -> OcrDecision {
+  let outline = path_ops >= OUTLINE_PATH_OPS;
+  if native.words.is_empty() && native.images.is_empty() {
+    return if outline {
+      OcrDecision::RenderOnly
+    } else {
+      OcrDecision::Ocr
+    };
+  }
+  if non_ws_chars(native) < min_len as usize {
+    return OcrDecision::Ocr;
+  }
+  let words = coverage(native.words.iter().map(|w| [w.x0, w.y0, w.x1, w.y1]), bbox);
+  let images = coverage(native.images.iter().map(|i| [i.x0, i.y0, i.x1, i.y1]), bbox).min(1.0);
+  if words < OCR_WORD_COVERAGE_MAX && (images > OCR_IMAGE_COVERAGE_MIN || outline) {
+    OcrDecision::Ocr
+  } else {
+    OcrDecision::Native
+  }
+}
+
+fn intersection_over_union(a: &Word, b: &Word) -> f64 {
+  let ix = (a.x1.min(b.x1) - a.x0.max(b.x0)).max(0.0);
+  let iy = (a.y1.min(b.y1) - a.y0.max(b.y0)).max(0.0);
+  let inter = ix * iy;
+  let union = (a.x1 - a.x0) * (a.y1 - a.y0) + (b.x1 - b.x0) * (b.y1 - b.y0) - inter;
+  if union <= 0.0 { 0.0 } else { inter / union }
+}
+
+/// Native words first, then every OCR word that does not sit on a native word (IoU > 0.5 is the
+/// same word read twice). Returns the merged words and how many OCR words were dropped.
+pub(crate) fn merge_native_and_ocr(native: Vec<Word>, ocr: Vec<Word>) -> (Vec<Word>, usize) {
+  let mut out = native;
+  let native_count = out.len();
+  let mut dropped = 0usize;
+  for w in ocr {
+    if out[..native_count]
+      .iter()
+      .any(|n| intersection_over_union(n, &w) > 0.5)
+    {
+      dropped += 1;
+    } else {
+      out.push(w);
+    }
+  }
+  (out, dropped)
+}
+
+fn ocr_score(words: &[Word]) -> f64 {
+  if words.is_empty() {
+    return 0.0;
+  }
+  let mean = words
+    .iter()
+    .map(|w| w.confidence.unwrap_or(0.0))
+    .sum::<f64>()
+    / words.len() as f64;
+  words.len() as f64 * mean
+}
+
+fn tier2_is_weak(words: &[Word]) -> bool {
+  if words.len() < WEAK_TIER2_WORDS {
+    return true;
+  }
+  let mean = words
+    .iter()
+    .map(|w| w.confidence.unwrap_or(0.0))
+    .sum::<f64>()
+    / words.len() as f64;
+  mean < WEAK_TIER2_CONFIDENCE
+}
+
+fn non_ws_chars(layout: &PageLayout) -> usize {
+  layout
+    .words
+    .iter()
+    .map(|w| w.text.chars().filter(|c| !c.is_whitespace()).count())
+    .sum()
+}
+
+/// Positioned text with the same three-tier cascade as [`extract_text_with_ocr`]:
+/// native glyph placement, then OCR of embedded images mapped through their
+/// placements, then (with `render`) OCR of the rasterized page.
+/// `only_pages` lists the 1-based pages the cascade may OCR; pages off the list come back as
+/// their native layout untouched, and `None` means every page.
+#[allow(clippy::too_many_arguments)]
+pub fn extract_layout_with_ocr(
+  doc: &Document,
+  pdf_bytes: &[u8],
+  lang: &str,
+  min_len: u32,
+  max_threads: u32,
+  render_dpi: u32,
+  render_mode: u8,
+  only_pages: Option<&[u32]>,
+) -> Vec<PageLayout> {
+  let pages = doc.get_pages();
+  let page_entries: Vec<(u32, ObjectId)> = pages.iter().map(|(&k, &v)| (k, v)).collect();
+  let pool = get_ocr_pool(max_threads as usize);
+
+  #[cfg(feature = "render")]
+  let pdf_arc: Arc<Vec<u8>> = Arc::new(pdf_bytes.to_vec());
+  #[cfg(not(feature = "render"))]
+  let _ = (pdf_bytes, render_dpi, render_mode);
+  #[cfg(not(feature = "render"))]
+  let render_available = false;
+  #[cfg(feature = "render")]
+  let render_available = render_mode != RENDER_MODE_NEVER;
+
+  let mut results: Vec<PageLayout> = pool.install(|| {
+    page_entries
+      .par_iter()
+      .map(|&(page_num, page_id)| {
+        if let Some(list) = only_pages
+          && !list.contains(&page_num)
+        {
+          return native_layout(doc, page_num, page_id).layout;
+        }
+        // Tier 1: native glyph placement (also yields image placements for tier 2).
+        let NativeLayout {
+          layout: native,
+          words: native_words,
+          fonts,
+        } = native_layout(doc, page_num, page_id);
+        let mut warnings = Vec::new();
+        let mut rotation = 0u32;
+        let path_ops = page_path_op_count(doc, page_id);
+        let outline = path_ops >= OUTLINE_PATH_OPS;
+
+        let geo = page_geometry(doc, page_id);
+        let mut native = native;
+
+        // Forced rendering replaces the page wholesale; the hybrid merge below is for the cascade.
+        // A render that read nothing leaves no trace and is not repeated by tier 3.
+        #[cfg(feature = "render")]
+        let mut rendered_already = false;
+        #[cfg(feature = "render")]
+        if render_mode == RENDER_MODE_ALWAYS {
+          let mut forced_rotation = 0u32;
+          let mut forced_warnings = Vec::new();
+          if let Some(mut words) = render_page_words(
+            &pdf_arc,
+            page_num,
+            render_dpi,
+            lang,
+            &geo,
+            &mut forced_rotation,
+            &mut forced_warnings,
+          ) {
+            rendered_already = true;
+            if !words.is_empty() {
+              warnings.extend(forced_warnings);
+              turn_layout(&mut words, &mut native.images, forced_rotation, geo.bbox);
+              let mut out =
+                finish_ocr_layout(native, words, &[], TextSource::Rendered, forced_rotation);
+              out.warnings.extend(warnings);
+              return out;
+            }
+            warnings.push(format!(
+              "page {page_num}: forced render read no words; the cascade decided the page"
+            ));
+          }
+        }
+
+        let decision = page_needs_ocr(&native, min_len, path_ops, geo.bbox);
+        if decision == OcrDecision::Native {
+          return native;
+        }
+
+        // Tier 2: OCR embedded raster images.
+        #[cfg_attr(not(feature = "render"), allow(unused_mut))]
+        let mut ocr_words = if decision == OcrDecision::Ocr {
+          let (words, dominant) =
+            ocr_page_image_words(doc, page_id, lang, &native.images, &mut warnings);
+          rotation = dominant;
+          words
+        } else {
+          Vec::new()
+        };
+        #[cfg_attr(not(feature = "render"), allow(unused_mut))]
+        let mut source = TextSource::Ocr;
+
+        // Tier 3: render + OCR for outline text, weak tier-2 results on path-heavy pages, and
+        // rasters tier 2 could not decode.
+        #[cfg(feature = "render")]
+        if render_available {
+          let escalate = decision == OcrDecision::RenderOnly
+            || (outline && tier2_is_weak(&ocr_words))
+            || (ocr_words.is_empty()
+              && (path_ops > 10
+                || page_has_form_xobjects(doc, page_id)
+                || page_has_image_xobjects(doc, page_id)));
+          if escalate && !rendered_already {
+            let mut render_rotation = 0u32;
+            let mut render_warnings = Vec::new();
+            if let Some(rendered) = render_page_words(
+              &pdf_arc,
+              page_num,
+              render_dpi,
+              lang,
+              &geo,
+              &mut render_rotation,
+              &mut render_warnings,
+            ) && ocr_score(&rendered) > ocr_score(&ocr_words)
+            {
+              if !ocr_words.is_empty() {
+                warnings.push(format!(
+                  "page {page_num}: rendered page replaced {} weak tier-2 words",
+                  ocr_words.len()
+                ));
+              }
+              ocr_words = rendered;
+              rotation = render_rotation;
+              warnings.extend(render_warnings);
+              source = TextSource::Rendered;
+            }
+          }
+        }
+        if outline && !render_available && (decision == OcrDecision::RenderOnly || tier2_is_weak(&ocr_words)) {
+          warnings.push(format!(
+            "page {page_num}: {path_ops} path operators paint text as outlines; only the render tier can read them"
+          ));
+        }
+
+        // Hybrid page: native words are real evidence and stay; OCR adds what they do not cover.
+        let native_count = native_words.len();
+        let (merged, dropped) = merge_native_and_ocr(native_words, ocr_words);
+        if merged.is_empty() {
+          warnings.push(format!("page {page_num}: OCR found no words"));
+        }
+        if native_count > 0 {
+          if merged.len() > native_count {
+            warnings.push(format!(
+              "page {page_num}: {native_count} native words kept alongside OCR ({dropped} duplicates dropped)"
+            ));
+          } else {
+            warnings.push(format!(
+              "page {page_num}: OCR found no new words; {native_count} native words kept"
+            ));
+          }
+        }
+        let mut merged = merged;
+        turn_layout(&mut merged, &mut native.images, rotation, geo.bbox);
+        let mut out = finish_ocr_layout(native, merged, &fonts, source, rotation);
+        out.warnings.extend(warnings);
+        out
+      })
+      .collect()
+  });
+  results.sort_unstable_by_key(|r| r.page);
+  results
+}
+
+#[cfg(test)]
+mod layout_tests;
+
+#[cfg(test)]
+mod cascade_tests;
+
+#[cfg(test)]
+mod resolution_tests;
+
+#[cfg(test)]
+mod page_filter_tests;
+
+#[cfg(test)]
+mod osd_tests;
+
+#[cfg(test)]
+mod frame_tests;

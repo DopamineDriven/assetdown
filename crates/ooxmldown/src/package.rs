@@ -124,7 +124,7 @@ fn rels_base(rels_path: &str) -> &str {
     .unwrap_or("")
 }
 
-/// Join a relationship target onto its base and normalise `.` and `..`; a leading `/` is absolute.
+/// Join a relationship target onto its base and normalize `.` and `..`; a leading `/` is absolute.
 fn resolve_target(base: &str, target: &str) -> String {
   let joined = match target.strip_prefix('/') {
     Some(absolute) => absolute.to_string(),

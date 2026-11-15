@@ -1,0 +1,26 @@
+[package]
+description = "convenient pdf/ocr helpers; a superset of pdfdown"
+edition.workspace = true
+keywords = [
+  "pdf",
+  "extraction",
+  "metadata",
+  "images",
+  "annots",
+  "ocr",
+  "rendering"
+]
+license = { workspace = true }
+name = "pdfdown-ocr"
+repository.workspace = true
+version = "0.13.0"
+[dependencies]
+contentdown.workspace  = true
+image.workspace        = true
+lopdf.workspace        = true
+pdfdown.workspace      = true
+pdfdown-meta.workspace = true
+rayon.workspace        = true
+tesseract-rs.workspace = true
+[features]
+render = ["pdfdown/render"]

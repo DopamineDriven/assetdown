@@ -51,7 +51,7 @@ pub(crate) fn row_index(digits: &str) -> Option<u32> {
 }
 
 /// A 0-based column to its letters: 0 is `A`, 26 is `AA`.
-pub(crate) fn column_letters(col: u32) -> String {
+pub fn column_letters(col: u32) -> String {
   let mut letters = Vec::new();
   let mut n = u64::from(col) + 1;
   while n > 0 {

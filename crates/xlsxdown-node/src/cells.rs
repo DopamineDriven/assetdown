@@ -1,8 +1,16 @@
 //! `xlsxdown`'s workbook model to the cells JavaScript sees.
 
-use xlsxdown::{Cell, CellRange, CellValue, Workbook, cell_ref, sheet_geometry};
+use std::collections::BTreeMap;
 
-use crate::types::{CellBox, CellCommon, NumberSubtype, SheetCell, SheetCells, SpreadsheetOptions};
+use xlsxdown::{
+  Cell, CellRange, CellValue, Sheet, SheetGeometry, Workbook, cell_ref, column_letters,
+  sheet_geometry,
+};
+
+use crate::types::{
+  CellBox, CellCommon, ColumnKey, NumberSubtype, SheetCell, SheetCells, SheetGrid,
+  SpreadsheetOptions,
+};
 
 /// The largest whole number a JavaScript number holds exactly: 2^53.
 const MAX_EXACT_INTEGER: f64 = 9_007_199_254_740_992.0;
@@ -15,17 +23,8 @@ pub(crate) fn cells_of(workbook: &Workbook, opts: &SpreadsheetOptions) -> Vec<Sh
     .into_iter()
     .map(|sheet| {
       let geometry = sheet_geometry(sheet, &workbook.styles, hidden_cells);
-      let cells = sheet
-        .cells
-        .iter()
-        .filter_map(|(&(row, col), cell)| {
-          let hidden = sheet.row_hidden(row) || sheet.col_hidden(col);
-          if hidden && !hidden_cells {
-            return None;
-          }
-          let rectangle = geometry.boxes.get(&(row, col)).copied().unwrap_or_default();
-          Some(public_cell(row, col, cell, hidden, rectangle.into()))
-        })
+      let cells = sheet_cells(sheet, &geometry, hidden_cells)
+        .map(|(_, _, cell)| cell)
         .collect();
       SheetCells {
         sheet: sheet.name.clone(),
@@ -45,6 +44,55 @@ pub(crate) fn cells_of(workbook: &Workbook, opts: &SpreadsheetOptions) -> Vec<Sh
       }
     })
     .collect()
+}
+
+/// The cells of the sheets `opts` selects, keyed by row number and then column letters.
+pub(crate) fn grid_of(workbook: &Workbook, opts: &SpreadsheetOptions) -> Vec<SheetGrid> {
+  let hidden_cells = opts.hidden_cells.unwrap_or(true);
+  workbook
+    .selected_sheets(opts.sheets.as_deref(), opts.hidden_sheets.unwrap_or(false))
+    .into_iter()
+    .map(|sheet| {
+      let geometry = sheet_geometry(sheet, &workbook.styles, hidden_cells);
+      let mut rows: BTreeMap<String, BTreeMap<ColumnKey, SheetCell>> = BTreeMap::new();
+      for (row, col, cell) in sheet_cells(sheet, &geometry, hidden_cells) {
+        rows
+          .entry((u64::from(row) + 1).to_string())
+          .or_default()
+          .insert(ColumnKey(column_letters(col)), cell);
+      }
+      SheetGrid {
+        sheet: sheet.name.clone(),
+        index: sheet.index,
+        hidden: sheet.hidden,
+        dimension: sheet.dimension.map(|d| d.a1()),
+        merges: sheet.merges.iter().map(CellRange::a1).collect(),
+        warnings: sheet.warnings.clone(),
+        rows,
+      }
+    })
+    .collect()
+}
+
+/// A sheet's cells as JavaScript sees them, with their 0-based row and column, in sheet order.
+/// Cells of hidden rows and columns are left out unless `hidden_cells` is set.
+fn sheet_cells<'a>(
+  sheet: &'a Sheet,
+  geometry: &'a SheetGeometry,
+  hidden_cells: bool,
+) -> impl Iterator<Item = (u32, u32, SheetCell)> + 'a {
+  sheet.cells.iter().filter_map(move |(&(row, col), cell)| {
+    let hidden = sheet.row_hidden(row) || sheet.col_hidden(col);
+    if hidden && !hidden_cells {
+      return None;
+    }
+    let rectangle = geometry.boxes.get(&(row, col)).copied().unwrap_or_default();
+    Some((
+      row,
+      col,
+      public_cell(row, col, cell, hidden, rectangle.into()),
+    ))
+  })
 }
 
 /// Whole numbers JavaScript holds exactly are integers; everything else is a float.

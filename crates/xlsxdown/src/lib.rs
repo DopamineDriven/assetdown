@@ -11,13 +11,15 @@ mod error;
 mod format;
 mod formula;
 pub mod geometry;
+pub mod layout;
 mod workbook;
 
-pub use address::{CellRange, MAX_COLS, MAX_ROWS, cell_ref, parse_cell_ref};
+pub use address::{CellRange, MAX_COLS, MAX_ROWS, cell_ref, column_letters, parse_cell_ref};
 pub use error::SpreadsheetError;
 pub use geometry::{
   CellBox, SheetColumn, SheetGeometry, SheetRow, column_width_points, sheet_geometry,
 };
+pub use layout::{SheetLayout, sheet_layout};
 pub use workbook::{
   Cell, CellValue, ColSpec, FontSpec, Horizontal, MAX_CELLS, MAX_EXPANDED_FORMULA_BYTES,
   MAX_FORMULA_CHARS, MAX_MERGES, RowSpec, Sheet, Styles, Vertical, Workbook, Xf, format_code,

@@ -22,6 +22,7 @@ on:
       - crates/xlsxdown-node/**
       - crates/xlsxdown/**
       - crates/ooxmldown/**
+      - crates/contentdown/**
       - Cargo.toml
       - Cargo.lock
       - .github/workflows/xlsxdown-node.yml
@@ -32,6 +33,7 @@ on:
       - crates/xlsxdown-node/**
       - crates/xlsxdown/**
       - crates/ooxmldown/**
+      - crates/contentdown/**
       - Cargo.toml
       - Cargo.lock
       - .github/workflows/xlsxdown-node.yml
@@ -75,12 +77,14 @@ jobs:
           components: clippy
       - name: Oxlint
         run: yarn lint
+      # pdfdown-ocr links the system Tesseract, which this job does not install; the
+      # pdfdown-node workflow lints and tests it.
       - name: Clippy
         working-directory: .
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --exclude pdfdown-ocr --all-targets -- -D warnings
       - name: Rust tests
         working-directory: .
-        run: cargo test --workspace
+        run: cargo test --workspace --exclude pdfdown-ocr
   build:
     needs: plan
     strategy:

@@ -6,6 +6,9 @@
 //! `...Async` form that does its work on the libuv thread pool.
 
 mod cells;
+// Public so its enums keep the spellings JavaScript sees (`UBL`, `DMY`) without a lint exception.
+pub mod invoice;
+mod layout;
 mod types;
 
 use std::sync::Arc;
@@ -15,8 +18,10 @@ use napi::{Env, Task};
 use napi_derive::napi;
 use xlsxdown::{SpreadsheetError, Workbook};
 
-use crate::cells::cells_of;
-use crate::types::{SheetCells, SpreadsheetOptions};
+use crate::cells::{cells_of, grid_of};
+use crate::invoice::{InvoiceOptions, InvoiceResult};
+use crate::layout::{SheetPage, pages_of};
+use crate::types::{SheetCells, SheetGrid, SpreadsheetOptions};
 
 // A parsed workbook is handed to worker threads behind an `Arc`.
 const _: () = {
@@ -94,6 +99,66 @@ impl Task for SpreadsheetCellsTask {
   }
 }
 
+/// Keys the workbook an `XlsxDown` holds by row and column, for its `spreadsheetGridAsync`.
+pub struct SharedGridTask {
+  inner: Arc<Workbook>,
+  opts: SpreadsheetOptions,
+}
+
+#[napi]
+impl Task for SharedGridTask {
+  type Output = Vec<SheetGrid>;
+  type JsValue = Vec<SheetGrid>;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    Ok(grid_of(&self.inner, &self.opts))
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output)
+  }
+}
+
+/// Lays out the sheets of the workbook an `XlsxDown` holds, for its `layoutAsync`.
+pub struct SharedLayoutTask {
+  inner: Arc<Workbook>,
+  opts: SpreadsheetOptions,
+}
+
+#[napi]
+impl Task for SharedLayoutTask {
+  type Output = Vec<SheetPage>;
+  type JsValue = Vec<SheetPage>;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    Ok(pages_of(&self.inner, &self.opts))
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output)
+  }
+}
+
+/// Reads invoice fields from the workbook an `XlsxDown` holds, for its `invoiceAsync`.
+pub struct SharedInvoiceTask {
+  inner: Arc<Workbook>,
+  opts: Option<contentdown::invoice::InvoiceOptions>,
+}
+
+#[napi]
+impl Task for SharedInvoiceTask {
+  type Output = contentdown::invoice::InvoiceResult;
+  type JsValue = InvoiceResult;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    Ok(self.inner.invoice(self.opts.as_ref()))
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output.into())
+  }
+}
+
 /// A parsed workbook. Parsing happens once, in the constructor or in `openAsync`; every method
 /// reads from the parsed workbook.
 #[napi]
@@ -135,6 +200,57 @@ impl XlsxDown {
     AsyncTask::new(SharedCellsTask {
       inner: Arc::clone(&self.inner),
       opts: opts.unwrap_or_default(),
+    })
+  }
+
+  /// The cells of the selected sheets keyed by row and then column, so a cell, or a whole row,
+  /// is one lookup: `rows["12"]["C"]`.
+  #[napi]
+  pub fn spreadsheet_grid(&self, opts: Option<SpreadsheetOptions>) -> Vec<SheetGrid> {
+    grid_of(&self.inner, &opts.unwrap_or_default())
+  }
+
+  /// `spreadsheetGrid` on a worker thread.
+  #[napi]
+  pub fn spreadsheet_grid_async(
+    &self,
+    opts: Option<SpreadsheetOptions>,
+  ) -> AsyncTask<SharedGridTask> {
+    AsyncTask::new(SharedGridTask {
+      inner: Arc::clone(&self.inner),
+      opts: opts.unwrap_or_default(),
+    })
+  }
+
+  /// The selected sheets laid out as pages: each cell's text placed in its rectangle, broken
+  /// into words and grouped into lines, every word naming its cell. Cells in hidden rows and
+  /// columns are left off the page unless `hiddenCells` is set.
+  #[napi]
+  pub fn layout(&self, opts: Option<SpreadsheetOptions>) -> Vec<SheetPage> {
+    pages_of(&self.inner, &opts.unwrap_or_default())
+  }
+
+  /// `layout` on a worker thread.
+  #[napi]
+  pub fn layout_async(&self, opts: Option<SpreadsheetOptions>) -> AsyncTask<SharedLayoutTask> {
+    AsyncTask::new(SharedLayoutTask {
+      inner: Arc::clone(&self.inner),
+      opts: opts.unwrap_or_default(),
+    })
+  }
+
+  /// Invoice fields read from the workbook's visible sheets, each laid out as a page.
+  #[napi]
+  pub fn invoice(&self, opts: Option<InvoiceOptions>) -> InvoiceResult {
+    self.inner.invoice(opts.map(Into::into).as_ref()).into()
+  }
+
+  /// `invoice` on a worker thread.
+  #[napi]
+  pub fn invoice_async(&self, opts: Option<InvoiceOptions>) -> AsyncTask<SharedInvoiceTask> {
+    AsyncTask::new(SharedInvoiceTask {
+      inner: Arc::clone(&self.inner),
+      opts: opts.map(Into::into),
     })
   }
 }

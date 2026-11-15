@@ -4,7 +4,9 @@ keywords             = ["xlsx", "extract", "extraction", "spreadsheet"]
 license              = { workspace = true }
 name                 = "xlsxdown"
 repository.workspace = true
+version                = "0.2.0"
 [dependencies]
-ooxmldown.workspace = true
-roxmltree.workspace = true
-thiserror.workspace = true
+contentdown.workspace = true
+ooxmldown.workspace   = true
+roxmltree.workspace   = true
+thiserror.workspace   = true

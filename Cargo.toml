@@ -1,5 +1,14 @@
 [workspace]
-members  = ["crates/ooxmldown", "crates/xlsxdown", "crates/xlsxdown-node"]
+members = [
+  "crates/contentdown",
+  "crates/ooxmldown",
+  "crates/xlsxdown",
+  "crates/xlsxdown-node",
+  "crates/pdfdown",
+  "crates/pdfdown-meta",
+  "crates/pdfdown-ocr",
+  "crates/pdfdown-node"
+]
 resolver = "3"
 
 [workspace.package]
@@ -16,6 +25,7 @@ napi-derive = "3.7.1"
 rayon       = "1.12.0"
 # CCITT Group 3/4 fax decoding (pure Rust, WASI-safe)
 hayro-ccitt = "0.5.0"
+hayro-jbig2 = { version = "0.4.0" }
 hayro-jpeg2000 = { version = "0.5.0", features = ["image"] }
 image = { version = "0.25.10", default-features = false, features = [
   "png",
@@ -32,7 +42,22 @@ thiserror = { version = "2.0.21" }
 # CII / UBL e-invoice XML (pure Rust, WASI-safe)
 lopdf = "0.47.0"
 
+pdfium-render = { version = "0.9.5", default-features = false, features = [
+  "pdfium_latest",
+  "image_025",
+  "thread_safe"
+] }
+
+tesseract-rs = { version = "0.4.0", default-features = false, features = [
+  "use-system-tesseract"
+] }
+
+contentdown   = { path = "crates/contentdown" }
 ooxmldown     = { path = "crates/ooxmldown" }
+pdfdown       = { path = "crates/pdfdown" }
+pdfdown-meta  = { path = "crates/pdfdown-meta" }
+pdfdown-node  = { path = "crates/pdfdown-node" }
+pdfdown-ocr   = { path = "crates/pdfdown-ocr" }
 xlsxdown      = { path = "crates/xlsxdown" }
 xlsxdown-node = { path = "crates/xlsxdown-node" }
 

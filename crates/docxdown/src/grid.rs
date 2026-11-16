@@ -1,5 +1,7 @@
 //! Tables as grids: every cell at its row and column, the way a sheet's cells are addressed.
 
+pub use ooxmldown::{cell_ref, column_letters};
+
 use crate::model::{Block, Document, Table};
 
 /// One cell of a table, at the top-left corner of the range it covers.
@@ -34,23 +36,6 @@ pub struct TableGrid {
   pub merges: Vec<String>,
   /// Row by row, left to right. A cell merged into another is not listed.
   pub cells: Vec<GridCell>,
-}
-
-/// A 0-based column as a sheet letters it: 0 is `A`, 26 is `AA`.
-pub fn column_letters(column: u32) -> String {
-  let mut letters = Vec::new();
-  let mut n = u64::from(column) + 1;
-  while n > 0 {
-    // The remainder is below 26, so the cast is exact.
-    letters.push(char::from(b'A' + ((n - 1) % 26) as u8));
-    n = (n - 1) / 26;
-  }
-  letters.into_iter().rev().collect()
-}
-
-/// 0-based `(row, column)` as a sheet refers to a cell: `(1, 2)` is `C2`.
-pub fn cell_ref(row: u32, column: u32) -> String {
-  format!("{}{}", column_letters(column), u64::from(row) + 1)
 }
 
 fn count(n: usize) -> u32 {

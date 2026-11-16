@@ -4,81 +4,16 @@
 //! alignment are left out; a merged cell is one filled cell with empty ones beside it; a table
 //! inside a cell is flattened into that cell's text.
 
+use contentdown::markdown::{Emphasis, HARD_BREAK, Place, escape, guard_line, image, link, span};
+
 use crate::model::{Block, BreakKind, Cell, Document, Inline, Paragraph, Table, TextRun};
 
-/// The emphasis Markdown can show.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct Emphasis {
-  bold: bool,
-  italic: bool,
-  strike: bool,
-}
-
-impl Emphasis {
-  fn of(run: &TextRun) -> Self {
-    Emphasis {
-      bold: run.bold,
-      italic: run.italic,
-      strike: run.strike,
-    }
-  }
-}
-
-/// Where text is being written, which decides how a line break and a `|` are spelled.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Place {
-  Flow,
-  /// A heading, which is one line and already stands out: bold adds nothing to it.
-  Heading,
-  /// A pipe table's cell, which must stay on one line.
-  Cell,
-}
-
-/// A hard line break inside a paragraph.
-const HARD_BREAK: &str = "\\\n";
-
-/// Writes `text` with whatever Markdown would read as markup escaped.
-fn escape(text: &str, place: Place, out: &mut String) {
-  let mut previous: Option<char> = None;
-  let mut chars = text.chars().peekable();
-  while let Some(c) = chars.next() {
-    let next = chars.peek().copied();
-    let word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
-    let special = match c {
-      '\\' | '`' | '*' | '[' | ']' | '<' => true,
-      '|' => place == Place::Cell,
-      // An underscore inside a word is only an underscore.
-      '_' => !(word(previous) && word(next)),
-      '~' => previous == Some('~') || next == Some('~'),
-      _ => false,
-    };
-    if special {
-      out.push('\\');
-    }
-    // A line break in the text itself is white space, not a break someone asked for.
-    out.push(if matches!(c, '\n' | '\r') { ' ' } else { c });
-    previous = Some(c);
-  }
-}
-
-/// Keeps the start of a line from reading as a heading, a quote, a list item or a rule.
-fn guard_line(line: &str) -> String {
-  let bytes = line.as_bytes();
-  let ends = |at: usize| matches!(bytes.get(at), Some(b' ') | None);
-  let escape_at = match bytes.first() {
-    Some(b'#' | b'>') => Some(0),
-    Some(b'-' | b'+') if ends(1) || (bytes.len() >= 3 && bytes.iter().all(|b| *b == b'-')) => {
-      Some(0)
-    }
-    Some(b'0'..=b'9') => {
-      let digits = bytes.iter().take_while(|b| b.is_ascii_digit()).count();
-      (matches!(bytes.get(digits), Some(b'.' | b')')) && ends(digits + 1)).then_some(digits)
-    }
-    _ => None,
-  };
-  match escape_at {
-    Some(at) => format!("{}\\{}", &line[..at], &line[at..]),
-    None => line.to_owned(),
+/// The emphasis of a run that Markdown can show.
+fn emphasis_of(run: &TextRun) -> Emphasis {
+  Emphasis {
+    bold: run.bold,
+    italic: run.italic,
+    strike: run.strike,
   }
 }
 
@@ -87,43 +22,17 @@ struct Writer<'a> {
 }
 
 impl Writer<'_> {
-  /// Writes a stretch of text with one emphasis. White space at its ends goes outside the
-  /// markers, where Markdown needs it.
-  fn span(emphasis: Emphasis, text: &str, place: Place, out: &mut String) {
-    let core = text.trim();
-    if core.is_empty() {
-      out.push_str(text);
-      return;
-    }
-    let lead = &text[..text.len() - text.trim_start().len()];
-    let trail = &text[text.trim_end().len()..];
-    let marks = match (emphasis.bold, emphasis.italic) {
-      (true, true) => "***",
-      (true, false) => "**",
-      (false, true) => "*",
-      (false, false) => "",
-    };
-    let strike = if emphasis.strike { "~~" } else { "" };
-    out.push_str(lead);
-    out.push_str(strike);
-    out.push_str(marks);
-    escape(core, place, out);
-    out.push_str(marks);
-    out.push_str(strike);
-    out.push_str(trail);
-  }
-
   fn inlines(&self, inlines: &[Inline], place: Place, out: &mut String) {
     // Runs that differ only in what Markdown cannot show are written as one.
     let mut pending: Option<(Emphasis, String)> = None;
     let flush = |pending: &mut Option<(Emphasis, String)>, out: &mut String| {
       if let Some((emphasis, text)) = pending.take() {
-        Self::span(emphasis, &text, place, out);
+        span(emphasis, &text, place, out);
       }
     };
     for inline in inlines {
       if let Inline::Text(run) = inline {
-        let mut emphasis = Emphasis::of(run);
+        let mut emphasis = emphasis_of(run);
         emphasis.bold &= place != Place::Heading;
         match &mut pending {
           Some((current, text)) if *current == emphasis => text.push_str(&run.text),
@@ -136,36 +45,28 @@ impl Writer<'_> {
       }
       flush(&mut pending, out);
       match inline {
-        Inline::Link(link) => {
+        Inline::Link(linked) => {
           let mut label = String::new();
-          self.inlines(&link.inlines, place, &mut label);
-          let target = match (&link.uri, &link.dest) {
+          self.inlines(&linked.inlines, place, &mut label);
+          let target = match (&linked.uri, &linked.dest) {
             (Some(uri), Some(dest)) => Some(format!("{uri}#{dest}")),
             (Some(uri), None) => Some(uri.clone()),
             (None, Some(dest)) => Some(format!("#{dest}")),
             (None, None) => None,
           };
           match target {
-            // White space at the ends of what a link covers goes outside the link.
-            Some(target) if !label.trim().is_empty() => {
-              out.push_str(&label[..label.len() - label.trim_start().len()]);
-              out.push('[');
-              out.push_str(label.trim());
-              out.push_str("](<");
-              out.push_str(&target.replace('<', "%3C").replace('>', "%3E"));
-              out.push_str(">)");
-              out.push_str(&label[label.trim_end().len()..]);
-            }
-            _ => out.push_str(&label),
+            Some(target) => link(&label, &target, out),
+            None => out.push_str(&label),
           }
         }
         Inline::Image(used) => {
-          if let Some(image) = self.document.images.get(used.image as usize) {
-            out.push_str("![");
-            escape(used.alt_text.as_deref().unwrap_or(""), place, out);
-            out.push_str("](<");
-            out.push_str(&image.name.replace('<', "%3C").replace('>', "%3E"));
-            out.push_str(">)");
+          if let Some(stored) = self.document.images.get(used.image as usize) {
+            image(
+              used.alt_text.as_deref().unwrap_or(""),
+              &stored.name,
+              place,
+              out,
+            );
           }
         }
         Inline::NoteRef(note) => {

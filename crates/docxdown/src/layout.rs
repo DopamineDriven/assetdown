@@ -10,20 +10,17 @@
 //! row on one line with their columns aligned, a label beside its value, bold and the font
 //! size. What it does not have is where Word really broke a line, or a font's real widths.
 
-use std::collections::HashMap;
-
+use contentdown::flow::{
+  CHAR_EM, Fonts, LINE_EM, SLACK, Token, Tokens, base_size, line_height, set_lines,
+};
 use contentdown::invoice::{InvoiceOptions, InvoiceResult, extract_from_pages};
-use contentdown::{FontMeta, PageLayout, TextSource, Word, words_to_lines};
+use contentdown::{PageLayout, TextSource, Word, words_to_lines};
 
 use crate::model::{
   Align, Block, BreakKind, Document, Inline, Paragraph, PartRefs, Row, Section, Table, TextRun,
 };
 use crate::walk::{each_inline, row_page};
 
-/// Estimated advance of one character as a fraction of the font size.
-const CHAR_EM: f64 = 0.5;
-/// Height of one line as a fraction of the font size.
-const LINE_EM: f64 = 1.2;
 /// The space after a paragraph as a fraction of the font size.
 const PARAGRAPH_GAP_EM: f64 = 0.7;
 /// The size of text whose size nothing states.
@@ -31,17 +28,12 @@ const DEFAULT_SIZE: f64 = 11.0;
 /// Letter, which is what a section that states no page size gets.
 const DEFAULT_PAGE: (f64, f64) = (612.0, 792.0);
 const DEFAULT_MARGIN: f64 = 72.0;
-/// Tab stops stand half an inch apart when a paragraph sets none.
-const TAB_STOP: f64 = 36.0;
 /// How much further in each level of a list starts.
 const LIST_INDENT: f64 = 18.0;
 /// The space between a cell's edge and its text.
 const CELL_PAD: f64 = 5.0;
 /// How far a header starts from the top edge, and a footer ends from the bottom one.
 const EDGE_DISTANCE: f64 = 36.0;
-/// What a sum of estimates may be off by before it counts as not fitting.
-const SLACK: f64 = 0.01;
-
 const ESTIMATED: &str =
   "word positions are estimated from the flow of the text; a docx records no layout";
 
@@ -55,55 +47,6 @@ struct Placed {
   bottom: f64,
   size: f64,
   font: usize,
-}
-
-/// One piece of a paragraph as it is set.
-#[derive(Debug, Clone)]
-enum Token {
-  Word {
-    text: String,
-    size: f64,
-    font: usize,
-  },
-  Space,
-  Tab,
-  Newline,
-}
-
-/// A word placed on a line, before the line has a height.
-struct Set {
-  text: String,
-  x0: f64,
-  x1: f64,
-  size: f64,
-  font: usize,
-}
-
-/// The fonts the words are set in, each once.
-#[derive(Default)]
-struct Fonts {
-  metas: Vec<FontMeta>,
-  index: HashMap<(Option<String>, bool, bool), usize>,
-}
-
-impl Fonts {
-  fn intern(&mut self, run: &TextRun) -> usize {
-    let key = (run.font.clone(), run.bold, run.italic);
-    if let Some(&at) = self.index.get(&key) {
-      return at;
-    }
-    let at = self.metas.len();
-    self.metas.push(FontMeta {
-      // A run whose font nothing names has no name to give; `finish` takes the blank out.
-      name: run.font.clone().unwrap_or_default(),
-      bold: run.bold,
-      italic: run.italic,
-      symbolic: false,
-      weight_known: true,
-    });
-    self.index.insert(key, at);
-    at
-  }
 }
 
 /// The page a section describes, with the band its text is set in.
@@ -220,16 +163,9 @@ struct Flow<'a> {
 }
 
 impl Flow<'_> {
-  /// A paragraph as words, spaces, tabs and line breaks. A word that runs across a change of
-  /// formatting stays one word, in the formatting it starts in.
+  /// A paragraph as words, spaces, tabs and line breaks.
   fn tokens(&mut self, paragraph: &Paragraph) -> Vec<Token> {
-    let mut out = Vec::new();
-    let mut word: Option<(String, f64, usize)> = None;
-    let flush = |word: &mut Option<(String, f64, usize)>, out: &mut Vec<Token>| {
-      if let Some((text, size, font)) = word.take() {
-        out.push(Token::Word { text, size, font });
-      }
-    };
+    let mut tokens = Tokens::default();
     // A list item's marker is set like the text it stands in front of.
     if let Some(item) = paragraph.list.as_ref().filter(|i| !i.marker.is_empty()) {
       let mut first = None;
@@ -240,48 +176,28 @@ impl Flow<'_> {
       });
       let plain = TextRun::default();
       let run = first.unwrap_or(&plain);
-      out.push(Token::Word {
-        text: item.marker.clone(),
-        size: run.size.unwrap_or(DEFAULT_SIZE).max(1.0),
-        font: self.fonts.intern(run),
-      });
-      out.push(Token::Space);
+      let font = self.fonts.intern(run.font.as_deref(), run.bold, run.italic);
+      tokens.word(
+        &item.marker,
+        run.size.unwrap_or(DEFAULT_SIZE).max(1.0),
+        font,
+      );
     }
     each_inline(&paragraph.inlines, &mut |inline| match inline {
       Inline::Text(run) => {
-        let size = run.size.unwrap_or(DEFAULT_SIZE).max(1.0);
-        let font = self.fonts.intern(run);
-        for c in run.text.chars() {
-          if c.is_whitespace() {
-            flush(&mut word, &mut out);
-            if !matches!(out.last(), Some(Token::Space)) {
-              out.push(Token::Space);
-            }
-          } else {
-            match &mut word {
-              Some((text, _, _)) => text.push(c),
-              None => word = Some((c.to_string(), size, font)),
-            }
-          }
-        }
+        let font = self.fonts.intern(run.font.as_deref(), run.bold, run.italic);
+        tokens.text(&run.text, run.size.unwrap_or(DEFAULT_SIZE).max(1.0), font);
       }
-      Inline::Tab => {
-        flush(&mut word, &mut out);
-        out.push(Token::Tab);
-      }
-      Inline::Break(BreakKind::Line) => {
-        flush(&mut word, &mut out);
-        out.push(Token::Newline);
-      }
+      Inline::Tab => tokens.tab(),
+      Inline::Break(BreakKind::Line) => tokens.newline(),
       // What a link holds follows it; a picture or a reference ends the word before it.
       Inline::Link(_) => {}
       Inline::Image(_)
       | Inline::NoteRef(_)
       | Inline::CommentRef(_)
-      | Inline::Break(BreakKind::Page | BreakKind::Column) => flush(&mut word, &mut out),
+      | Inline::Break(BreakKind::Page | BreakKind::Column) => tokens.end_word(),
     });
-    flush(&mut word, &mut out);
-    out
+    tokens.finish()
   }
 
   /// Sets a paragraph between `left` and `right`, starting `top` down the page, and returns how
@@ -290,68 +206,11 @@ impl Flow<'_> {
     let level = paragraph.list.as_ref().map_or(0, |item| item.level);
     let left = (left + LIST_INDENT * f64::from(level)).min(right - 1.0);
     let tokens = self.tokens(paragraph);
-    let base = tokens
-      .iter()
-      .find_map(|token| match token {
-        Token::Word { size, .. } => Some(*size),
-        _ => None,
-      })
-      .unwrap_or(DEFAULT_SIZE);
-
-    let mut lines: Vec<Vec<Set>> = vec![Vec::new()];
-    let mut x = left;
-    let mut space = false;
-    for token in tokens {
-      match token {
-        Token::Word { text, size, font } => {
-          let width = text.chars().count() as f64 * CHAR_EM * size;
-          let line = lines.last().map_or(0, Vec::len);
-          let mut gap = if space && line > 0 {
-            CHAR_EM * size
-          } else {
-            0.0
-          };
-          if x + gap + width > right + SLACK && line > 0 {
-            lines.push(Vec::new());
-            (x, gap) = (left, 0.0);
-          }
-          let x0 = x + gap;
-          x = x0 + width;
-          space = false;
-          if let Some(line) = lines.last_mut() {
-            line.push(Set {
-              text,
-              x0,
-              x1: x,
-              size,
-              font,
-            });
-          }
-        }
-        Token::Space => space = true,
-        Token::Tab => {
-          x = left + (((x - left) / TAB_STOP).floor() + 1.0) * TAB_STOP;
-          space = false;
-          if x >= right {
-            lines.push(Vec::new());
-            x = left;
-          }
-        }
-        Token::Newline => {
-          lines.push(Vec::new());
-          (x, space) = (left, false);
-        }
-      }
-    }
+    let base = base_size(&tokens).unwrap_or(DEFAULT_SIZE);
 
     let mut cursor = top;
-    for line in lines {
-      let height = LINE_EM * line.iter().map(|set| set.size).fold(0.0, f64::max);
-      let height = if line.is_empty() {
-        LINE_EM * base
-      } else {
-        height
-      };
+    for line in set_lines(tokens, left, right, true) {
+      let height = line_height(&line, base);
       let end = line.last().map_or(left, |set| set.x1);
       let shift = match paragraph.align {
         Some(Align::Center) => ((right - end) / 2.0).max(0.0),
@@ -497,7 +356,7 @@ impl Flow<'_> {
         })
       })
       .collect();
-    let (mut words, lines) = words_to_lines(words, &self.fonts.metas);
+    let (mut words, lines) = words_to_lines(words, self.fonts.metas());
     for word in &mut words {
       word.font_name = word.font_name.take().filter(|name| !name.is_empty());
     }

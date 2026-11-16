@@ -427,6 +427,9 @@ fn unsupported_detail(kind: PackageKind) -> String {
     | PackageKind::MacroDocument
     | PackageKind::TemplateDocument
     | PackageKind::Presentation
+    | PackageKind::MacroPresentation
+    | PackageKind::TemplatePresentation
+    | PackageKind::SlideShow
     | PackageKind::Other => kind.description().to_string(),
   }
 }

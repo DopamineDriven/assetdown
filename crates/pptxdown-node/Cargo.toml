@@ -1,0 +1,22 @@
+[package]
+description            = "Convenient Rust-powered pptx parsing for Node"
+edition.workspace      = true
+keywords               = ["node-bindings", "pptx", "extract", "extraction", "slides"]
+license                = { workspace = true }
+name                   = "pptxdown-node"
+publish                = false
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+contentdown.workspace = true
+napi.workspace        = true
+napi-derive.workspace = true
+pptxdown.workspace    = true
+
+[build-dependencies]
+napi-build.workspace = true

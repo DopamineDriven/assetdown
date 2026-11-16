@@ -50,6 +50,10 @@ pub enum PackageKind {
   MacroDocument,
   TemplateDocument,
   Presentation,
+  MacroPresentation,
+  TemplatePresentation,
+  /// A presentation saved to open straight into the show: `.ppsx`.
+  SlideShow,
   Other,
 }
 
@@ -66,6 +70,9 @@ impl PackageKind {
       PackageKind::MacroDocument => "macro-enabled Word document",
       PackageKind::TemplateDocument => "Word template",
       PackageKind::Presentation => "PowerPoint presentation package",
+      PackageKind::MacroPresentation => "macro-enabled PowerPoint presentation",
+      PackageKind::TemplatePresentation => "PowerPoint template",
+      PackageKind::SlideShow => "PowerPoint slide show",
       PackageKind::Other => "zip package that is not an Office document",
     }
   }
@@ -96,6 +103,14 @@ const WORD_MACRO_MAINS: [&str; 2] = [
   "application/vnd.ms-word.template.macroEnabledTemplate.main+xml",
 ];
 const PRESENTATION_PREFIX: &str = "application/vnd.openxmlformats-officedocument.presentationml";
+const PRESENTATION_TEMPLATE_MAIN: &str =
+  "application/vnd.openxmlformats-officedocument.presentationml.template.main+xml";
+const SLIDE_SHOW_MAIN: &str =
+  "application/vnd.openxmlformats-officedocument.presentationml.slideshow.main+xml";
+/// A macro-enabled presentation, template or slide show: `application/vnd.ms-powerpoint.` then
+/// which of the three, then this.
+const POWERPOINT_MACRO_PREFIX: &str = "application/vnd.ms-powerpoint.";
+const MACRO_MAIN_SUFFIX: &str = ".macroEnabled.main+xml";
 const SML_STRICT: &str = "http://purl.oclc.org/ooxml/spreadsheetml/main";
 
 /// Parse one part's XML under the node limit, with DTDs and external entities off (roxmltree's
@@ -308,6 +323,11 @@ impl Package {
       WORD_TEMPLATE_MAIN => PackageKind::TemplateDocument,
       t if WORD_MACRO_MAINS.contains(&t) => PackageKind::MacroDocument,
       t if t.starts_with(WORD_PREFIX) => PackageKind::WordDocument,
+      PRESENTATION_TEMPLATE_MAIN => PackageKind::TemplatePresentation,
+      SLIDE_SHOW_MAIN => PackageKind::SlideShow,
+      t if t.starts_with(POWERPOINT_MACRO_PREFIX) && t.ends_with(MACRO_MAIN_SUFFIX) => {
+        PackageKind::MacroPresentation
+      }
       t if t.starts_with(PRESENTATION_PREFIX) => PackageKind::Presentation,
       _ => PackageKind::Other,
     })

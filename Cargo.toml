@@ -10,6 +10,8 @@ members = [
   "crates/pdfdown-meta",
   "crates/pdfdown-ocr",
   "crates/pdfdown-node",
+  "crates/pptxdown",
+  "crates/pptxdown-node",
   "crates/videodown",
   "crates/videodown-node",
   "crates/xlsxdown",
@@ -72,6 +74,8 @@ pdfdown        = { path = "crates/pdfdown" }
 pdfdown-meta   = { path = "crates/pdfdown-meta" }
 pdfdown-node   = { path = "crates/pdfdown-node" }
 pdfdown-ocr    = { path = "crates/pdfdown-ocr" }
+pptxdown       = { path = "crates/pptxdown" }
+pptxdown-node  = { path = "crates/pptxdown-node" }
 videodown      = { path = "crates/videodown" }
 videodown-node = { path = "crates/videodown-node" }
 xlsxdown       = { path = "crates/xlsxdown" }

@@ -37,6 +37,12 @@ pub struct DocProps {
   pub paragraphs: Option<u32>,
   /// Editing time in minutes.
   pub total_time: Option<u32>,
+  /// What a presentation records: its slides, how many have notes, and how many are hidden.
+  pub slides: Option<u32>,
+  pub notes: Option<u32>,
+  pub hidden_slides: Option<u32>,
+  /// What a presentation is sized for, in the application's words: `Widescreen`.
+  pub presentation_format: Option<String>,
 }
 
 /// The text of the first element named `name`, whatever its namespace, when it is not empty.
@@ -97,6 +103,10 @@ impl Package {
       props.lines = number_of(&doc, "Lines");
       props.paragraphs = number_of(&doc, "Paragraphs");
       props.total_time = number_of(&doc, "TotalTime");
+      props.slides = number_of(&doc, "Slides");
+      props.notes = number_of(&doc, "Notes");
+      props.hidden_slides = number_of(&doc, "HiddenSlides");
+      props.presentation_format = text_of(&doc, "PresentationFormat");
     }
     Ok(props)
   }

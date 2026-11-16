@@ -6,6 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use contentdown::counting::{letters, roman};
 use roxmltree::{Document as Xml, Node};
 
 use crate::model::ListItem;
@@ -67,43 +68,6 @@ fn read_level(node: Node<'_, '_>) -> Level {
       .unwrap_or("")
       .to_owned(),
   }
-}
-
-fn roman(mut n: u32) -> String {
-  const NUMERALS: [(u32, &str); 13] = [
-    (1000, "m"),
-    (900, "cm"),
-    (500, "d"),
-    (400, "cd"),
-    (100, "c"),
-    (90, "xc"),
-    (50, "l"),
-    (40, "xl"),
-    (10, "x"),
-    (9, "ix"),
-    (5, "v"),
-    (4, "iv"),
-    (1, "i"),
-  ];
-  let mut out = String::new();
-  for (value, numeral) in NUMERALS {
-    while n >= value {
-      out.push_str(numeral);
-      n -= value;
-    }
-  }
-  out
-}
-
-/// Word's letters: a to z, then aa, bb, cc.
-fn letters(n: u32) -> String {
-  if n == 0 {
-    return String::new();
-  }
-  let index = (n - 1) % 26;
-  let repeats = (n - 1) / 26 + 1;
-  let letter = char::from_u32(u32::from(b'a') + index).unwrap_or('a');
-  std::iter::repeat_n(letter, repeats as usize).collect()
 }
 
 fn write_count(format: NumberFormat, n: u32) -> String {

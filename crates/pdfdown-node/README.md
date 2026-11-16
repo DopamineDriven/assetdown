@@ -1,6 +1,6 @@
-# @d0paminedriven/xlsxdown
+# @d0paminedriven/pdfdown
 
-[![CI](https://github.com/DopamineDriven/assetdown/actions/workflows/xlsxdown-node.yml/badge.svg?branch=main)](https://github.com/DopamineDriven/assetdown/actions/workflows/xlsxdown-node.yml)
+[![CI](https://github.com/DopamineDriven/assetdown/actions/workflows/pdfdown-node.yml/badge.svg?branch=main)](https://github.com/DopamineDriven/assetdown/actions/workflow/pdfdown-node.yml)
 
 ## Supported platforms
 

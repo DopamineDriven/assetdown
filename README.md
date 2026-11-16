@@ -22,7 +22,7 @@ Each package has a class that parses a buffer once and is read from as often as 
 
 ## Crates
 
-### Bindings
+### Bindings 
 
 One npm package each. `pdfdown-node` builds two: the base package, and the OCR superset with its `ocr` feature.
 

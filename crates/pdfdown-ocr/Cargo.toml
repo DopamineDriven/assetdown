@@ -13,7 +13,7 @@ keywords = [
 license = { workspace = true }
 name = "pdfdown-ocr"
 repository.workspace = true
-version = "0.14.0"
+version = "0.15.0"
 [dependencies]
 contentdown.workspace  = true
 image.workspace        = true

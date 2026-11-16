@@ -7,7 +7,7 @@
     "sourceMap": false,
     "declarationMap": false,
     "declaration": true,
-    "moduleResolution": "nodenext",
+    "moduleResolution": "nodenext","allowJs": true,
     "module": "nodenext",
     "emitDeclarationOnly": true,
     "noUnusedLocals": true,

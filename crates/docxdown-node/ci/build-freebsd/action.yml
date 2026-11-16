@@ -1,0 +1,45 @@
+name: Build docxdown-node for FreeBSD
+description: Build the addon inside a FreeBSD virtual machine and upload it as an artifact.
+
+runs:
+  using: composite
+  steps:
+    - name: Build
+      uses: cross-platform-actions/action@v0.32.0
+      env:
+        DEBUG: napi:*
+        RUSTUP_IO_THREADS: 1
+      with:
+        operating_system: freebsd
+        version: "14.3"
+        memory: 8G
+        cpu_count: 3
+        environment_variables: DEBUG RUSTUP_IO_THREADS
+        shell: bash
+        run: |
+          sudo pkg install -y -f curl node libnghttp2 npm
+          sudo npm install -g corepack@latest
+          sudo corepack enable
+          curl https://sh.rustup.rs -sSf --output rustup.sh
+          sh rustup.sh -y --profile minimal --default-toolchain stable
+          source "$HOME/.cargo/env"
+          echo "~~~~ rustc --version ~~~~"
+          rustc --version
+          echo "~~~~ node -v ~~~~"
+          node -v
+          freebsd-version
+          cd crates/docxdown-node
+          echo "~~~~ yarn --version ~~~~"
+          yarn --version
+          yarn install
+          yarn napi build --platform --esm --release
+          rm -rf node_modules
+          rm -rf .yarn/cache
+          cd ../..
+          rm -rf target
+    - name: Upload artifact
+      uses: actions/upload-artifact@v6
+      with:
+        name: bindings-x86_64-unknown-freebsd
+        path: crates/docxdown-node/docxdown-node.*.node
+        if-no-files-found: error

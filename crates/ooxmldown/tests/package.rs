@@ -2,7 +2,9 @@
 
 use std::io::{Cursor, Write};
 
-use ooxmldown::{Limits, Package, PackageError, PackageKind, Relationship, parse_xml, rels_path};
+use ooxmldown::{
+  DocProps, Limits, Package, PackageError, PackageKind, Relationship, parse_xml, rels_path,
+};
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
@@ -113,6 +115,21 @@ fn the_kind_follows_the_main_parts_content_type() {
       PackageKind::WordDocument,
     ),
     (
+      "word/document.xml",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml",
+      PackageKind::TemplateDocument,
+    ),
+    (
+      "word/document.xml",
+      "application/vnd.ms-word.document.macroEnabled.main+xml",
+      PackageKind::MacroDocument,
+    ),
+    (
+      "word/document.xml",
+      "application/vnd.ms-word.template.macroEnabledTemplate.main+xml",
+      PackageKind::MacroDocument,
+    ),
+    (
       "ppt/presentation.xml",
       "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml",
       PackageKind::Presentation,
@@ -153,6 +170,8 @@ fn every_kind_has_words_that_make_no_claim_about_support() {
     PackageKind::TemplateWorkbook,
     PackageKind::StrictWorkbook,
     PackageKind::WordDocument,
+    PackageKind::MacroDocument,
+    PackageKind::TemplateDocument,
     PackageKind::Presentation,
     PackageKind::Other,
   ];
@@ -381,4 +400,85 @@ fn errors_read_as_category_then_detail() {
     PackageError::Malformed("part xl/missing.xml is missing".to_string()).to_string(),
     "malformed package: part xl/missing.xml is missing"
   );
+}
+
+const WORD_MAIN: &str =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml";
+
+/// A Word package whose root relationships also name the two property parts.
+fn package_with_props(core: Option<&str>, app: Option<&str>) -> Vec<u8> {
+  let rels = format!(
+    r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{OFFICE_DOCUMENT}" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>"#
+  );
+  let types = content_types("word/document.xml", WORD_MAIN);
+  let mut parts = vec![
+    ("[Content_Types].xml", types.as_str()),
+    ("_rels/.rels", rels.as_str()),
+    ("word/document.xml", "<root/>"),
+  ];
+  if let Some(core) = core {
+    parts.push(("docProps/core.xml", core));
+  }
+  if let Some(app) = app {
+    parts.push(("docProps/app.xml", app));
+  }
+  zip_of(&parts)
+}
+
+#[test]
+fn document_properties_come_from_the_core_and_app_parts() {
+  let core = r#"<?xml version="1.0" encoding="UTF-8"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/"><dc:title>Quarterly report</dc:title><dc:creator>A. Writer</dc:creator><cp:keywords>alpha, beta</cp:keywords><dc:subject> </dc:subject><cp:lastModifiedBy>B. Editor</cp:lastModifiedBy><cp:revision>7</cp:revision><dcterms:created>2026-01-02T03:04:05Z</dcterms:created><dcterms:modified>2026-02-03T04:05:06Z</dcterms:modified></cp:coreProperties>"#;
+  let app = r#"<?xml version="1.0" encoding="UTF-8"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Microsoft Office Word</Application><AppVersion>16.0000</AppVersion><Pages>3</Pages><Words>871</Words><Characters>4925</Characters><Paragraphs>11</Paragraphs><TotalTime>42</TotalTime><Company>Example</Company></Properties>"#;
+  let props = Package::open(package_with_props(Some(core), Some(app)))
+    .unwrap()
+    .doc_props()
+    .unwrap();
+  assert_eq!(
+    props,
+    DocProps {
+      title: Some("Quarterly report".into()),
+      creator: Some("A. Writer".into()),
+      keywords: Some("alpha, beta".into()),
+      last_modified_by: Some("B. Editor".into()),
+      revision: Some("7".into()),
+      created: Some("2026-01-02T03:04:05Z".into()),
+      modified: Some("2026-02-03T04:05:06Z".into()),
+      application: Some("Microsoft Office Word".into()),
+      app_version: Some("16.0000".into()),
+      company: Some("Example".into()),
+      pages: Some(3),
+      words: Some(871),
+      characters: Some(4925),
+      paragraphs: Some(11),
+      total_time: Some(42),
+      // An element that holds only whitespace states nothing.
+      ..DocProps::default()
+    }
+  );
+}
+
+#[test]
+fn missing_or_unreadable_property_parts_leave_their_fields_absent() {
+  // Named by the relationships but not in the zip.
+  let none = Package::open(package_with_props(None, None))
+    .unwrap()
+    .doc_props()
+    .unwrap();
+  assert_eq!(none, DocProps::default());
+  // One part is not XML; the other is still read.
+  let app = r#"<Properties><Pages>2</Pages><Words>many</Words></Properties>"#;
+  let partial = Package::open(package_with_props(Some("<not xml"), Some(app)))
+    .unwrap()
+    .doc_props()
+    .unwrap();
+  assert_eq!(partial.title, None);
+  assert_eq!(partial.pages, Some(2));
+  // A count that is not a number is not a count.
+  assert_eq!(partial.words, None);
+  // A package with no property relationships at all.
+  let bare = Package::open(package_of("word/document.xml", WORD_MAIN, "<root/>"))
+    .unwrap()
+    .doc_props()
+    .unwrap();
+  assert_eq!(bare, DocProps::default());
 }

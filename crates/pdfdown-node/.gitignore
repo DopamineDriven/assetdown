@@ -1,0 +1,7 @@
+*node.wasi.cjs
+*node.wasi-browser.js
+*-node/wasi-worker*.mjs
+browser.js
+home/dopaminedriven/rust/workspace/crates/pdfdown-node/index.js
+wasi-worker*.mjs
+ocr/pdfdown_ocr.napi.js

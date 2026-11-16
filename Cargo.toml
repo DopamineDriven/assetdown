@@ -3,6 +3,8 @@ members = [
   "crates/audiodown",
   "crates/audiodown-node",
   "crates/contentdown",
+  "crates/docxdown",
+  "crates/docxdown-node",
   "crates/ooxmldown",
   "crates/pdfdown",
   "crates/pdfdown-meta",
@@ -63,6 +65,8 @@ zip = { version = "9.5.1", default-features = false, features = [
 audiodown      = { path = "crates/audiodown" }
 audiodown-node = { path = "crates/audiodown-node" }
 contentdown    = { path = "crates/contentdown" }
+docxdown       = { path = "crates/docxdown" }
+docxdown-node  = { path = "crates/docxdown-node" }
 ooxmldown      = { path = "crates/ooxmldown" }
 pdfdown        = { path = "crates/pdfdown" }
 pdfdown-meta   = { path = "crates/pdfdown-meta" }

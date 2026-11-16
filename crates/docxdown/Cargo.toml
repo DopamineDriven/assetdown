@@ -1,0 +1,14 @@
+[package]
+description          = "convenient docx extraction"
+edition.workspace    = true
+keywords             = ["docx", "extraction", "metadata", "ooxml", "word document"]
+license              = { workspace = true }
+name                 = "docxdown"
+repository.workspace = true
+version              = "0.1.0"
+
+[dependencies]
+contentdown.workspace = true
+ooxmldown.workspace   = true
+roxmltree.workspace   = true
+thiserror.workspace   = true

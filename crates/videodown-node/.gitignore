@@ -1,0 +1,7 @@
+*node.wasi.cjs
+*node.wasi-browser.js
+*-node/wasi-worker*.mjs
+browser.js
+index.js
+wasi-worker*.mjs
+

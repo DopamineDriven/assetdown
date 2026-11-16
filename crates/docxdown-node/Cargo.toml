@@ -1,0 +1,22 @@
+[package]
+description            = "convenient rust-powered docx extraction for node"
+edition.workspace      = true
+keywords               = ["docx", "extraction", "metadata", "ooxml", "word document"]
+license                = { workspace = true }
+name                   = "docxdown-node"
+publish                = false
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+contentdown.workspace = true
+docxdown.workspace    = true
+napi.workspace        = true
+napi-derive.workspace = true
+
+
+[build-dependencies]
+napi-build.workspace = true

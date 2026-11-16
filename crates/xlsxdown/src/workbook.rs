@@ -424,6 +424,8 @@ fn unsupported_detail(kind: PackageKind) -> String {
     }
     PackageKind::Workbook
     | PackageKind::WordDocument
+    | PackageKind::MacroDocument
+    | PackageKind::TemplateDocument
     | PackageKind::Presentation
     | PackageKind::Other => kind.description().to_string(),
   }

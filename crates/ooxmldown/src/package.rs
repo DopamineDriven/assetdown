@@ -47,6 +47,8 @@ pub enum PackageKind {
   TemplateWorkbook,
   StrictWorkbook,
   WordDocument,
+  MacroDocument,
+  TemplateDocument,
   Presentation,
   Other,
 }
@@ -61,6 +63,8 @@ impl PackageKind {
       PackageKind::TemplateWorkbook => "template workbook",
       PackageKind::StrictWorkbook => "Strict OOXML workbook",
       PackageKind::WordDocument => "Word document package",
+      PackageKind::MacroDocument => "macro-enabled Word document",
+      PackageKind::TemplateDocument => "Word template",
       PackageKind::Presentation => "PowerPoint presentation package",
       PackageKind::Other => "zip package that is not an Office document",
     }
@@ -85,6 +89,12 @@ const TEMPLATE_MAINS: [&str; 2] = [
   "application/vnd.ms-excel.template.macroEnabled.main+xml",
 ];
 const WORD_PREFIX: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml";
+const WORD_TEMPLATE_MAIN: &str =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml";
+const WORD_MACRO_MAINS: [&str; 2] = [
+  "application/vnd.ms-word.document.macroEnabled.main+xml",
+  "application/vnd.ms-word.template.macroEnabledTemplate.main+xml",
+];
 const PRESENTATION_PREFIX: &str = "application/vnd.openxmlformats-officedocument.presentationml";
 const SML_STRICT: &str = "http://purl.oclc.org/ooxml/spreadsheetml/main";
 
@@ -295,6 +305,8 @@ impl Package {
       }
       MACRO_WORKBOOK_MAIN => PackageKind::MacroWorkbook,
       t if TEMPLATE_MAINS.contains(&t) => PackageKind::TemplateWorkbook,
+      WORD_TEMPLATE_MAIN => PackageKind::TemplateDocument,
+      t if WORD_MACRO_MAINS.contains(&t) => PackageKind::MacroDocument,
       t if t.starts_with(WORD_PREFIX) => PackageKind::WordDocument,
       t if t.starts_with(PRESENTATION_PREFIX) => PackageKind::Presentation,
       _ => PackageKind::Other,

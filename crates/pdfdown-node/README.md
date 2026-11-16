@@ -1075,13 +1075,14 @@ UV_THREADPOOL_SIZE=8 node app.js
 
 ## Supported formats
 
-| Filter         | Description                   | Handling                                   |
-| -------------- | ----------------------------- | ------------------------------------------ |
-| DCTDecode      | JPEG-compressed images        | Decoded and re-encoded as PNG              |
-| JPXDecode      | JPEG 2000 images              | Decoded and re-encoded as PNG              |
-| CCITTFaxDecode | Group 3 and Group 4 fax scans | Decoded in pure Rust and re-encoded as PNG |
-| FlateDecode    | Zlib-compressed raw pixels    | Decompressed, reconstructed as PNG         |
-| None           | Uncompressed raw pixels       | Reconstructed as PNG                       |
+| Filter         | Description                                                                        | Handling                                                       |
+| -------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| DCTDecode      | JPEG-compressed images                                                             | Decoded and re-encoded as PNG                                  |
+| JPXDecode      | JPEG 2000 images                                                                   | Decoded and re-encoded as PNG                                  |
+| CCITTFaxDecode | Group 3 and Group 4 fax scans                                                      | Decoded in pure Rust and re-encoded as PNG                     |
+| JBIG2Decode    | Bi-level scans, as one-bit images or stencil masks, with or without shared globals | Decoded in pure Rust and re-encoded as PNG, ink black on white |
+| FlateDecode    | Zlib-compressed raw pixels                                                         | Decompressed, reconstructed as PNG                             |
+| None           | Uncompressed raw pixels                                                            | Reconstructed as PNG                                           |
 
 | ColorSpace          | Channels                   |
 | ------------------- | -------------------------- |
@@ -1096,7 +1097,7 @@ UV_THREADPOOL_SIZE=8 node app.js
 
 **Layout** (`layoutPerPage`): a content-stream interpreter tracks `q`/`Q`, `cm`, the text object and text state (`BT`/`ET`, `Tm`, `Td`, `TD`, `T*`, `TL`, `Tf`, `Tc`, `Tw`, `Tz`, `Ts`) and the show operators (`Tj`, `TJ`, `'`, `"`), placing each glyph with the text rendering matrix. Advances come from `/Widths` (simple fonts), `/W` + `/DW` (Type0 composite fonts, two-byte codes), `/FontMatrix` (Type3) or Standard 14 metrics when the file omits widths; ascent/descent from the font descriptor. Glyphs become words at space glyphs, `Tw` gaps, `TJ` adjustments of 200/1000 em or more, baseline changes and horizontal gaps over 0.25 em; words become lines by baseline clustering within half the median word height. Form XObjects are recursed with a depth cap; images are recorded as the unit square under the CTM at `Do`.
 
-Built with [lopdf](https://github.com/J-F-Liu/lopdf) (pure Rust PDF parser), [image](https://github.com/image-rs/image) (PNG/JPEG encoding), [hayro-jpeg2000](https://crates.io/crates/hayro-jpeg2000) (JPEG 2000 decoding), [hayro-ccitt](https://crates.io/crates/hayro-ccitt) (fax decoding), [rayon](https://github.com/rayon-rs/rayon) (data parallelism) and, for rendering only, [pdfium-render](https://crates.io/crates/pdfium-render) (bindings to a PDFium found at run time). Compiled to a native Node.js addon via [napi-rs](https://napi.rs), with a WebAssembly build for platforms that have no prebuilt binary.
+Built with [lopdf](https://github.com/J-F-Liu/lopdf) (pure Rust PDF parser), [image](https://github.com/image-rs/image) (PNG/JPEG encoding), [hayro-jpeg2000](https://crates.io/crates/hayro-jpeg2000) (JPEG 2000 decoding), [hayro-ccitt](https://crates.io/crates/hayro-ccitt) (fax decoding), [hayro-jbig2](https://crates.io/crates/hayro-jbig2) (JBIG2 decoding), [rayon](https://github.com/rayon-rs/rayon) (data parallelism) and, for rendering only, [pdfium-render](https://crates.io/crates/pdfium-render) (bindings to a PDFium found at run time). Compiled to a native Node.js addon via [napi-rs](https://napi.rs), with a WebAssembly build for platforms that have no prebuilt binary.
 
 ## Supported platforms
 

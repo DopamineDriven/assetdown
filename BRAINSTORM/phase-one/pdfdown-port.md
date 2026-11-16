@@ -875,6 +875,16 @@ fn decode_jbig2(content: &[u8], globals: Option<&[u8]>) -> Option<DynamicImage> 
 }
 ```
 
+**As built.** JBIG2 is decoded, in `crates/pdfdown/src/images.rs`, with these differences from the sketch:
+
+- **The premise was half right.** A JBIG2 stencil mask was dropped, but a JBIG2 image that states a gray color space was not: its compressed bytes were returned as if they were pixels. Both are decoded now.
+- **A codec, not a filter name.** `decode_xobject_to_dynamic_image` takes a `Codec` (`Jpeg`, `Jpx`, `Ccitt(CcittParams)`, `Jbig2(Jbig2Params)`, `Raw`) in place of the filter name and the optional fax parameters. `codec_of` reads it from the image dictionary once.
+- **Its own sink.** The decoder is driven through its `Decoder` trait into gray rows, as the fax decoder is, and not through its bridge to the `image` crate, because polarity is ours to decide: ink is black unless `/Decode [1 0]` swaps it. A stencil mask comes out the same way, as what it paints, and is reported as `DeviceGray`.
+- **Globals** come from the stream `/DecodeParms /JBIG2Globals` names, with that stream's own filter undone.
+- **Limits.** A stream that states more than a gigapixel is not decoded. One whose size differs from the dictionary's is resampled to the dictionary's.
+- **Tests** are in `images/jbig2_tests.rs`, on streams written by hand: a generic region and, for globals, a halftone region whose patterns live in the shared stream. No fixture was added.
+- **Not done:** a JBIG2 image with an `Indexed` color space is decoded as ink on paper, without its palette. JBIG2 images inside form XObjects are not collected, like any other image there.
+
 **Source format.** Today every image is decoded and written out again as PNG, including the ones that were already a JPEG or JPEG 2000 file inside the PDF. Proposed: return those bytes untouched, and say what the bytes are.
 
 ```rust

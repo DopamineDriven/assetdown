@@ -76,9 +76,9 @@ pub fn collect_page_decoded_images_named(
     let color_space = resolve_color_space(&stream.dict, doc);
     let filter = resolve_filter(&stream.dict);
 
-    let content = match filter.as_str() {
-      "DCTDecode" | "JPXDecode" | "CCITTFaxDecode" => image_codec_payload(stream),
-      _ => {
+    let codec = codec_of(doc, &stream.dict, &filter, width, height);
+    let content = match codec {
+      Codec::Raw => {
         let mut s = stream.clone();
         if s.decompress().is_ok() {
           s.content
@@ -86,21 +86,13 @@ pub fn collect_page_decoded_images_named(
           stream.content.clone()
         }
       }
+      _ => image_codec_payload(stream),
     };
 
-    let ccitt = ccitt_params(doc, &stream.dict, &filter, width, height);
-
     // Skip SMask for OCR — to_rgb8() drops alpha anyway
-    if let Some(img) = decode_xobject_to_dynamic_image(
-      &content,
-      width,
-      height,
-      bpc,
-      &color_space,
-      &filter,
-      None,
-      ccitt,
-    ) {
+    if let Some(img) =
+      decode_xobject_to_dynamic_image(&content, width, height, bpc, &color_space, &codec, None)
+    {
       decoded.push((String::from_utf8_lossy(name).to_string(), img));
     }
   }
@@ -171,14 +163,14 @@ fn collect_page_images_raw(doc: &Document, page_id: ObjectId, page_num: u32) -> 
 
     // Step 4: Skip the full stream clone for DCT/JPX — they're already in their
     // target encoded format and don't need lopdf decompression.
-    let content = match filter.as_str() {
-      "DCTDecode" | "JPXDecode" | "CCITTFaxDecode" => image_codec_payload(stream),
-      _ => decompress_stream_content(doc, stream, width, height, channels, bpc),
+    let codec = codec_of(doc, &stream.dict, &filter, width, height);
+    let content = match codec {
+      Codec::Raw => decompress_stream_content(doc, stream, width, height, channels, bpc),
+      _ => image_codec_payload(stream),
     };
 
     // Check for SMask (alpha channel)
     let smask_data = get_smask_data(doc, &stream.dict);
-    let ccitt = ccitt_params(doc, &stream.dict, &filter, width, height);
 
     let png_data = match encode_to_png(
       &content,
@@ -186,12 +178,18 @@ fn collect_page_images_raw(doc: &Document, page_id: ObjectId, page_num: u32) -> 
       height,
       bpc,
       &color_space,
-      &filter,
+      &codec,
       smask_data.as_deref(),
-      ccitt,
     ) {
       Some(data) => data,
       None => continue,
+    };
+    // A stencil mask states no color space: it is painted in whatever the fill color is.
+    // Decoded here it is a gray picture, and is reported as one.
+    let color_space = if matches!(codec, Codec::Jbig2(_)) && !stream.dict.has(b"ColorSpace") {
+      "DeviceGray".to_string()
+    } else {
+      color_space
     };
 
     let xobject_name = String::from_utf8_lossy(name).to_string();
@@ -358,8 +356,8 @@ pub fn page_has_form_xobjects(doc: &Document, page_id: ObjectId) -> bool {
 /// Check if any referenced XObject on the page has `/Subtype /Image`.
 ///
 /// Used by the OCR cascade: when tier 2 (decode embedded images) produced nothing but the
-/// page does paint image XObjects, the images exist in a form we could not decode (JBIG2,
-/// CCITT, an unhandled filter chain, ...) and rasterizing the page is the only way to read them.
+/// page does paint image XObjects, the images exist in a form we could not decode (an indexed
+/// color space, an unhandled filter chain, ...) and rasterizing the page is the only way to read them.
 pub fn page_has_image_xobjects(doc: &Document, page_id: ObjectId) -> bool {
   page_has_xobject_subtype(doc, page_id, b"Image")
 }
@@ -752,7 +750,8 @@ fn resolve_filter(dict: &lopdf::Dictionary) -> String {
   }
 }
 
-/// Bytes to hand to the JPEG / JPEG 2000 decoder for a DCTDecode or JPXDecode image.
+/// Bytes to hand to an image codec (JPEG, JPEG 2000, fax, JBIG2): the stream with every filter
+/// before the codec's own undone.
 ///
 /// `/Filter` may be a chain such as `[ /ASCII85Decode /DCTDecode ]` (ReportLab, older
 /// Ghostscript, fax and mail gateways). The codec is always the innermost (last) entry;
@@ -777,6 +776,163 @@ fn image_codec_payload(stream: &lopdf::Stream) -> Vec<u8> {
   transport
     .decompressed_content()
     .unwrap_or_else(|_| stream.content.clone())
+}
+
+/// How an image's bytes are coded, with what its codec needs beside them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Codec {
+  Jpeg,
+  Jpx,
+  Ccitt(CcittParams),
+  Jbig2(Jbig2Params),
+  /// Samples as the stream's own filters leave them.
+  Raw,
+}
+
+/// The codec the innermost filter of an image names.
+fn codec_of(
+  doc: &Document,
+  dict: &lopdf::Dictionary,
+  filter: &str,
+  width: u32,
+  height: u32,
+) -> Codec {
+  match filter {
+    "DCTDecode" => Codec::Jpeg,
+    "JPXDecode" => Codec::Jpx,
+    "CCITTFaxDecode" => {
+      ccitt_params(doc, dict, filter, width, height).map_or(Codec::Raw, Codec::Ccitt)
+    }
+    "JBIG2Decode" => Codec::Jbig2(jbig2_params(doc, dict)),
+    _ => Codec::Raw,
+  }
+}
+
+/// Whether `/Decode [1 0]` on a one-bit image swaps which bit is the ink.
+fn decode_is_inverted(dict: &lopdf::Dictionary) -> bool {
+  match dict.get(b"Decode") {
+    Ok(Object::Array(a)) => {
+      matches!(a.first(), Some(Object::Integer(1)))
+        || matches!(a.first(), Some(Object::Real(r)) if *r >= 0.5)
+    }
+    _ => false,
+  }
+}
+
+/// What a `JBIG2Decode` image needs beside its own bytes (ISO 32000-1 §7.4.7).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Jbig2Params {
+  /// The segments several images share (symbol dictionaries, mostly), from the stream that
+  /// `/DecodeParms /JBIG2Globals` names, with that stream's own filter undone.
+  pub globals: Option<Vec<u8>>,
+  /// `/Decode [1 0]` on the image dictionary.
+  pub inverted: bool,
+}
+
+fn jbig2_params(doc: &Document, dict: &lopdf::Dictionary) -> Jbig2Params {
+  let globals = resolve_decode_parms(doc, dict).and_then(|parms| {
+    let (_, named) = doc.dereference(parms.get(b"JBIG2Globals").ok()?).ok()?;
+    let Object::Stream(stream) = named else {
+      return None;
+    };
+    if stream.dict.has(b"Filter") {
+      stream.decompressed_content().ok()
+    } else {
+      Some(stream.content.clone())
+    }
+  });
+  Jbig2Params {
+    globals,
+    inverted: decode_is_inverted(dict),
+  }
+}
+
+/// The largest JBIG2 page that is decoded, in pixels: a gigapixel, which an A0 sheet scanned at
+/// 600 dpi does not reach. A stream states its own size, and a hostile one states any.
+const MAX_JBIG2_PIXELS: u64 = 1 << 30;
+
+/// Collects decoded JBIG2 rows as 8-bit gray pixels.
+struct Jbig2Rows {
+  width: usize,
+  ink: u8,
+  paper: u8,
+  /// Where the row being filled starts in `pixels`.
+  row: usize,
+  pixels: Vec<u8>,
+}
+
+impl Jbig2Rows {
+  fn push(&mut self, black: bool, count: usize) {
+    let value = if black { self.ink } else { self.paper };
+    let end = self
+      .pixels
+      .len()
+      .saturating_add(count)
+      .min(self.row.saturating_add(self.width));
+    self.pixels.resize(end, value);
+  }
+}
+
+impl hayro_jbig2::Decoder for Jbig2Rows {
+  fn push_pixel(&mut self, black: bool) {
+    self.push(black, 1);
+  }
+
+  fn push_pixel_chunk(&mut self, black: bool, chunk_count: u32) {
+    let pixels = usize::try_from(chunk_count)
+      .unwrap_or(usize::MAX)
+      .saturating_mul(8);
+    self.push(black, pixels);
+  }
+
+  fn next_line(&mut self) {
+    // A row the decoder left short is paper to its end.
+    self.row = self.row.saturating_add(self.width);
+    self.pixels.resize(self.row, self.paper);
+  }
+}
+
+/// Decode a JBIG2 image (the bi-level coding scanners keep text in) into an 8-bit gray image:
+/// its ink black on white paper, unless `/Decode` swaps the two. A stencil mask comes out the
+/// same way, as what it paints.
+fn decode_jbig2(content: &[u8], width: u32, height: u32, p: &Jbig2Params) -> Option<DynamicImage> {
+  use hayro_jbig2::{DecodeSettings, Globals, Page};
+
+  let settings = DecodeSettings::default();
+  let globals = match &p.globals {
+    Some(bytes) => Some(Globals::new(bytes, &settings).ok()?),
+    None => None,
+  };
+  let page = Page::new_embedded(content, globals.as_ref(), &settings).ok()?;
+  let (w, h) = (page.width(), page.height());
+  let area = u64::from(w).checked_mul(u64::from(h))?;
+  if area == 0 || area > MAX_JBIG2_PIXELS {
+    return None;
+  }
+  // The filter's output has a black pixel as 0, which a gray image shows black and a stencil
+  // mask paints.
+  let (ink, paper) = if p.inverted {
+    (255u8, 0u8)
+  } else {
+    (0u8, 255u8)
+  };
+  let mut rows = Jbig2Rows {
+    width: usize::try_from(w).ok()?,
+    ink,
+    paper,
+    row: 0,
+    pixels: Vec::new(),
+  };
+  page.decode(&mut rows).ok()?;
+  rows.pixels.resize(usize::try_from(area).ok()?, paper);
+  let img = DynamicImage::ImageLuma8(image::GrayImage::from_raw(w, h, rows.pixels)?);
+  // The stream's own size is authoritative for its bits; resample only if the dictionary
+  // disagrees, so that the picture is the size a caller is told.
+  Some(if width > 0 && height > 0 && (width, height) != (w, h) {
+    img.resize_exact(width, height, image::imageops::FilterType::Nearest)
+  } else {
+    img
+  })
 }
 
 /// `/DecodeParms` of a `CCITTFaxDecode` image plus the `/Decode` inversion
@@ -810,13 +966,7 @@ fn ccitt_params(
     Ok(Object::Boolean(b)) => *b,
     _ => default,
   };
-  let inverted = match dict.get(b"Decode") {
-    Ok(Object::Array(a)) => {
-      matches!(a.first(), Some(Object::Integer(1)))
-        || matches!(a.first(), Some(Object::Real(r)) if *r >= 0.5)
-    }
-    _ => false,
-  };
+  let inverted = decode_is_inverted(dict);
   Some(CcittParams {
     k: get_dict_int(&parms, b"K").unwrap_or(0),
     columns: get_dict_int(&parms, b"Columns")
@@ -914,25 +1064,21 @@ fn decode_ccitt(content: &[u8], width: u32, height: u32, p: CcittParams) -> Opti
 }
 
 /// Decode an XObject stream into a DynamicImage (shared by PNG export and OCR).
-#[allow(clippy::too_many_arguments)]
 fn decode_xobject_to_dynamic_image(
   content: &[u8],
   width: u32,
   height: u32,
   bpc: u32,
   color_space: &str,
-  filter: &str,
+  codec: &Codec,
   smask: Option<&[u8]>,
-  ccitt: Option<CcittParams>,
 ) -> Option<DynamicImage> {
-  let dynamic_img = if filter == "DCTDecode" {
-    image::load_from_memory_with_format(content, ImageFormat::Jpeg).ok()?
-  } else if filter == "JPXDecode" {
-    decode_jpx(content)?
-  } else if let Some(p) = ccitt {
-    decode_ccitt(content, width, height, p)?
-  } else {
-    decode_raw_pixels(content, width, height, bpc, color_space)?
+  let dynamic_img = match codec {
+    Codec::Jpeg => image::load_from_memory_with_format(content, ImageFormat::Jpeg).ok()?,
+    Codec::Jpx => decode_jpx(content)?,
+    Codec::Ccitt(p) => decode_ccitt(content, width, height, *p)?,
+    Codec::Jbig2(p) => decode_jbig2(content, width, height, p)?,
+    Codec::Raw => decode_raw_pixels(content, width, height, bpc, color_space)?,
   };
 
   Some(if let Some(mask_data) = smask {
@@ -942,27 +1088,17 @@ fn decode_xobject_to_dynamic_image(
   })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn encode_to_png(
   content: &[u8],
   width: u32,
   height: u32,
   bpc: u32,
   color_space: &str,
-  filter: &str,
+  codec: &Codec,
   smask: Option<&[u8]>,
-  ccitt: Option<CcittParams>,
 ) -> Option<Vec<u8>> {
-  let final_img = decode_xobject_to_dynamic_image(
-    content,
-    width,
-    height,
-    bpc,
-    color_space,
-    filter,
-    smask,
-    ccitt,
-  )?;
+  let final_img =
+    decode_xobject_to_dynamic_image(content, width, height, bpc, color_space, codec, smask)?;
   let mut png_buf = Cursor::new(Vec::new());
   final_img.write_to(&mut png_buf, ImageFormat::Png).ok()?;
   Some(png_buf.into_inner())
@@ -1087,3 +1223,6 @@ fn cmyk_to_rgb(cmyk: &[u8]) -> Vec<u8> {
 
 #[cfg(test)]
 mod ccitt_tests;
+
+#[cfg(test)]
+mod jbig2_tests;

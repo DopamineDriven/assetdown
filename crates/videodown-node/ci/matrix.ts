@@ -1,3 +1,6 @@
+import { spawnSync } from "node:child_process";
+import { readdirSync } from "node:fs";
+
 import pkgJson from "../package.json" with { type: "json" };
 interface RepositoryEntity {
   type: string;
@@ -321,8 +324,35 @@ for (const target of verifiableTargets) {
   }
 }
 
+/**
+ * Whether this run is this package's to do.
+ *
+ * A commit named `<package>@<version>` releases one package, but it starts the workflow of
+ * every package whose files it touches. Only the package it names goes on past this plan; the
+ * others stop here, so one release does not queue every pipeline. Any other commit runs
+ * whatever its paths started, and a run started by hand always goes on.
+ */
+const releaseName = pkgJson.name.slice(pkgJson.name.lastIndexOf("/") + 1);
+/** One release name for each `crates/<name>-node`: the packages this repository publishes. */
+const releaseNames = readdirSync(new URL("../../", import.meta.url))
+  .filter((entry) => entry.endsWith("-node"))
+  .map((entry) => entry.slice(0, -"-node".length));
+const log = spawnSync("git", ["log", "-1", "--pretty=%s"], {
+  encoding: "utf8"
+});
+// Outside a checkout there is no commit to read, and the run goes on.
+const subject = log.status === 0 ? log.stdout.trim() : "";
+const released = releaseNames.find((entry) =>
+  new RegExp(`^${entry}@\\d`).test(subject)
+);
+const run =
+  process.env.GITHUB_EVENT_NAME === "workflow_dispatch" ||
+  released === undefined ||
+  released === releaseName;
+
 process.stdout.write(
   [
+    `run=${run}`,
     `build=${JSON.stringify(build)}`,
     `test_host=${JSON.stringify(testHost)}`,
     `test_docker=${JSON.stringify(testDocker)}`,

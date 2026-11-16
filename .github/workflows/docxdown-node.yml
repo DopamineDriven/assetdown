@@ -57,6 +57,9 @@ jobs:
       test_docker: ${{ steps.plan.outputs.test_docker }}
       wasi: ${{ steps.plan.outputs.wasi }}
       freebsd: ${{ steps.plan.outputs.freebsd }}
+      # False when the commit is another package's release (`<name>@<version>`). Every job
+      # below then skips, so one release does not queue every package's pipeline.
+      run: ${{ steps.plan.outputs.run }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -67,6 +70,8 @@ jobs:
         run: node ci/matrix.ts >> "$GITHUB_OUTPUT"
   lint:
     name: Lint and Rust tests
+    needs: plan
+    if: ${{ needs.plan.outputs.run == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -87,6 +92,7 @@ jobs:
         run: cargo test --workspace --exclude pdfdown-ocr
   build:
     needs: plan
+    if: ${{ needs.plan.outputs.run == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -102,7 +108,7 @@ jobs:
           flags: ${{ matrix.settings.flags }}
   build-freebsd:
     needs: plan
-    if: ${{ needs.plan.outputs.freebsd == 'true' }}
+    if: ${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.freebsd == 'true' }}
     name: Build x86_64-unknown-freebsd
     runs-on: ubuntu-latest
     steps:
@@ -112,7 +118,7 @@ jobs:
     needs:
       - plan
       - build
-    if: ${{ needs.plan.outputs.test_host != '[]' }}
+    if: ${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.test_host != '[]' }}
     strategy:
       fail-fast: false
       matrix:
@@ -133,7 +139,7 @@ jobs:
     needs:
       - plan
       - build
-    if: ${{ needs.plan.outputs.test_docker != '[]' }}
+    if: ${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.test_docker != '[]' }}
     strategy:
       fail-fast: false
       matrix:
@@ -160,7 +166,7 @@ jobs:
     needs:
       - plan
       - build
-    if: ${{ needs.plan.outputs.wasi == 'true' }}
+    if: ${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.wasi == 'true' }}
     name: Test wasm32-wasip1-threads - node@26
     runs-on: ubuntu-latest
     steps:
@@ -173,6 +179,7 @@ jobs:
   publish:
     name: Publish
     needs:
+      - plan
       - lint
       - build-freebsd
       - test-host
@@ -180,7 +187,7 @@ jobs:
       - test-wasi
     # Runs when nothing it waits on failed, including when one of them was skipped
     # because package.json lists no target of that kind.
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ needs.plan.outputs.run == 'true' && !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

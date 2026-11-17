@@ -1,10 +1,12 @@
 [package]
-edition.workspace    = true
-keywords             = ["xlsx", "extract", "extraction", "spreadsheet"]
-license              = { workspace = true }
-name                 = "xlsxdown"
-repository.workspace = true
-version                = "0.2.0"
+description            = "xlsx extraction, workbook cells, formulas, and sheet geometry"
+edition.workspace      = true
+keywords               = ["xlsx", "extract", "extraction", "spreadsheet"]
+license.workspace      = true
+name                   = "xlsxdown"
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.3.0"
 [dependencies]
 contentdown.workspace = true
 ooxmldown.workspace   = true

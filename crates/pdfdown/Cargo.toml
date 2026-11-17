@@ -5,7 +5,7 @@ keywords             = ["pdf", "extraction", "metadata", "images", "annots"]
 license              = { workspace = true }
 name                 = "pdfdown"
 repository.workspace = true
-version              = "0.16.0"
+version              = "0.17.0"
 [dependencies]
 contentdown.workspace    = true
 flate2.workspace         = true

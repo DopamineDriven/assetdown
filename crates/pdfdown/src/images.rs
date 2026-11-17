@@ -1,3 +1,5 @@
+pub mod composite;
+
 use crate::types::PageImage;
 use image::{DynamicImage, ImageBuffer, ImageFormat};
 use lopdf::{Document, Object, ObjectId};
@@ -31,11 +33,63 @@ pub fn collect_page_decoded_images_named(
   doc: &Document,
   page_id: ObjectId,
 ) -> Vec<(String, DynamicImage)> {
-  let mut decoded = Vec::new();
+  page_image_sources(doc, page_id)
+    .iter()
+    .filter_map(|source| Some((source.name.clone(), source.decode()?)))
+    .collect()
+}
+
+/// An image XObject a page paints, with what decoding it takes.
+struct PageImageSource<'a> {
+  /// The XObject's resource name.
+  name: String,
+  stream: &'a lopdf::Stream,
+  width: u32,
+  height: u32,
+  bpc: u32,
+  color_space: String,
+  codec: Codec,
+}
+
+impl PageImageSource<'_> {
+  /// Whether the image is in a coding kept for one-bit images. Those decode to black ink on white
+  /// paper, a stencil mask included.
+  fn is_one_bit(&self) -> bool {
+    matches!(self.codec, Codec::Ccitt(_) | Codec::Jbig2(_))
+  }
+
+  fn decode(&self) -> Option<DynamicImage> {
+    let content = match self.codec {
+      Codec::Raw => {
+        let mut s = self.stream.clone();
+        if s.decompress().is_ok() {
+          s.content
+        } else {
+          self.stream.content.clone()
+        }
+      }
+      _ => image_codec_payload(self.stream),
+    };
+    // Skip SMask for OCR — to_rgb8() drops alpha anyway
+    decode_xobject_to_dynamic_image(
+      &content,
+      self.width,
+      self.height,
+      self.bpc,
+      &self.color_space,
+      &self.codec,
+      None,
+    )
+  }
+}
+
+/// The image XObjects in a page's resources that its content paints, undecoded.
+fn page_image_sources(doc: &Document, page_id: ObjectId) -> Vec<PageImageSource<'_>> {
+  let mut sources = Vec::new();
 
   let xobjects = match get_page_xobjects(doc, page_id) {
     Some(x) => x,
-    None => return decoded,
+    None => return sources,
   };
 
   let referenced_names = get_referenced_xobject_names(doc, page_id);
@@ -75,29 +129,19 @@ pub fn collect_page_decoded_images_named(
 
     let color_space = resolve_color_space(&stream.dict, doc);
     let filter = resolve_filter(&stream.dict);
-
     let codec = codec_of(doc, &stream.dict, &filter, width, height);
-    let content = match codec {
-      Codec::Raw => {
-        let mut s = stream.clone();
-        if s.decompress().is_ok() {
-          s.content
-        } else {
-          stream.content.clone()
-        }
-      }
-      _ => image_codec_payload(stream),
-    };
-
-    // Skip SMask for OCR — to_rgb8() drops alpha anyway
-    if let Some(img) =
-      decode_xobject_to_dynamic_image(&content, width, height, bpc, &color_space, &codec, None)
-    {
-      decoded.push((String::from_utf8_lossy(name).to_string(), img));
-    }
+    sources.push(PageImageSource {
+      name: String::from_utf8_lossy(name).to_string(),
+      stream,
+      width,
+      height,
+      bpc,
+      color_space,
+      codec,
+    });
   }
 
-  decoded
+  sources
 }
 
 fn collect_page_images_raw(doc: &Document, page_id: ObjectId, page_num: u32) -> Vec<PageImage> {

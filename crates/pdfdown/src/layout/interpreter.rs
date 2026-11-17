@@ -70,7 +70,29 @@ impl Matrix {
     (self.c * self.c + self.d * self.d).sqrt()
   }
 
-  fn from_operands(ops: &[Object]) -> Option<Matrix> {
+  /// The inverse, or `None` for a matrix that flattens the plane (or is not finite).
+  pub fn inverse(self) -> Option<Matrix> {
+    let det = self.a * self.d - self.b * self.c;
+    if !det.is_finite() || det == 0.0 {
+      return None;
+    }
+    let inverse = Matrix {
+      a: self.d / det,
+      b: -self.b / det,
+      c: -self.c / det,
+      d: self.a / det,
+      e: (self.c * self.f - self.d * self.e) / det,
+      f: (self.b * self.e - self.a * self.f) / det,
+    };
+    [
+      inverse.a, inverse.b, inverse.c, inverse.d, inverse.e, inverse.f,
+    ]
+    .iter()
+    .all(|v| v.is_finite())
+    .then_some(inverse)
+  }
+
+  pub fn from_operands(ops: &[Object]) -> Option<Matrix> {
     if ops.len() < 6 {
       return None;
     }
@@ -93,7 +115,7 @@ impl Matrix {
   }
 }
 
-fn number(obj: &Object) -> Option<f64> {
+pub(crate) fn number(obj: &Object) -> Option<f64> {
   match obj {
     Object::Integer(i) => Some(*i as f64),
     Object::Real(r) => Some(f64::from(*r)),
@@ -101,14 +123,14 @@ fn number(obj: &Object) -> Option<f64> {
   }
 }
 
-fn deref<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Object> {
+pub(crate) fn deref<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Object> {
   match obj {
     Object::Reference(id) => doc.get_object(*id).ok(),
     other => Some(other),
   }
 }
 
-fn bbox_of(m: Matrix, x0: f64, y0: f64, x1: f64, y1: f64) -> (f64, f64, f64, f64) {
+pub(crate) fn bbox_of(m: Matrix, x0: f64, y0: f64, x1: f64, y1: f64) -> (f64, f64, f64, f64) {
   let pts = [
     m.apply(x0, y0),
     m.apply(x1, y0),

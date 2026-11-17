@@ -6,7 +6,7 @@ name                   = "pdfdown-node"
 publish                = false
 repository.workspace   = true
 rust-version.workspace = true
-version                = "0.16.0"
+version                = "0.17.0"
 
 [lib]
 crate-type = ["cdylib"]
@@ -25,5 +25,3 @@ render = ["pdfdown/render", "pdfdown-ocr?/render"]
 
 [build-dependencies]
 napi-build.workspace = true
-
-

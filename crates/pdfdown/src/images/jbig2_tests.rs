@@ -12,7 +12,7 @@ const INK_WHITE: [u8; 16] = [B, B, W, W, W, B, B, B, B, B, B, B, B, B, B, B];
 
 /// That picture as an embedded JBIG2 stream, written by hand (ITU-T T.88): a page information
 /// segment, then one immediate generic region whose bitmap is coded the way a Group 4 fax is.
-fn jbig2_page() -> Vec<u8> {
+pub(super) fn jbig2_page() -> Vec<u8> {
   let mut data = Vec::new();
   // Segment 0: page information (type 48) for page 1, with 19 bytes of data.
   data.extend_from_slice(&[0, 0, 0, 0, 0x30, 0x00, 0x01, 0, 0, 0, 19]);

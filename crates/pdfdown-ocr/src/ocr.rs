@@ -6,7 +6,8 @@ use contentdown::{FontMeta, PageLayout, PlacedImage, TextSource, Word, words_to_
 use image::DynamicImage;
 use lopdf::{Document, ObjectId};
 use pdfdown::PageText;
-use pdfdown::images::{collect_page_decoded_images_named, page_path_op_count};
+use pdfdown::images::composite::{InkTone, OcrImages, OneBitComposite, collect_page_ocr_images};
+use pdfdown::images::page_path_op_count;
 #[cfg(feature = "render")]
 use pdfdown::images::{page_has_form_xobjects, page_has_image_xobjects};
 use pdfdown::layout::{NativeLayout, PageGeometry, native_layout, page_geometry, page_layout};
@@ -262,26 +263,37 @@ fn ocr_dynamic_image(img: &DynamicImage, lang: &str, ppi: i32) -> String {
   best.map(|b| b.0).unwrap_or_default()
 }
 
-/// OCR the page's rasters at the resolution their painted size implies.
+/// OCR the page's rasters at the resolution their painted size implies: first its one-bit images,
+/// merged onto one raster for each tone (they hold a scanned page's text), then its other images
+/// one by one. `page_box` is the page's box in user space.
 fn ocr_page_images(
   doc: &Document,
   page_id: ObjectId,
   lang: &str,
   placements: &[PlacedImage],
+  page_box: [f64; 4],
 ) -> String {
-  let mut texts = Vec::new();
-  for (name, img) in collect_page_decoded_images_named(doc, page_id) {
+  let OcrImages { named, composites } = collect_page_ocr_images(doc, page_id, page_box);
+  let merged = composites.into_iter().map(|composite| {
+    let ppi = source_ppi(
+      composite.image.width(),
+      composite.bbox[2] - composite.bbox[0],
+    );
+    ocr_dynamic_image(&DynamicImage::ImageLuma8(composite.image), lang, ppi)
+  });
+  let separate = named.into_iter().map(|(name, img)| {
     let ppi = placements
       .iter()
       .find(|p| p.xobject_name == name)
       .map(|p| source_ppi(img.width(), p.x1 - p.x0))
       .unwrap_or(DEFAULT_SOURCE_PPI);
-    let text = ocr_dynamic_image(&img, lang, ppi);
-    if !text.is_empty() {
-      texts.push(text);
-    }
-  }
-  texts.join("\n")
+    ocr_dynamic_image(&img, lang, ppi)
+  });
+  merged
+    .chain(separate)
+    .filter(|text| !text.is_empty())
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 // The render modes a caller passes. With the `render` feature they are `pdfdown`'s; without it
@@ -370,7 +382,7 @@ pub fn extract_text_with_ocr(
         // Tier 2: OCR extracted raster images
         #[cfg_attr(not(feature = "render"), allow(unused_mut))]
         let mut text = if decision == OcrDecision::Ocr {
-          ocr_page_images(doc, page_id, lang, &layout.images)
+          ocr_page_images(doc, page_id, lang, &layout.images, geo.bbox)
         } else {
           String::new()
         };
@@ -725,18 +737,95 @@ fn words_in_painted_raster(
     .collect()
 }
 
-/// Tier 2: OCR the page's embedded raster images and place each word through the image's `Do`
-/// placement from the native pass, in the frame as painted. Returns the words and the page's
-/// dominant turn; the caller turns the whole page frame by it.
+/// What one of a page's rasters read as.
+struct RasterRead {
+  /// What the raster is, as a warning names it: `image Im3`, `14 one-bit images`.
+  subject: String,
+  /// The words, placed in user space in the frame as painted.
+  words: Vec<Word>,
+  /// The clockwise turn the raster read upright at.
+  degrees: u32,
+  score: f64,
+}
+
+/// OCR one raster at its best orientation and place its words on `dest`, the user-space
+/// rectangle `[x0, y0, x1, y1]` the raster covers as painted.
+fn read_placed_raster(
+  subject: String,
+  img: &DynamicImage,
+  dest: [f64; 4],
+  lang: &str,
+  warnings: &mut Vec<String>,
+) -> RasterRead {
+  let ppi = source_ppi(img.width(), dest[2] - dest[0]);
+  let (words, degrees, (rw, rh), decided) = ocr_words_best_orientation(img, lang, Some(ppi));
+  let painted = words_in_painted_raster(words, degrees, rw, rh);
+  let words = map_ocr_words(painted, img.width(), img.height(), dest);
+  // A logo or rule that OCR read as a word or two (fewer than WEAK_TIER2_WORDS) has no
+  // orientation worth reporting.
+  if degrees != 0 && words.len() >= WEAK_TIER2_WORDS {
+    warnings.push(format!(
+      "{subject}: {} words read upright after a {degrees}° turn ({})",
+      words.len(),
+      decided.label()
+    ));
+  }
+  let score = ocr_score(&words);
+  RasterRead {
+    subject,
+    words,
+    degrees,
+    score,
+  }
+}
+
+/// How a warning names a raster of merged one-bit images.
+fn composite_subject(composite: &OneBitComposite) -> String {
+  let images = if composite.pieces == 1 {
+    "one-bit image"
+  } else {
+    "one-bit images"
+  };
+  match composite.tone {
+    InkTone::Dark => format!("{} {images}", composite.pieces),
+    InkTone::Light => format!("{} {images} painted light", composite.pieces),
+  }
+}
+
+/// Tier 2: OCR the page's embedded raster images and place each word in the frame as painted.
+/// `page_box` is the page's box in user space. Returns the words and the page's dominant turn;
+/// the caller turns the whole page frame by it.
 fn ocr_page_image_words(
   doc: &Document,
   page_id: ObjectId,
   lang: &str,
   placements: &[PlacedImage],
+  page_box: [f64; 4],
   warnings: &mut Vec<String>,
 ) -> (Vec<Word>, u32) {
-  let mut per_image: Vec<(String, Vec<Word>, u32, f64)> = Vec::new();
-  for (name, img) in collect_page_decoded_images_named(doc, page_id) {
+  let images = collect_page_ocr_images(doc, page_id, page_box);
+  read_page_rasters(images, lang, placements, warnings)
+}
+
+/// Read a page's rasters: its one-bit images together, merged onto one raster for each tone,
+/// with their words placed on the area that raster covers; then every other image by itself,
+/// placed through its `Do` placement from the native pass. Returns the words in the frame as
+/// painted and the page's dominant turn.
+fn read_page_rasters(
+  images: OcrImages,
+  lang: &str,
+  placements: &[PlacedImage],
+  warnings: &mut Vec<String>,
+) -> (Vec<Word>, u32) {
+  let OcrImages { named, composites } = images;
+  let mut reads = Vec::new();
+  for composite in composites {
+    let subject = composite_subject(&composite);
+    let dest = composite.bbox;
+    let img = DynamicImage::ImageLuma8(composite.image);
+    reads.push(read_placed_raster(subject, &img, dest, lang, warnings));
+  }
+  for (name, img) in named {
     let placed: Vec<&PlacedImage> = placements
       .iter()
       .filter(|p| p.xobject_name == name)
@@ -753,43 +842,33 @@ fn ocr_page_image_words(
         placed.len()
       ));
     }
-    let ppi = source_ppi(img.width(), first.x1 - first.x0);
-    let (words, degrees, (rw, rh), decided) = ocr_words_best_orientation(&img, lang, Some(ppi));
-    let painted = words_in_painted_raster(words, degrees, rw, rh);
-    let mapped = map_ocr_words(
-      painted,
-      img.width(),
-      img.height(),
-      [first.x0, first.y0, first.x1, first.y1],
-    );
-    // A logo or rule that OCR read as a word or two (fewer than WEAK_TIER2_WORDS) has no
-    // orientation worth reporting.
-    if degrees != 0 && mapped.len() >= WEAK_TIER2_WORDS {
-      warnings.push(format!(
-        "image {name}: {} words read upright after a {degrees}° turn ({})",
-        mapped.len(),
-        decided.label()
-      ));
-    }
-    let score = ocr_score(&mapped);
-    per_image.push((name, mapped, degrees, score));
+    let dest = [first.x0, first.y0, first.x1, first.y1];
+    reads.push(read_placed_raster(
+      format!("image {name}"),
+      &img,
+      dest,
+      lang,
+      warnings,
+    ));
   }
-  // An image that read as a word or two is no evidence of the page's turn; it does not vote.
-  let votes: Vec<(u32, f64)> = per_image
+  // A raster that read as a word or two is no evidence of the page's turn; it does not vote.
+  let votes: Vec<(u32, f64)> = reads
     .iter()
-    .filter(|(_, words, _, _)| words.len() >= WEAK_TIER2_WORDS)
-    .map(|(_, _, degrees, score)| (*degrees, *score))
+    .filter(|read| read.words.len() >= WEAK_TIER2_WORDS)
+    .map(|read| (read.degrees, read.score))
     .collect();
   let dominant = dominant_rotation(&votes);
   let mut out = Vec::new();
-  for (name, words, degrees, _) in per_image {
-    if degrees != dominant && words.len() >= WEAK_TIER2_WORDS {
+  for read in reads {
+    if read.degrees != dominant && read.words.len() >= WEAK_TIER2_WORDS {
       warnings.push(format!(
-        "image {name}: {} words read upright at {degrees}° but the page frame is turned {dominant}°; they read sideways in it",
-        words.len()
+        "{}: {} words read upright at {}° but the page frame is turned {dominant}°; they read sideways in it",
+        read.subject,
+        read.words.len(),
+        read.degrees
       ));
     }
-    out.extend(words);
+    out.extend(read.words);
   }
   (out, dominant)
 }
@@ -1085,8 +1164,14 @@ pub fn extract_layout_with_ocr(
         // Tier 2: OCR embedded raster images.
         #[cfg_attr(not(feature = "render"), allow(unused_mut))]
         let mut ocr_words = if decision == OcrDecision::Ocr {
-          let (words, dominant) =
-            ocr_page_image_words(doc, page_id, lang, &native.images, &mut warnings);
+          let (words, dominant) = ocr_page_image_words(
+            doc,
+            page_id,
+            lang,
+            &native.images,
+            geo.bbox,
+            &mut warnings,
+          );
           rotation = dominant;
           words
         } else {
@@ -1171,6 +1256,9 @@ mod layout_tests;
 
 #[cfg(test)]
 mod cascade_tests;
+
+#[cfg(test)]
+mod composite_tests;
 
 #[cfg(test)]
 mod resolution_tests;

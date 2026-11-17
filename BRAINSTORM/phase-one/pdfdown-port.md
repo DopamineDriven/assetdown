@@ -885,6 +885,16 @@ fn decode_jbig2(content: &[u8], globals: Option<&[u8]>) -> Option<DynamicImage> 
 - **Tests** are in `images/jbig2_tests.rs`, on streams written by hand: a generic region and, for globals, a halftone region whose patterns live in the shared stream. No fixture was added.
 - **Not done:** a JBIG2 image with an `Indexed` color space is decoded as ink on paper, without its palette. JBIG2 images inside form XObjects are not collected, like any other image there.
 
+**As built: one raster for a page's one-bit images.** Tier 2 read every image by itself. A copier that saves a scan as mixed raster content keeps the text in one-bit stencil masks, one for each ink color and often dozens to a page, so such a page cost an OCR pass for each mask and a word lying across two masks came back as two fragments. `crates/pdfdown/src/images/composite.rs` now paints a page's one-bit images onto one raster, and tier 2 reads that:
+
+- **Which images.** The ones in a one-bit coding (`Codec::Ccitt`, `Codec::Jbig2`) that the page's own content stream paints, when it paints two or more. A page with one such image, and every image of another kind, is read as before. `collect_page_ocr_images` returns both: `named` for the images read one by one and `composites` for the merged rasters. `collect_page_decoded_images_named` is unchanged.
+- **Where each lands.** A walk of the content stream (`q`, `Q`, `cm`, the fill color operators and `Do`) gives each paint its matrix, and the raster is sampled through the inverse matrix, so an image painted turned or mirrored lands as the page shows it. `PlacedImage` and the layout interpreter's output are unchanged; three of the interpreter's helpers became visible to the crate and `Matrix` gained `inverse`.
+- **Two tones.** Every image's ink is black on white, as when it is decoded alone, whatever color fills it. Masks filled with a light color (a gray level of 0.5 or more, read from `g`, `rg`, `k`, or `sc`/`scn` in a space whose components are gray, RGB or CMYK) go on a second raster: white lettering and the dark bar it is cut out of would be one black shape on a shared one. A fill in a spot, indexed or pattern space counts as dark.
+- **Size.** Each raster covers the area its pieces occupy inside the page box, at the resolution most of their pixels are painted at, up to 72 million pixels.
+- **In the OCR crate** `read_page_rasters` reads the merged rasters first and places their words on the area each covers, then the named images through their placements as before. A warning names a merged raster by what it holds ("14 one-bit images").
+- **Tests** are in `images/composite/tests.rs` (rasters drawn in the test, and pages built in memory around the hand-written JBIG2 stream) and `pdfdown-ocr`'s `ocr/composite_tests.rs` (the crate's existing fixture). No fixture was added.
+- **Not done.** Images inside form XObjects are not merged. One-bit images kept as plain `FlateDecode` samples are still not decoded at all. The picture under the masks is still read by itself, and every raster still searches for its own orientation, which is where most of tier 2's time now goes.
+
 **Source format.** Today every image is decoded and written out again as PNG, including the ones that were already a JPEG or JPEG 2000 file inside the PDF. Proposed: return those bytes untouched, and say what the bytes are.
 
 ```rust

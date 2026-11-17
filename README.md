@@ -22,7 +22,7 @@ Each package has a class that parses a buffer once and is read from as often as 
 
 ## Crates
 
-### Bindings 
+### Bindings
 
 One npm package each. `pdfdown-node` builds two: the base package, and the OCR superset with its `ocr` feature.
 
@@ -35,7 +35,7 @@ One npm package each. `pdfdown-node` builds two: the base package, and the OCR s
 | [`audiodown-node`](crates/audiodown-node) | `@d0paminedriven/audiodown`                              | `audiodown`              |
 | [`videodown-node`](crates/videodown-node) | `@d0paminedriven/videodown`                              | `videodown`              |
 
-### Format libraries
+### Format libraries 
 
 Plain Rust, with no dependency on Node.
 

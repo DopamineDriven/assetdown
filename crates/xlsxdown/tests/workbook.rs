@@ -51,6 +51,43 @@ fn the_form_lists_its_sheets_with_their_dimension_print_area_and_merges() {
 }
 
 #[test]
+fn the_form_is_counted_sheet_by_sheet_and_in_total() {
+  let workbook = open("form.xlsx");
+  let meta = workbook.metadata();
+  assert_eq!((meta.sheet_count, meta.hidden_sheet_count), (2, 1));
+  assert_eq!(
+    (meta.cell_count, meta.formula_count, meta.merged_range_count),
+    (24, 4, 2)
+  );
+  assert_eq!((meta.word_count, meta.character_count), (18, 96));
+  // The print area is a built-in name: read, and not counted as a name the workbook defines.
+  assert_eq!(meta.defined_name_count, 0);
+  assert_eq!(
+    (
+      meta.table_count,
+      meta.image_count,
+      meta.chart_count,
+      meta.pivot_table_count,
+      meta.annotation_count
+    ),
+    (0, 0, 0, 0, 0)
+  );
+
+  let form = &meta.sheets[0];
+  assert_eq!(form.cell_count, 23);
+  assert_eq!(a1(form.dimension).as_deref(), Some("A1:H30"));
+  assert_eq!(a1(form.used_range).as_deref(), Some("A1:E22"));
+  assert_eq!((form.row_count, form.column_count), (22, 5));
+  // The count is the model's own: every cell it keeps, hidden rows included.
+  assert_eq!(
+    usize::try_from(form.cell_count).ok(),
+    Some(workbook.sheets[0].cells.len())
+  );
+  // The fixture states no properties.
+  assert_eq!(workbook.props, xlsxdown::DocProps::default());
+}
+
+#[test]
 fn sheets_are_selected_by_name_or_by_visibility() {
   let workbook = open("form.xlsx");
   let names = |selected: Vec<&Sheet>| -> Vec<String> {

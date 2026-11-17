@@ -706,3 +706,123 @@ describe("spreadsheetGrid", () => {
     }
   );
 });
+
+describe("metadata", () => {
+  const meta = doc.metadata();
+  const everything = { hiddenSheets: true, hiddenCells: true } as const;
+
+  it("should list every sheet, the hidden one included", {}, () => {
+    assert.equal(meta.sheetCount, 2);
+    assert.equal(meta.hiddenSheetCount, 1);
+    assert.deepEqual(
+      meta.sheets.map((s) => [s.name, s.index, s.hidden]),
+      [
+        ["Form", 0, false],
+        ["Notes", 1, true]
+      ]
+    );
+  });
+  it("should count each sheet's cells, formulas and merged ranges", {}, () => {
+    const [formSheet, notes] = meta.sheets;
+    assert.ok(formSheet, "the form's first sheet is missing");
+    assert.ok(notes, "the form's second sheet is missing");
+    assert.equal(formSheet.cellCount, 23);
+    assert.equal(formSheet.formulaCount, 4);
+    assert.equal(formSheet.mergedRangeCount, 2);
+    assert.equal(notes.cellCount, 1);
+    assert.equal(notes.formulaCount, 0);
+  });
+  it(
+    "should give the used range beside the dimension the file declares",
+    {},
+    () => {
+      const [formSheet, notes] = meta.sheets;
+      assert.ok(formSheet, "the form's first sheet is missing");
+      assert.ok(notes, "the form's second sheet is missing");
+      // The file declares more than it holds.
+      assert.equal(formSheet.dimension, "A1:H30");
+      assert.equal(formSheet.usedRange, "A1:E22");
+      assert.equal(formSheet.rowCount, 22);
+      assert.equal(formSheet.columnCount, 5);
+      assert.equal(notes.usedRange, "A1:A1");
+      assert.equal(notes.rowCount, 1);
+      assert.equal(notes.columnCount, 1);
+    }
+  );
+  it(
+    "should count in total what spreadsheetCells returns with nothing held back",
+    {},
+    () => {
+      const sheets = doc.spreadsheetCells(everything);
+      assert.equal(
+        meta.cellCount,
+        sheets.reduce((total, s) => total + s.cells.length, 0)
+      );
+      assert.equal(
+        meta.formulaCount,
+        sheets.reduce(
+          (total, s) =>
+            total + s.cells.filter((c) => c.formula !== undefined).length,
+          0
+        )
+      );
+      assert.equal(
+        meta.mergedRangeCount,
+        sheets.reduce((total, s) => total + s.merges.length, 0)
+      );
+      assert.equal(meta.cellCount, 24);
+    }
+  );
+  it(
+    "should count the words and characters of the cells that hold text",
+    {},
+    () => {
+      assert.equal(meta.wordCount, 18);
+      assert.equal(meta.characterCount, 96);
+    }
+  );
+  it("should count nothing the form does not hold", {}, () => {
+    assert.equal(meta.tableCount, 0);
+    assert.equal(meta.imageCount, 0);
+    assert.equal(meta.chartCount, 0);
+    assert.equal(meta.pivotTableCount, 0);
+    assert.equal(meta.linkCount, 0);
+    assert.equal(meta.commentCount, 0);
+    assert.equal(meta.annotationCount, 0);
+  });
+  it(
+    "should not count the print area among the names the workbook defines",
+    {},
+    () => {
+      assert.equal(sheet.printArea, "A1:F12");
+      assert.equal(meta.definedNameCount, 0);
+    }
+  );
+  it("should leave out the properties the file does not state", {}, () => {
+    assert.equal(meta.title, undefined);
+    assert.equal(meta.author, undefined);
+    assert.equal(meta.created, undefined);
+    assert.equal(meta.application, undefined);
+  });
+  it("should say which date system the workbook counts in", {}, () => {
+    assert.equal(meta.date1904, false);
+    assert.equal(
+      new XlsxDown(t.getFixtureBuff("date1904")).metadata().date1904,
+      true
+    );
+  });
+  it("should describe the minimal fixture's one sheet", {}, () => {
+    const minimal = new XlsxDown(t.getFixtureBuff("minimal")).metadata();
+    assert.equal(minimal.sheetCount, 1);
+    assert.equal(minimal.hiddenSheetCount, 0);
+    assert.equal(minimal.cellCount, 4);
+    const [only] = minimal.sheets;
+    assert.ok(only, "the minimal fixture's sheet is missing");
+    assert.equal(only.usedRange, "A1:B2");
+    assert.equal(only.rowCount, 2);
+    assert.equal(only.columnCount, 2);
+  });
+  it("metadataAsync should resolve to what metadata returns", {}, async () => {
+    assert.deepEqual(await doc.metadataAsync(), meta);
+  });
+});

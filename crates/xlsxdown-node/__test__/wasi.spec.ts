@@ -131,6 +131,20 @@ describe("wasm32-wasi build", { skip }, () => {
     }
   );
   it(
+    "should count what the workbook holds, on this thread and on a worker",
+    {},
+    async () => {
+      const doc = new XlsxDown(form);
+      const meta = doc.metadata();
+      assert.equal(meta.sheetCount, 2);
+      assert.equal(meta.hiddenSheetCount, 1);
+      assert.equal(meta.cellCount, 24);
+      assert.equal(meta.formulaCount, 4);
+      assert.equal(meta.mergedRangeCount, 2);
+      assert.deepEqual(await doc.metadataAsync(), meta);
+    }
+  );
+  it(
     "should throw from the constructor and reject from openAsync for macro.xlsm",
     {},
     async () => {

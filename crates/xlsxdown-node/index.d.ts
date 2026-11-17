@@ -46,6 +46,14 @@ export declare class XlsxDown {
   invoice(opts?: InvoiceOptions | undefined | null): InvoiceResult
   /** `invoice` on a worker thread. */
   invoiceAsync(opts?: InvoiceOptions | undefined | null): Promise<InvoiceResult>
+  /**
+   * What the workbook says about itself (title, author, dates) and counts of what it holds,
+   * sheet by sheet and in total: cells, formulas, merged ranges, tables, pictures, charts,
+   * pivot tables, links and comments. Hidden sheets are counted like any other.
+   */
+  metadata(): XlsxMeta
+  /** `metadata` on a worker thread. */
+  metadataAsync(): Promise<XlsxMeta>
 }
 
 /** `value` is `lines` joined with `
@@ -362,6 +370,41 @@ export interface SheetLine {
   wordCount: number
 }
 
+/** One sheet's counts. */
+export interface SheetMeta {
+  name: string
+  /** Position in the workbook, 0-based. */
+  index: number
+  hidden: boolean
+  /** The declared `<dimension>`, which a producer may overstate. */
+  dimension?: string
+  /**
+   * From the first to the last row and column that hold a cell, in A1 form: `A1:F20`. Absent
+   * for a sheet with no cells. A merged range counts by its first cell only.
+   */
+  usedRange?: string
+  /** The rows and the columns the used range spans. */
+  rowCount: number
+  columnCount: number
+  /**
+   * Cells that hold a value or a formula: what `spreadsheetCells` returns for the sheet with
+   * `hiddenCells` on.
+   */
+  cellCount: number
+  /** Cells with a formula, the ones that follow a shared formula included. */
+  formulaCount: number
+  mergedRangeCount: number
+  tableCount: number
+  /** Pictures on the sheet. */
+  imageCount: number
+  chartCount: number
+  pivotTableCount: number
+  /** Links the sheet lists. One link may cover a range of cells. */
+  linkCount: number
+  /** Cells with a note or a comment thread. */
+  commentCount: number
+}
+
 /**
  * One selected sheet laid out as a page: every cell's text placed inside the cell's rectangle,
  * broken into words and grouped into lines, with the sheet facts a reader needs beside them.
@@ -462,4 +505,52 @@ export interface TaxDetail {
   amount?: MoneyField
   base?: MoneyField
   category?: StringField
+}
+
+/**
+ * What a workbook says about itself, and counts of what it holds. Hidden sheets, rows and
+ * columns are counted like any other: this describes the file, not a selection from it.
+ */
+export interface XlsxMeta {
+  title?: string
+  author?: string
+  subject?: string
+  /** As written: one string, usually separated by commas or semicolons. */
+  keywords?: string
+  description?: string
+  category?: string
+  language?: string
+  lastModifiedBy?: string
+  revision?: string
+  /** When the workbook was created and last saved, as the file writes them. */
+  created?: string
+  modified?: string
+  /** The application that last saved the file, and its version. */
+  application?: string
+  appVersion?: string
+  company?: string
+  /** Every sheet, the hidden ones included. */
+  sheetCount: number
+  hiddenSheetCount: number
+  /** Cells that hold a value or a formula, over every sheet. */
+  cellCount: number
+  formulaCount: number
+  mergedRangeCount: number
+  /** Words of the cells that hold text, counted from what those cells show. */
+  wordCount: number
+  /** Characters of those cells that are not white space. */
+  characterCount: number
+  tableCount: number
+  imageCount: number
+  chartCount: number
+  pivotTableCount: number
+  /** Names the workbook defines, the built-in ones (a print area, a filter) left out. */
+  definedNameCount: number
+  /** Links and comments. */
+  annotationCount: number
+  linkCount: number
+  commentCount: number
+  /** Whether dates count from 1904, as workbooks from old versions of Excel for Mac do. */
+  date1904: boolean
+  sheets: Array<SheetMeta>
 }

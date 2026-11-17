@@ -9,6 +9,7 @@ mod cells;
 // Public so its enums keep the spellings JavaScript sees (`UBL`, `DMY`) without a lint exception.
 pub mod invoice;
 mod layout;
+mod meta;
 mod types;
 
 use std::sync::Arc;
@@ -21,6 +22,7 @@ use xlsxdown::{SpreadsheetError, Workbook};
 use crate::cells::{cells_of, grid_of};
 use crate::invoice::{InvoiceOptions, InvoiceResult};
 use crate::layout::{SheetPage, pages_of};
+use crate::meta::{XlsxMeta, metadata_of};
 use crate::types::{SheetCells, SheetGrid, SpreadsheetOptions};
 
 // A parsed workbook is handed to worker threads behind an `Arc`.
@@ -159,6 +161,25 @@ impl Task for SharedInvoiceTask {
   }
 }
 
+/// Counts what the workbook an `XlsxDown` holds, for its `metadataAsync`.
+pub struct SharedMetadataTask {
+  inner: Arc<Workbook>,
+}
+
+#[napi]
+impl Task for SharedMetadataTask {
+  type Output = XlsxMeta;
+  type JsValue = XlsxMeta;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    Ok(metadata_of(&self.inner))
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output)
+  }
+}
+
 /// A parsed workbook. Parsing happens once, in the constructor or in `openAsync`; every method
 /// reads from the parsed workbook.
 #[napi]
@@ -251,6 +272,22 @@ impl XlsxDown {
     AsyncTask::new(SharedInvoiceTask {
       inner: Arc::clone(&self.inner),
       opts: opts.map(Into::into),
+    })
+  }
+
+  /// What the workbook says about itself (title, author, dates) and counts of what it holds,
+  /// sheet by sheet and in total: cells, formulas, merged ranges, tables, pictures, charts,
+  /// pivot tables, links and comments. Hidden sheets are counted like any other.
+  #[napi]
+  pub fn metadata(&self) -> XlsxMeta {
+    metadata_of(&self.inner)
+  }
+
+  /// `metadata` on a worker thread.
+  #[napi]
+  pub fn metadata_async(&self) -> AsyncTask<SharedMetadataTask> {
+    AsyncTask::new(SharedMetadataTask {
+      inner: Arc::clone(&self.inner),
     })
   }
 }

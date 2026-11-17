@@ -8,13 +8,14 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use ooxmldown::{Package, PackageError, PackageKind, parse_xml, rels_path};
-use roxmltree::Node;
+use ooxmldown::{DocProps, Package, PackageError, PackageKind, parse_xml};
+use roxmltree::{Document, Node};
 
 use crate::address::{CellRange, MAX_COLS, MAX_ROWS, cell_ref, parse_cell_ref};
 use crate::error::SpreadsheetError;
 use crate::format::{NumberFormat, SerialKind, iso_date, iso_time, render_general, serial_kind};
 use crate::formula::shift_formula;
+use crate::source::Source;
 
 /// A workbook with more cells or merges than this is refused rather than modelled.
 pub const MAX_CELLS: usize = 2_000_000;
@@ -360,6 +361,16 @@ pub struct Sheet {
   pub cells: BTreeMap<(u32, u32), Cell>,
   pub merges: Vec<CellRange>,
   pub drawings: usize,
+  /// Links the sheet lists. One link may cover a range of cells.
+  pub links: usize,
+  /// Tables the sheet names.
+  pub tables: usize,
+  /// Cells with a note or a comment thread.
+  pub comments: usize,
+  /// Pictures and charts on the sheet's drawing, those inside groups included.
+  pub pictures: usize,
+  pub charts: usize,
+  pub pivot_tables: usize,
   pub warnings: Vec<String>,
 }
 
@@ -381,6 +392,11 @@ pub struct Workbook {
   pub sheets: Vec<Sheet>,
   pub date1904: bool,
   pub styles: Styles,
+  /// What the workbook says about itself: its title, author and dates, and the application that
+  /// saved it. Every field is absent when the file does not state it.
+  pub props: DocProps,
+  /// Names the workbook defines, the built-in ones (`_xlnm.Print_Area` and the like) left out.
+  pub defined_names: usize,
 }
 
 impl Workbook {
@@ -460,7 +476,17 @@ fn print_area_range(text: &str) -> Option<CellRange> {
 /// Read a whole workbook from its package.
 pub fn parse_workbook(package: &mut Package) -> Result<Workbook, SpreadsheetError> {
   let main = package.officedocument()?;
-  let rels = package.relationships(&rels_path(&main))?;
+  let props = package.doc_props()?;
+  read_workbook(package, &main, props)
+}
+
+/// Read the workbook whose main part is `main` from wherever its parts are kept.
+pub(crate) fn read_workbook(
+  source: &mut dyn Source,
+  main: &str,
+  props: DocProps,
+) -> Result<Workbook, SpreadsheetError> {
+  let rels = source.relationships(main)?;
   let by_id: HashMap<&str, &str> = rels
     .iter()
     .filter(|r| !r.external)
@@ -473,10 +499,11 @@ pub fn parse_workbook(package: &mut Package) -> Result<Workbook, SpreadsheetErro
       .map(|r| r.target.clone())
   };
 
-  let workbook_xml = package.part(&main)?;
+  let workbook_xml = source.part(main)?;
   let doc = parse_xml(&workbook_xml)?;
   let root = doc.root_element();
   let mut date1904 = false;
+  let mut defined_names = 0usize;
   let mut entries = Vec::new();
   let mut print_areas: HashMap<usize, CellRange> = HashMap::new();
   let mut print_area_warnings: HashMap<usize, String> = HashMap::new();
@@ -488,6 +515,9 @@ pub fn parse_workbook(package: &mut Package) -> Result<Workbook, SpreadsheetErro
         relationship_id: attr(n, "id").unwrap_or("").to_string(),
         hidden: matches!(attr(n, "state"), Some("hidden" | "veryHidden")),
       }),
+      "definedName" if !attr(n, "name").is_some_and(|name| name.starts_with("_xlnm.")) => {
+        defined_names += 1;
+      }
       "definedName" if attr(n, "name") == Some("_xlnm.Print_Area") => {
         if let (Some(sheet), Some(text)) = (
           attr(n, "localSheetId").and_then(|v| v.parse::<usize>().ok()),
@@ -517,11 +547,11 @@ pub fn parse_workbook(package: &mut Package) -> Result<Workbook, SpreadsheetErro
   }
 
   let shared = match target_of_kind("/sharedStrings") {
-    Some(path) => parse_shared_strings(&package.part(&path)?)?,
+    Some(path) => parse_shared_strings(&source.part(&path)?)?,
     None => Vec::new(),
   };
   let styles = match target_of_kind("/styles") {
-    Some(path) => parse_styles(&package.part(&path)?)?,
+    Some(path) => parse_styles(&source.part(&path)?)?,
     None => Styles::default(),
   };
 
@@ -538,7 +568,7 @@ pub fn parse_workbook(package: &mut Package) -> Result<Workbook, SpreadsheetErro
     };
     let index = u32::try_from(position)
       .map_err(|_| SpreadsheetError::Malformed("the workbook lists too many sheets".to_string()))?;
-    let bytes = package.part(path)?;
+    let bytes = source.part(path)?;
     let mut sheet = parse_sheet(
       &bytes,
       &entry.name,
@@ -554,6 +584,7 @@ pub fn parse_workbook(package: &mut Package) -> Result<Workbook, SpreadsheetErro
     if let Some(warning) = print_area_warnings.remove(&position) {
       sheet.warnings.push(warning);
     }
+    read_related(source, path, &mut sheet)?;
     expand_shared_formulas(&mut sheet, &mut expansion_budget);
     cells_total += sheet.cells.len();
     merges_total += sheet.merges.len();
@@ -573,7 +604,109 @@ pub fn parse_workbook(package: &mut Package) -> Result<Workbook, SpreadsheetErro
     sheets,
     date1904,
     styles,
+    props,
+    defined_names,
   })
+}
+
+/// How many element children of `node` are named `name`.
+fn named_children(node: Node<'_, '_>, name: &str) -> usize {
+  node
+    .children()
+    .filter(|child| child.is_element() && child.tag_name().name() == name)
+    .count()
+}
+
+/// Cells with a note or a comment thread. A thread leaves a `comment` here as well, as the
+/// placeholder Excel writes for readers that predate threads.
+fn count_comments(doc: &Document<'_>) -> usize {
+  doc
+    .descendants()
+    .filter(|n| n.is_element() && n.tag_name().name() == "comment")
+    .count()
+}
+
+/// The pictures and the charts on a drawing, in that order, those inside groups included.
+/// Content a drawing offers a second time, as the fallback for a reader without some feature,
+/// is not counted twice.
+fn count_drawing(doc: &Document<'_>) -> (usize, usize) {
+  let (mut pictures, mut charts) = (0, 0);
+  let mut pending = vec![doc.root_element()];
+  while let Some(node) = pending.pop() {
+    for child in node.children().filter(|child| child.is_element()) {
+      match child.tag_name().name() {
+        "Fallback" => {}
+        "pic" => pictures += 1,
+        "chart" => charts += 1,
+        _ => pending.push(child),
+      }
+    }
+  }
+  (pictures, charts)
+}
+
+/// A part a sheet can be read without, handed to `read` as XML. `None`, with a warning on the
+/// sheet, when the part is missing or is not XML. A limit error is still an error.
+fn related_part<T>(
+  source: &mut dyn Source,
+  path: &str,
+  warnings: &mut Vec<String>,
+  read: impl FnOnce(&Document<'_>) -> T,
+) -> Result<Option<T>, SpreadsheetError> {
+  let parsed = source
+    .part(path)
+    .and_then(|bytes| parse_xml(&bytes).map(|doc| read(&doc)));
+  match parsed {
+    Ok(value) => Ok(Some(value)),
+    Err(PackageError::Malformed(detail)) => {
+      warnings.push(format!("{path} was left out: {detail}"));
+      Ok(None)
+    }
+    Err(limit) => Err(limit.into()),
+  }
+}
+
+/// Count what a sheet holds outside its own part: the cells with comments, the pictures and
+/// charts on its drawing, and its pivot tables. All of it is reached through the sheet's
+/// relationships, so a sheet without any has none of these.
+fn read_related(
+  source: &mut dyn Source,
+  path: &str,
+  sheet: &mut Sheet,
+) -> Result<(), SpreadsheetError> {
+  let relationships = match source.relationships(path) {
+    Ok(relationships) => relationships,
+    Err(PackageError::Malformed(_)) => return Ok(()),
+    Err(limit) => return Err(limit.into()),
+  };
+  for relationship in relationships.iter().filter(|r| !r.external) {
+    // The last segment of the type names the kind, in the transitional and the strict spelling.
+    match relationship.kind.rsplit('/').next() {
+      Some("pivotTable") => sheet.pivot_tables += 1,
+      Some("comments") => {
+        let counted = related_part(
+          source,
+          &relationship.target,
+          &mut sheet.warnings,
+          count_comments,
+        )?;
+        sheet.comments += counted.unwrap_or(0);
+      }
+      Some("drawing") => {
+        let counted = related_part(
+          source,
+          &relationship.target,
+          &mut sheet.warnings,
+          count_drawing,
+        )?;
+        let (pictures, charts) = counted.unwrap_or((0, 0));
+        sheet.pictures += pictures;
+        sheet.charts += charts;
+      }
+      _ => {}
+    }
+  }
+  Ok(())
 }
 
 /// One `<c>` as read, before its value is resolved.
@@ -620,6 +753,12 @@ pub(crate) fn parse_sheet(
     cells: BTreeMap::new(),
     merges: Vec::new(),
     drawings: 0,
+    links: 0,
+    tables: 0,
+    comments: 0,
+    pictures: 0,
+    charts: 0,
+    pivot_tables: 0,
     warnings: Vec::new(),
   };
   let mut shared_masters: HashMap<u32, (u32, u32)> = HashMap::new();
@@ -666,6 +805,8 @@ pub(crate) fn parse_sheet(
         }
       }
       "drawing" => sheet.drawings += 1,
+      "hyperlinks" => sheet.links += named_children(n, "hyperlink"),
+      "tableParts" => sheet.tables += named_children(n, "tablePart"),
       _ => {}
     }
   }

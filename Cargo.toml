@@ -14,6 +14,8 @@ members = [
   "crates/pdfdown-node",
   "crates/pptxdown",
   "crates/pptxdown-node",
+  "crates/tiffdown",
+  "crates/tiffdown-node",
   "crates/videodown",
   "crates/videodown-node",
   "crates/xlsxdown",
@@ -62,6 +64,7 @@ tesseract-rs = { version = "0.4.0", default-features = false, features = [
   "use-system-tesseract"
 ] }
 thiserror = { version = "2.0.21" }
+weezl = "0.2.1"
 zip = { version = "9.5.1", default-features = false, features = [
   "deflate-flate2-zlib-rs"
 ] }
@@ -80,6 +83,8 @@ pdfdown-node   = { path = "crates/pdfdown-node" }
 pdfdown-ocr    = { path = "crates/pdfdown-ocr" }
 pptxdown       = { path = "crates/pptxdown" }
 pptxdown-node  = { path = "crates/pptxdown-node" }
+tiffdown       = { path = "crates/tiffdown" }
+tiffdown-node  = { path = "crates/tiffdown-node" }
 videodown      = { path = "crates/videodown" }
 videodown-node = { path = "crates/videodown-node" }
 xlsxdown       = { path = "crates/xlsxdown" }

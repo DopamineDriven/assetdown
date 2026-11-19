@@ -1,0 +1,22 @@
+[package]
+description            = "Convenient tiff extraction for Node"
+edition.workspace      = true
+keywords               = ["tiff", "fax", "scan", "extraction", "node-bindings", "rust"]
+license                = { workspace = true }
+name                   = "tiffdown-node"
+publish                = false
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+contentdown.workspace = true
+napi.workspace        = true
+napi-derive.workspace = true
+tiffdown.workspace    = true
+
+[build-dependencies]
+napi-build.workspace = true

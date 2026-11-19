@@ -1,0 +1,16 @@
+[package]
+description          = "Convenient tiff extraction"
+edition.workspace    = true
+keywords             = ["tiff", "fax", "scan", "extraction", "images"]
+license              = { workspace = true }
+name                 = "tiffdown"
+repository.workspace = true
+version              = "0.1.0"
+
+[dependencies]
+contentdown.workspace = true
+flate2.workspace      = true
+hayro-ccitt.workspace = true
+image.workspace       = true
+thiserror.workspace   = true
+weezl.workspace       = true

@@ -77,6 +77,117 @@ One addition comes from the JPEG side: bringing a small raster up to a working r
 5. `tiffdown-node`, and the route in `mimedown`.
 6. The rest of section 3.
 
+## 7. Manifests
+
+As they stand for steps 1 and 2 of section 6: both crates build with these today. They follow rows 3 and 8 (our own decoder, and `weezl`), which are still recommendations; a different answer to either changes the dependency list of `tiffdown`. Checked on 2026-11-19: both manifests, with empty sources, resolve and build in a scratch workspace against this root's dependency table. The ones under "When recognition arrives" are not checked.
+
+### The root `Cargo.toml`
+
+Three additions, each in its alphabetical place.
+
+```toml
+# [workspace] members
+  "crates/tiffdown",
+  "crates/tiffdown-node",
+
+# [workspace.dependencies], third-party
+weezl = "0.2.1"
+
+# [workspace.dependencies], the workspace's own
+tiffdown       = { path = "crates/tiffdown" }
+tiffdown-node  = { path = "crates/tiffdown-node" }
+```
+
+### `crates/tiffdown/Cargo.toml`
+
+```toml
+[package]
+description          = "Convenient tiff extraction"
+edition.workspace    = true
+keywords             = ["tiff", "fax", "scan", "extraction", "images"]
+license              = { workspace = true }
+name                 = "tiffdown"
+repository.workspace = true
+version              = "0.1.0"
+
+[dependencies]
+contentdown.workspace = true
+flate2.workspace      = true
+hayro-ccitt.workspace = true
+image.workspace       = true
+thiserror.workspace   = true
+weezl.workspace       = true
+```
+
+What each is for: `hayro-ccitt` the fax codings, `weezl` LZW, `flate2` Deflate, `image` a JPEG strip and a page written as PNG, `contentdown` the paper a page is nearest to and, later, the page model. `flate2` is not used until the second group of codings; it is listed now so the manifest is not touched again for it.
+
+### `crates/tiffdown-node/Cargo.toml`
+
+```toml
+[package]
+description            = "Convenient tiff extraction for Node"
+edition.workspace      = true
+keywords               = ["tiff", "fax", "scan", "extraction", "node-bindings", "rust"]
+license                = { workspace = true }
+name                   = "tiffdown-node"
+publish                = false
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+contentdown.workspace = true
+napi.workspace        = true
+napi-derive.workspace = true
+tiffdown.workspace    = true
+
+[build-dependencies]
+napi-build.workspace = true
+```
+
+### When recognition arrives (steps 3 and 4)
+
+These follow row 5, a feature named `ocr`. They cannot go in before `ocrdown` exists, since a manifest that names a crate the workspace does not have does not resolve.
+
+`crates/ocrdown/Cargo.toml`, with `"crates/ocrdown"` among the members and `ocrdown = { path = "crates/ocrdown" }` among the workspace's own:
+
+```toml
+[package]
+description          = "Text from a raster with Tesseract: the words, their boxes and the turn that reads them upright"
+edition.workspace    = true
+keywords             = ["ocr", "tesseract", "raster", "extraction"]
+license              = { workspace = true }
+name                 = "ocrdown"
+repository.workspace = true
+version              = "0.1.0"
+
+[dependencies]
+contentdown.workspace  = true
+image.workspace        = true
+rayon.workspace        = true
+tesseract-rs.workspace = true
+```
+
+`tiffdown` then gains one dependency and its feature:
+
+```toml
+# [dependencies]
+ocrdown = { workspace = true, optional = true }
+
+[features]
+ocr = ["dep:ocrdown"]
+```
+
+`tiffdown-node` passes the feature through, and `pdfdown-ocr` takes `ocrdown.workspace = true`:
+
+```toml
+[features]
+ocr = ["tiffdown/ocr"]
+```
+
 ## Parked
 
 - Old-style JPEG, JBIG, and BigTIFF.

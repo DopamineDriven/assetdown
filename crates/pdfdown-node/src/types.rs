@@ -134,6 +134,17 @@ pub struct PdfMeta {
   pub producer: Option<String>,
   pub creation_date: Option<String>,
   pub modification_date: Option<String>,
+  /// What the document says of itself in its Info dictionary, as the file writes it. Absent
+  /// when the file does not say.
+  pub title: Option<String>,
+  pub author: Option<String>,
+  pub subject: Option<String>,
+  /// One string, which is usually a list separated by commas or semicolons.
+  pub keywords: Option<String>,
+  /// The language the catalog names for the document's text: `en-US`.
+  pub language: Option<String>,
+  /// The file was encrypted on disk, whether or not it opened without a password.
+  pub is_encrypted: bool,
   pub page_boxes: Vec<PageBox>,
   /// AcroForm facts; present when `/AcroForm` exists or orphan widgets were found.
   pub form: Option<FormInfo>,
@@ -149,6 +160,12 @@ impl From<pdfdown::PdfMeta> for PdfMeta {
       producer: value.producer,
       creation_date: value.creation_date,
       modification_date: value.modification_date,
+      title: value.title,
+      author: value.author,
+      subject: value.subject,
+      keywords: value.keywords,
+      language: value.language,
+      is_encrypted: value.is_encrypted,
       page_boxes: value.page_boxes.into_iter().map(Into::into).collect(),
       form: value.form.map(Into::into),
     }
@@ -343,6 +360,17 @@ pub struct PdfDocument {
   pub producer: Option<String>,
   pub creation_date: Option<String>,
   pub modification_date: Option<String>,
+  /// What the document says of itself in its Info dictionary, as the file writes it. Absent
+  /// when the file does not say.
+  pub title: Option<String>,
+  pub author: Option<String>,
+  pub subject: Option<String>,
+  /// One string, which is usually a list separated by commas or semicolons.
+  pub keywords: Option<String>,
+  /// The language the catalog names for the document's text: `en-US`.
+  pub language: Option<String>,
+  /// The file was encrypted on disk, whether or not it opened without a password.
+  pub is_encrypted: bool,
   pub page_boxes: Vec<PageBox>,
   pub total_images: u32,
   pub total_annotations: u32,
@@ -371,6 +399,12 @@ impl From<pdfdown::PdfDocument> for PdfDocument {
       producer: r.meta.producer,
       creation_date: r.meta.creation_date,
       modification_date: r.meta.modification_date,
+      title: r.meta.title,
+      author: r.meta.author,
+      subject: r.meta.subject,
+      keywords: r.meta.keywords,
+      language: r.meta.language,
+      is_encrypted: r.meta.is_encrypted,
       page_boxes: r.meta.page_boxes.into_iter().map(Into::into).collect(),
       total_images,
       total_annotations,
@@ -421,6 +455,17 @@ pub struct PdfDocumentOcr {
   pub producer: Option<String>,
   pub creation_date: Option<String>,
   pub modification_date: Option<String>,
+  /// What the document says of itself in its Info dictionary, as the file writes it. Absent
+  /// when the file does not say.
+  pub title: Option<String>,
+  pub author: Option<String>,
+  pub subject: Option<String>,
+  /// One string, which is usually a list separated by commas or semicolons.
+  pub keywords: Option<String>,
+  /// The language the catalog names for the document's text: `en-US`.
+  pub language: Option<String>,
+  /// The file was encrypted on disk, whether or not it opened without a password.
+  pub is_encrypted: bool,
   pub page_boxes: Vec<PageBox>,
   pub total_images: u32,
   pub total_annotations: u32,
@@ -450,6 +495,12 @@ impl From<pdfdown_ocr::PdfDocumentOcr> for PdfDocumentOcr {
       producer: r.meta.producer,
       creation_date: r.meta.creation_date,
       modification_date: r.meta.modification_date,
+      title: r.meta.title,
+      author: r.meta.author,
+      subject: r.meta.subject,
+      keywords: r.meta.keywords,
+      language: r.meta.language,
+      is_encrypted: r.meta.is_encrypted,
       page_boxes: r.meta.page_boxes.into_iter().map(Into::into).collect(),
       total_images,
       total_annotations,

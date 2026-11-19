@@ -36,7 +36,10 @@ impl Root {
         .is_some_and(|name| name.eq_ignore_ascii_case("html"));
     let xhtml = self.attribute("xmlns") == Some("http://www.w3.org/1999/xhtml");
     Some(match self.name.as_str() {
-      _ if html && (self.declared_xml || xhtml) => MediaType::Xhtml,
+      // A page is XHTML when it opens as XML does and names XHTML's namespace. The namespace
+      // and the doctype alone are on a great many pages that are served as HTML and do not
+      // parse as XML; called XHTML, a browser reads one with its XML parser and shows nothing.
+      _ if html && self.declared_xml && xhtml => MediaType::Xhtml,
       _ if html => MediaType::Html,
       "svg" => MediaType::Svg,
       "COLLADA" => MediaType::Collada,

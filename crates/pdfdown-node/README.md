@@ -44,6 +44,7 @@ export declare function invoiceFromLayout(
   pages: Array<PageLayout>,
   opts?: InvoiceOptions
 ): InvoiceResult; // the engine on pages from anywhere
+export declare function pdfImageCount(buffer: Buffer): number; // the images the pages paint, counted without decoding
 export declare function pdfMetadata(buffer: Buffer): PdfMeta;
 export declare function pdfDocument(buffer: Buffer): PdfDocument;
 export declare function capabilities(): Capabilities; // what this build and this host can do
@@ -83,6 +84,7 @@ export declare function invoiceFromLayoutAsync(
   pages: Array<PageLayout>,
   opts?: InvoiceOptions
 ): Promise<InvoiceResult>;
+export declare function pdfImageCountAsync(buffer: Buffer): Promise<number>;
 export declare function pdfMetadataAsync(buffer: Buffer): Promise<PdfMeta>;
 export declare function pdfDocumentAsync(buffer: Buffer): Promise<PdfDocument>;
 export declare function renderPagesAsync(
@@ -103,6 +105,7 @@ export declare class PdfDown {
   structuredText(): Array<StructuredPageText>;
   layout(): Array<PageLayout>;
   imagesPerPage(): Array<PageImage>;
+  imageCount(): number; // counted without decoding
   annotationsPerPage(): Array<PageAnnotation>;
   formFieldsPerPage(): Array<PageFormField>;
   attachments(): Array<Attachment>;
@@ -113,6 +116,7 @@ export declare class PdfDown {
   structuredTextAsync(): Promise<Array<StructuredPageText>>;
   layoutAsync(): Promise<Array<PageLayout>>;
   imagesPerPageAsync(): Promise<Array<PageImage>>;
+  imageCountAsync(): Promise<number>;
   annotationsPerPageAsync(): Promise<Array<PageAnnotation>>;
   formFieldsPerPageAsync(): Promise<Array<PageFormField>>;
   attachmentsAsync(): Promise<Array<Attachment>>;
@@ -255,6 +259,12 @@ export interface PdfMeta {
   producer?: string;
   creationDate?: string;
   modificationDate?: string;
+  title?: string; // what the document says of itself, as the file writes it
+  author?: string;
+  subject?: string;
+  keywords?: string; // one string, usually a list separated by commas or semicolons
+  language?: string; // the language the catalog names for the text: en-US
+  isEncrypted: boolean; // encrypted on disk, whether or not it opened without a password
   pageBoxes: Array<PageBox>;
   form?: FormInfo; // present when /AcroForm exists or orphan widgets were found
 }
@@ -267,6 +277,12 @@ export interface PdfDocument {
   producer?: string;
   creationDate?: string;
   modificationDate?: string;
+  title?: string; // what the document says of itself, as the file writes it
+  author?: string;
+  subject?: string;
+  keywords?: string; // one string, usually a list separated by commas or semicolons
+  language?: string; // the language the catalog names for the text: en-US
+  isEncrypted: boolean; // encrypted on disk, whether or not it opened without a password
   pageBoxes: Array<PageBox>;
   totalImages: number;
   totalAnnotations: number;

@@ -217,6 +217,14 @@ describe("documentOcr", () => {
       ]
     );
     assert.deepEqual(whole.text, new PdfDown(multipage).textWithOcrPerPage());
+    // What the document says of itself comes with it, as `metadata()` gives it.
+    const meta = new PdfDown(multipage).metadata();
+    assert.deepEqual(
+      [whole.title, whole.author, whole.subject, whole.keywords, whole.language],
+      [meta.title, meta.author, meta.subject, meta.keywords, meta.language]
+    );
+    assert.equal(whole.isEncrypted, false);
+    assert.equal(new PdfDown(multipage).imageCount(), whole.totalImages);
   });
   it("the async and free-function forms should agree", {}, async () => {
     assert.deepEqual(await new PdfDown(multipage).documentOcrAsync(), whole);

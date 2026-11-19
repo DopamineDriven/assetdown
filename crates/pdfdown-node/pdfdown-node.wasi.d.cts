@@ -9,6 +9,11 @@ export declare class PdfDown {
   textPerPage(): Array<PageText>
   imagesPerPage(): Array<PageImage>
   annotationsPerPage(): Array<PageAnnotation>
+  /**
+   * How many images the pages paint. Nothing is decoded, so this costs far less than
+   * counting what `imagesPerPage` returns.
+   */
+  imageCount(): number
   metadata(): PdfMeta
   /** Positioned words and lines per page, from the page's content stream (native text only). */
   layout(): Array<PageLayout>
@@ -24,6 +29,7 @@ export declare class PdfDown {
   textPerPageAsync(): Promise<Array<PageText>>
   imagesPerPageAsync(): Promise<Array<PageImage>>
   annotationsPerPageAsync(): Promise<Array<PageAnnotation>>
+  imageCountAsync(): Promise<number>
   metadataAsync(): Promise<PdfMeta>
   document(): PdfDocument
   documentAsync(): Promise<PdfDocument>
@@ -483,6 +489,19 @@ export interface PdfDocument {
   producer?: string
   creationDate?: string
   modificationDate?: string
+  /**
+   * What the document says of itself in its Info dictionary, as the file writes it. Absent
+   * when the file does not say.
+   */
+  title?: string
+  author?: string
+  subject?: string
+  /** One string, which is usually a list separated by commas or semicolons. */
+  keywords?: string
+  /** The language the catalog names for the document's text: `en-US`. */
+  language?: string
+  /** The file was encrypted on disk, whether or not it opened without a password. */
+  isEncrypted: boolean
   pageBoxes: Array<PageBox>
   totalImages: number
   totalAnnotations: number
@@ -500,6 +519,14 @@ export interface PdfDocument {
 
 export declare function pdfDocumentAsync(buffer: Buffer): Promise<PdfDocument>
 
+/**
+ * How many images the document's pages paint. Nothing is decoded, so this costs far less
+ * than counting what `extractImagesPerPage` returns.
+ */
+export declare function pdfImageCount(buffer: Buffer): number
+
+export declare function pdfImageCountAsync(buffer: Buffer): Promise<number>
+
 export interface PdfMeta {
   pageCount: number
   version: string
@@ -508,6 +535,19 @@ export interface PdfMeta {
   producer?: string
   creationDate?: string
   modificationDate?: string
+  /**
+   * What the document says of itself in its Info dictionary, as the file writes it. Absent
+   * when the file does not say.
+   */
+  title?: string
+  author?: string
+  subject?: string
+  /** One string, which is usually a list separated by commas or semicolons. */
+  keywords?: string
+  /** The language the catalog names for the document's text: `en-US`. */
+  language?: string
+  /** The file was encrypted on disk, whether or not it opened without a password. */
+  isEncrypted: boolean
   pageBoxes: Array<PageBox>
   /** AcroForm facts; present when `/AcroForm` exists or orphan widgets were found. */
   form?: FormInfo

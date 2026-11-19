@@ -27,6 +27,8 @@ import {
   layoutPerPageAsync,
   pdfDocument,
   pdfDocumentAsync,
+  pdfImageCount,
+  pdfImageCountAsync,
   pdfMetadata,
   pdfMetadataAsync
 } from "@/index.js";
@@ -158,6 +160,37 @@ describe("metadata", () => {
     assert.ok(new PdfDown(form).metadata().form);
     assert.equal(meta.form, undefined);
   });
+  it("should say what the document calls itself, as the file writes it", {}, () => {
+    assert.equal(meta.title, "PDF Invoice Example");
+    assert.equal(meta.author, "Sliced Invoices");
+    assert.equal(
+      meta.subject,
+      "Example PDF invoice that was created using the Sli"
+    );
+    const scan = new PdfDown(dctScan).metadata();
+    assert.equal(scan.title, "Sample PDF - scanned, image only");
+    assert.equal(scan.author, "ConvertICO.com");
+    assert.equal(
+      scan.subject,
+      "Free sample PDF from convertico.com/samples/pdf/"
+    );
+    // What a file does not say is left out, not made up: neither states keywords or a language,
+    // and the form states nothing of itself at all.
+    assert.equal(meta.keywords, undefined);
+    assert.equal(meta.language, undefined);
+    const plain = new PdfDown(form).metadata();
+    assert.deepEqual(
+      [plain.title, plain.author, plain.subject, plain.keywords],
+      [undefined, undefined, undefined, undefined]
+    );
+  });
+  it("should say whether the file was encrypted on disk", {}, () => {
+    assert.equal(meta.isEncrypted, false);
+    assert.equal(new PdfDown(form).metadata().isEncrypted, false);
+    // Encrypted with an empty password: it opens, and still says that it was.
+    const locked = new PdfDown(t.getFixtureBuff("forms/acroform-basic-aes256"));
+    assert.equal(locked.metadata().isEncrypted, true);
+  });
   it("the async and free-function forms should agree", {}, async () => {
     assert.deepEqual(await doc.metadataAsync(), meta);
     assert.deepEqual(pdfMetadata(invoice), meta);
@@ -227,6 +260,16 @@ describe("images", () => {
       assert.equal(t.isPng(scan.data), true);
     }
   );
+  it("should count the images the pages paint without decoding them", {}, async () => {
+    assert.equal(doc.imageCount(), 1);
+    assert.equal(doc.imageCount(), images.length);
+    // The same picture painted on two pages is two.
+    assert.equal(new PdfDown(layoutSample).imageCount(), 2);
+    assert.equal(new PdfDown(form).imageCount(), 0);
+    assert.equal(await doc.imageCountAsync(), 1);
+    assert.equal(pdfImageCount(invoice), 1);
+    assert.equal(await pdfImageCountAsync(invoice), 1);
+  });
   it("should decode a CCITT Group 4 fax image", {}, () => {
     const [fax] = new PdfDown(ccitt).imagesPerPage();
     assert.ok(fax);
@@ -282,6 +325,14 @@ describe("document", () => {
     assert.equal(whole.pageCount, meta.pageCount);
     assert.equal(whole.version, meta.version);
     assert.deepEqual(whole.pageBoxes, meta.pageBoxes);
+    // What the document says of itself comes with it, as `metadata()` gives it.
+    assert.deepEqual(
+      [whole.title, whole.author, whole.subject, whole.keywords],
+      [meta.title, meta.author, meta.subject, meta.keywords]
+    );
+    assert.equal(whole.title, "PDF Invoice Example");
+    assert.equal(whole.language, meta.language);
+    assert.equal(whole.isEncrypted, false);
   });
   it(
     "should count images, annotations and form fields and name their pages",

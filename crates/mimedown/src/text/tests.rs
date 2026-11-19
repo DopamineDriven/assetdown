@@ -395,3 +395,24 @@ fn a_name_tells_the_kinds_of_json_apart() {
     content(MediaType::Json)
   );
 }
+
+#[test]
+fn a_page_that_claims_xhtml_is_html_unless_it_opens_as_xml() {
+  // The doctype and the namespace of XHTML, on a page that opens as HTML does. Pages written
+  // so are served as HTML and seldom parse as XML: named `.xhtml`, a browser reads one with
+  // its XML parser and shows none of it.
+  let claimed = "\r\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\r\n\r\n<html xmlns=\"http://www.w3.org/1999/xhtml\">\r\n<head><title>A page</title>";
+  assert_eq!(of(claimed), content(MediaType::Html));
+  assert_eq!(
+    of("<html xmlns=\"http://www.w3.org/1999/xhtml\"><head>"),
+    content(MediaType::Html)
+  );
+  // An XML declaration and no namespace: HTML with a line in front of it.
+  assert_eq!(
+    of("<?xml version=\"1.0\"?>\n<html><head>"),
+    content(MediaType::Html)
+  );
+  // Both: the page opens as XML does and names the namespace.
+  let meant = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"en\">";
+  assert_eq!(of(meant), content(MediaType::Xhtml));
+}

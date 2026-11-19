@@ -40,8 +40,8 @@ const _: () = {
 // ── Shared helpers ──────────────────────────────────────────────
 
 use crate::readers::{
-  extract_all, extract_annotations, extract_attachments, extract_forms, extract_from_pages,
-  extract_images_raw, extract_invoice_impl, extract_layout, extract_metadata,
+  count_images, extract_all, extract_annotations, extract_attachments, extract_forms,
+  extract_from_pages, extract_images_raw, extract_invoice_impl, extract_layout, extract_metadata,
   extract_structured_text, extract_text,
 };
 
@@ -128,6 +128,14 @@ fn ocr_params(opts: &Option<OcrOptions>) -> OcrParams {
 pub fn extract_text_per_page(buffer: Buffer) -> Result<Vec<PageText>> {
   let doc = load_doc(buffer.as_ref())?;
   extract_text(&doc)
+}
+
+/// How many images the document's pages paint. Nothing is decoded, so this costs far less
+/// than counting what `extractImagesPerPage` returns.
+#[napi]
+pub fn pdf_image_count(buffer: Buffer) -> Result<u32> {
+  let doc = load_doc(buffer.as_ref())?;
+  Ok(count_images(&doc))
 }
 
 #[napi]
@@ -486,6 +494,28 @@ impl Task for ExtractImagesTask {
 #[napi]
 pub fn extract_images_per_page_async(buffer: Buffer) -> AsyncTask<ExtractImagesTask> {
   AsyncTask::new(ExtractImagesTask(buffer.to_vec()))
+}
+
+pub struct PdfImageCountTask(Vec<u8>);
+
+#[napi]
+impl Task for PdfImageCountTask {
+  type Output = u32;
+  type JsValue = u32;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    let doc = load_doc(&self.0)?;
+    Ok(count_images(&doc))
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output)
+  }
+}
+
+#[napi]
+pub fn pdf_image_count_async(buffer: Buffer) -> AsyncTask<PdfImageCountTask> {
+  AsyncTask::new(PdfImageCountTask(buffer.to_vec()))
 }
 
 pub struct PdfMetaTask(Vec<u8>);
@@ -942,6 +972,22 @@ impl Task for SharedInvoiceTask {
   }
 }
 
+pub struct SharedPdfImageCountTask(Arc<PdfState>);
+
+#[napi]
+impl Task for SharedPdfImageCountTask {
+  type Output = u32;
+  type JsValue = u32;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    Ok(count_images(&self.0.doc))
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output)
+  }
+}
+
 pub struct SharedPdfMetaTask(Arc<PdfState>);
 
 #[napi]
@@ -1260,6 +1306,13 @@ impl PdfDown {
     Ok(extract_annotations(&self.inner.doc))
   }
 
+  /// How many images the pages paint. Nothing is decoded, so this costs far less than
+  /// counting what `imagesPerPage` returns.
+  #[napi]
+  pub fn image_count(&self) -> Result<u32> {
+    Ok(count_images(&self.inner.doc))
+  }
+
   #[napi]
   pub fn metadata(&self) -> Result<PdfMeta> {
     Ok(extract_metadata(&self.inner.doc))
@@ -1328,6 +1381,13 @@ impl PdfDown {
   #[napi]
   pub fn annotations_per_page_async(&self) -> Result<AsyncTask<SharedExtractAnnotationsTask>> {
     Ok(AsyncTask::new(SharedExtractAnnotationsTask(Arc::clone(
+      &self.inner,
+    ))))
+  }
+
+  #[napi]
+  pub fn image_count_async(&self) -> Result<AsyncTask<SharedPdfImageCountTask>> {
+    Ok(AsyncTask::new(SharedPdfImageCountTask(Arc::clone(
       &self.inner,
     ))))
   }

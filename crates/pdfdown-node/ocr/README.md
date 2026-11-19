@@ -113,7 +113,9 @@ export declare class PdfDown {
   layout(): Array<PageLayout>;
   layoutAsync(): Promise<Array<PageLayout>>;
   imagesPerPage(): Array<PageImage>;
+  imageCount(): number; // counted without decoding
   imagesPerPageAsync(): Promise<Array<PageImage>>;
+  imageCountAsync(): Promise<number>;
   annotationsPerPage(): Array<PageAnnotation>;
   annotationsPerPageAsync(): Promise<Array<PageAnnotation>>;
   formFieldsPerPage(): Array<PageFormField>;
@@ -177,6 +179,12 @@ export interface PdfDocumentOcr {
   producer?: string;
   creationDate?: string;
   modificationDate?: string;
+  title?: string; // what the document says of itself, as the file writes it
+  author?: string;
+  subject?: string;
+  keywords?: string; // one string, usually a list separated by commas or semicolons
+  language?: string; // the language the catalog names for the text: en-US
+  isEncrypted: boolean; // encrypted on disk, whether or not it opened without a password
   pageBoxes: Array<PageBox>;
   totalImages: number;
   totalAnnotations: number;

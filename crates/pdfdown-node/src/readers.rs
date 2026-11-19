@@ -13,7 +13,7 @@ use crate::types::OcrPageText;
 use crate::types::{PageAnnotation, PageText, PdfMeta, StructuredPageText};
 
 pub(crate) use pdfdown::attachments::extract_attachments;
-pub(crate) use pdfdown::images::extract_images_raw;
+pub(crate) use pdfdown::images::{count_images, extract_images_raw};
 
 pub(crate) fn extract_text(doc: &Document) -> Result<Vec<PageText>> {
   Ok(

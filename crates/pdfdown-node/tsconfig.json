@@ -7,7 +7,7 @@
     "sourceMap": false,
     "declarationMap": false,
     "declaration": true,
-    "moduleResolution": "nodenext","allowJs": true,
+    "moduleResolution": "nodenext",
     "module": "nodenext",
     "emitDeclarationOnly": true,
     "noUnusedLocals": true,
@@ -33,6 +33,6 @@
       "ES2018.AsyncIterable"
     ]
   },
-  "include": ["."],
-  "exclude": ["node_modules", "bench", "__test__"]
+  "include": ["./"],
+  "exclude": ["node_modules"]
 }

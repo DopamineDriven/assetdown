@@ -45,6 +45,12 @@ impl Pdf {
     crate::images::extract_images_raw(&self.document)
   }
 
+  /// How many images the pages paint. Nothing is decoded, so this is far cheaper than
+  /// counting what [`Pdf::images`] returns.
+  pub fn image_count(&self) -> u32 {
+    crate::images::count_images(&self.document)
+  }
+
   pub fn annotations(&self) -> Vec<PageAnnotation> {
     crate::document::extract_annotations(&self.document)
   }

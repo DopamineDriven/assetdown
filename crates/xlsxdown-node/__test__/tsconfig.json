@@ -19,6 +19,6 @@
       "DOM"
     ]
   },
-  "include": ["."],
+  "include": ["./"],
   "exclude": ["lib"]
 }

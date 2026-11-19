@@ -308,8 +308,8 @@ impl Package {
   pub fn kind(&mut self) -> Result<PackageKind, PackageError> {
     let main = self.officedocument()?;
     let content_type = self.content_type(&main)?.unwrap_or_default();
-    Ok(match content_type.as_str() {
-      WORKBOOK_MAIN => {
+    Ok(match PackageKind::of_main_type(&content_type) {
+      PackageKind::Workbook => {
         let bytes = self.part(&main)?;
         let doc = parse_xml(&bytes)?;
         if doc.root_element().tag_name().namespace() == Some(SML_STRICT) {
@@ -318,6 +318,17 @@ impl Package {
           PackageKind::Workbook
         }
       }
+      kind => kind,
+    })
+  }
+}
+
+impl PackageKind {
+  /// What a package is, by the content type of its main part alone. A workbook is `Workbook`
+  /// here: whether it is a strict one is in the part itself, which `Package::kind` reads.
+  pub fn of_main_type(content_type: &str) -> PackageKind {
+    match content_type {
+      WORKBOOK_MAIN => PackageKind::Workbook,
       MACRO_WORKBOOK_MAIN => PackageKind::MacroWorkbook,
       t if TEMPLATE_MAINS.contains(&t) => PackageKind::TemplateWorkbook,
       WORD_TEMPLATE_MAIN => PackageKind::TemplateDocument,
@@ -330,7 +341,7 @@ impl Package {
       }
       t if t.starts_with(PRESENTATION_PREFIX) => PackageKind::Presentation,
       _ => PackageKind::Other,
-    })
+    }
   }
 }
 

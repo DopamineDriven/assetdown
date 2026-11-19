@@ -1,0 +1,26 @@
+[package]
+description          = "Convenient mime sniffing"
+edition.workspace    = true
+keywords             = ["mime", "detect", "identify", "sniff"]
+license              = { workspace = true }
+name                 = "mimedown"
+repository.workspace = true
+version              = "0.1.0"
+
+[dependencies]
+audiodown           = { workspace = true, optional = true }
+docxdown            = { workspace = true, optional = true }
+flate2.workspace    = true
+ooxmldown.workspace = true
+pdfdown             = { workspace = true, optional = true }
+pptxdown            = { workspace = true, optional = true }
+roxmltree.workspace = true
+thiserror.workspace = true
+videodown           = { workspace = true, optional = true }
+xlsxdown            = { workspace = true, optional = true }
+
+[features]
+audio  = ["dep:audiodown"]
+office = ["dep:docxdown", "dep:xlsxdown", "dep:pptxdown"]
+pdf    = ["dep:pdfdown"]
+video  = ["dep:videodown"]

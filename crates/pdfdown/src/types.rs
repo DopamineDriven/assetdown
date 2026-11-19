@@ -29,6 +29,16 @@ pub struct PdfMeta {
   pub producer: Option<String>,
   pub creation_date: Option<String>,
   pub modification_date: Option<String>,
+  /// What the document says of itself in its Info dictionary, as the file writes it.
+  pub title: Option<String>,
+  pub author: Option<String>,
+  pub subject: Option<String>,
+  /// One string, which is usually a list separated by commas or semicolons.
+  pub keywords: Option<String>,
+  /// The language the catalog names for the document's text: `en-US`.
+  pub language: Option<String>,
+  /// The file was encrypted on disk, whether or not it opened without a password.
+  pub is_encrypted: bool,
   pub page_boxes: Vec<PageBox>,
   /// AcroForm facts; present when `/AcroForm` exists or orphan widgets were found.
   pub form: Option<FormInfo>,

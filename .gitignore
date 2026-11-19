@@ -149,3 +149,4 @@ notes.md
   crates/pdfdown-node/ocr/pdfdown_ocr.napi.js
   crates/pdfdown-node/ocr/index.d.ts
 crates/pdfdown-node/index.js
+notes/*

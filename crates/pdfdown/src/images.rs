@@ -18,6 +18,16 @@ pub fn extract_images_raw(doc: &Document) -> Vec<PageImage> {
   results
 }
 
+/// How many images the document's pages paint, counted without decoding any of them.
+pub fn count_images(doc: &Document) -> u32 {
+  let pages: Vec<ObjectId> = doc.get_pages().into_values().collect();
+  let count: usize = pages
+    .par_iter()
+    .map(|&page| page_image_sources(doc, page).len())
+    .sum();
+  u32::try_from(count).unwrap_or(u32::MAX)
+}
+
 /// Decode all image XObjects on a page to DynamicImages (no PNG encoding).
 /// Used by OCR to avoid the PNG encode→decode roundtrip and by render for empty page detection.
 pub fn collect_page_decoded_images(doc: &Document, page_id: ObjectId) -> Vec<DynamicImage> {

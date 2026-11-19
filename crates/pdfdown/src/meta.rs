@@ -1,7 +1,7 @@
 use crate::forms::extract_forms;
 use crate::types::{BoxType, FormInfo, PageBox, PdfMeta};
 use contentdown::paper_size;
-use lopdf::{Document, Object, ObjectId};
+use lopdf::{Dictionary, Document, Object, ObjectId};
 use std::collections::{BTreeMap, HashMap};
 
 fn extract_info_string(dict: &lopdf::Dictionary, key: &[u8]) -> Option<String> {
@@ -20,14 +20,48 @@ fn extract_info_string(dict: &lopdf::Dictionary, key: &[u8]) -> Option<String> {
   }
 }
 
+/// The text string `dict` holds under `key`, wherever the string itself is kept, with what
+/// surrounds its words left off. None for an entry that is not a string or holds nothing.
+///
+/// The format has three ways to write one: sixteen bits to a character behind a mark, UTF-8
+/// behind a mark, and an encoding of its own of one byte to a character. Two more turn up that
+/// it does not allow: sixteen bits with the low byte first, and UTF-8 with no mark.
+fn text_entry(doc: &Document, dict: &Dictionary, key: &[u8]) -> Option<String> {
+  let (_, object) = doc.dereference(dict.get(key).ok()?).ok()?;
+  let Object::String(bytes, _) = object else {
+    return None;
+  };
+  let as_the_format_says = || {
+    lopdf::decode_text_string(object)
+      .unwrap_or_else(|_| String::from_utf8_lossy(bytes).into_owned())
+  };
+  let text = match bytes.as_slice() {
+    [0xFF, 0xFE, rest @ ..] => {
+      let (pairs, _) = rest.as_chunks::<2>();
+      let units: Vec<u16> = pairs.iter().map(|pair| u16::from_le_bytes(*pair)).collect();
+      String::from_utf16_lossy(&units)
+    }
+    [0xFE, 0xFF, ..] | [0xEF, 0xBB, 0xBF, ..] => as_the_format_says(),
+    // Bytes that read as UTF-8 and are not plain ASCII are UTF-8: text in the format's own
+    // encoding does not happen to form its sequences.
+    _ => match std::str::from_utf8(bytes) {
+      Ok(text) if !text.is_ascii() => text.to_string(),
+      _ => as_the_format_says(),
+    },
+  };
+  let text = text.trim_matches(|c: char| c == '\0' || c.is_whitespace());
+  (!text.is_empty()).then(|| text.to_string())
+}
+
 /// Convert a PDF date string to ISO 8601.
 /// Input format:  `D:YYYYMMDDHHmmSS+HH'mm'` (D: prefix optional, timezone optional)
 /// Output format: `YYYY-MM-DDTHH:mm:SS+HH:mm` or `…Z`
 fn pdf_date_to_iso8601(raw: &str) -> String {
   let s = raw.strip_prefix("D:").unwrap_or(raw);
 
-  // Need at least YYYY (4 chars)
-  if s.len() < 4 {
+  // Need at least YYYY (4 chars). A date is digits, a sign and apostrophes: anything past ASCII
+  // is not one, and the positions below count bytes, which are characters only in ASCII.
+  if s.len() < 4 || !s.is_ascii() {
     return raw.to_string();
   }
 
@@ -253,6 +287,7 @@ pub fn extract_metadata_with_form(doc: &Document, form: Option<FormInfo>) -> Pdf
   };
 
   let page_boxes = extract_page_boxes(doc, &pages);
+  let said = |key: &[u8]| info_dict.and_then(|info| text_entry(doc, info, key));
 
   PdfMeta {
     page_count,
@@ -262,6 +297,16 @@ pub fn extract_metadata_with_form(doc: &Document, form: Option<FormInfo>) -> Pdf
     producer,
     creation_date,
     modification_date,
+    title: said(b"Title"),
+    author: said(b"Author"),
+    subject: said(b"Subject"),
+    keywords: said(b"Keywords"),
+    language: doc
+      .catalog()
+      .ok()
+      .and_then(|catalog| text_entry(doc, catalog, b"Lang")),
+    // Once a file is open its encryption is undone, so what it was is asked as well.
+    is_encrypted: doc.was_encrypted() || doc.is_encrypted(),
     page_boxes,
     form,
   }

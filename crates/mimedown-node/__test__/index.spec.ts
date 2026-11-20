@@ -105,6 +105,22 @@ describe("sniff", () => {
     assert.equal(found.parser, "tiffdown");
   });
 
+  it("should name the package that reads a scan kept as a JPEG", {}, () => {
+    // A JPEG's opening marker and the start of its first segment.
+    const jpeg = Buffer.from([
+      0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0
+    ]);
+    const found = sniff(jpeg);
+    assert.equal(found.mime, "image/jpeg");
+    assert.equal(found.parser, "jpegdown");
+  });
+
+  it("should name the package that reads a rich text document", {}, () => {
+    const found = sniff(Buffer.from("{\\rtf1\\ansi Invoice 42\\par}", "latin1"));
+    assert.equal(found.mime, "application/rtf");
+    assert.equal(found.parser, "rtfdown");
+  });
+
   it("should answer for bytes that name no type, and not throw", {}, () => {
     const found = sniff(Buffer.alloc(64));
     assert.equal(found.mime, "application/octet-stream");

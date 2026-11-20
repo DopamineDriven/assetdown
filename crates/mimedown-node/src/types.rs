@@ -83,6 +83,8 @@ pub enum Parser {
   Audiodown,
   Videodown,
   Tiffdown,
+  Jpegdown,
+  Rtfdown,
 }
 
 impl From<mimedown::Parser> for Parser {
@@ -95,6 +97,8 @@ impl From<mimedown::Parser> for Parser {
       mimedown::Parser::Audiodown => Parser::Audiodown,
       mimedown::Parser::Videodown => Parser::Videodown,
       mimedown::Parser::Tiffdown => Parser::Tiffdown,
+      mimedown::Parser::Jpegdown => Parser::Jpegdown,
+      mimedown::Parser::Rtfdown => Parser::Rtfdown,
     }
   }
 }

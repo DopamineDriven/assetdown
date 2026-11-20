@@ -1,6 +1,6 @@
 # ocrdown: notes
 
-Status: **steps 1 and 2 of section 3 are built** (2026-11-19): the move out of `pdfdown-ocr`, with no change in what it reads, and what `tiffdown`'s `ocr` feature needed. The "as built" notes under section 3 say what exists.
+Status: **all three steps of section 3 are built** (2026-11-19): the move out of `pdfdown-ocr`, with no change in what it reads; what `tiffdown`'s `ocr` feature needed; and the working resolution, with a second way of cutting a picture into black and white found on the way. The "as built" notes under section 3 say what exists.
 
 `ocrdown` reads text from a picture with Tesseract and knows no file format. It is the half of `pdfdown-ocr` that never looks at a PDF, moved out so that `pdfdown-ocr`, `tiffdown`, and `jpegdown` share one copy. Decided on 2026-11-18 ([tiffdown.md](tiffdown.md), row 4).
 
@@ -109,6 +109,34 @@ The six workflows whose lint job has no Tesseract now leave `ocrdown` out as the
 - **`ready(lang)`**, in `engine`: whether Tesseract starts here with a language. The reading functions give no words when it does not, which looks the same as a blank page; `recognize_page` asks first and says so in a warning. `pdfdown-ocr` does not call it, so nothing changes there.
 
 `pdfdown-ocr` is untouched by this step: its 17 tests pass, and none of the functions it calls changed.
+
+### Step 3, as built (2026-11-19)
+
+Two things, both measured on the six public invoice pages rendered in gray as JPEG, against the words of the PDFs they were rendered from.
+
+**A small picture is enlarged.** `enlarged(image, width_in_points)` brings a picture with fewer than 200 pixels to the inch up to 200, and leaves one within a twentieth of that alone. The format crate calls it and says so in a warning.
+
+| Pixels to the inch | Read as it is | Enlarged to 200 | Enlarged to 300 |
+| --- | --- | --- | --- |
+| 72 | 32.0% | 74.6% | 72.5% |
+| 100 | 58.0% | 91.5% | 88.2% |
+| 120 | 85.8% | 88.2% | 84.6% |
+| 150 | 90.6% | 92.4% | 94.0% |
+| 170 | 88.2% | 92.4% | 91.5% |
+| 200 | 84.6% | | 83.7% |
+
+**A picture of gray or of color is read twice.** Tesseract cuts a picture into black and white once for the whole of it, and text in a light gray is then taken for paper on a page that also has black text. Cutting it a part at a time finds that text, and does worse on a picture that was enlarged. So `recognize_page` reads such a picture both ways and keeps the reading with more sure words (those at 60 or more of 100), and reads a picture of pure black and white once.
+
+| Pixels to the inch | One cut | A part at a time | The surer of the two |
+| --- | --- | --- | --- |
+| 100 | 89.4% | 87.0% | 89.4% |
+| 150 | 91.2% | 89.7% | 92.7% |
+| 200 | 83.4% | 90.6% | 91.5% |
+| 300 | 83.1% | 91.8% | 91.8% |
+
+`Thresholding` names the two cuts, and `recognize_words_upright_cut` takes one. `recognize_words_upright`, which `pdfdown-ocr` calls, still makes one cut, so nothing `pdfdown-ocr` answers has changed. It would gain what the table shows for a scan kept in gray inside a PDF; that is a change in its answers, and yours to ask for.
+
+A page of pure black and white, which nearly every scanned TIFF is, reads as it did and in the same time. A page of gray or color now takes twice as long.
 
 ## 4. What it needs on a machine
 

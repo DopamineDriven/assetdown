@@ -1,0 +1,13 @@
+[package]
+description          = "Convenient rtf extraction"
+edition.workspace    = true
+keywords             = ["rtf", "rich-text", "extraction", "documents"]
+license              = { workspace = true }
+name                 = "rtfdown"
+repository.workspace = true
+version              = "0.1.0"
+
+[dependencies]
+contentdown.workspace = true
+encoding_rs.workspace = true
+thiserror.workspace   = true

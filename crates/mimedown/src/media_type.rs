@@ -47,6 +47,8 @@ pub enum Parser {
   Audiodown,
   Videodown,
   Tiffdown,
+  Jpegdown,
+  Rtfdown,
 }
 
 impl Parser {
@@ -59,6 +61,8 @@ impl Parser {
       Parser::Audiodown => "audiodown",
       Parser::Videodown => "videodown",
       Parser::Tiffdown => "tiffdown",
+      Parser::Jpegdown => "jpegdown",
+      Parser::Rtfdown => "rtfdown",
     }
   }
 }
@@ -119,7 +123,7 @@ media_types! {
   // Images.
   Png => "image/png", [], ["png"];
   Apng => "image/apng", [], ["apng"];
-  Jpeg => "image/jpeg", [], ["jpg", "jpeg", "jpe", "jif", "jfif", "pjp", "pjpeg"];
+  Jpeg => "image/jpeg", [], ["jpg", "jpeg", "jpe", "jif", "jfif", "pjp", "pjpeg"], Jpegdown;
   Gif => "image/gif", [], ["gif"];
   Bmp => "image/bmp", [], ["bmp"];
   Webp => "image/webp", [], ["webp"];
@@ -181,7 +185,7 @@ media_types! {
   Epub => "application/epub+zip", [], ["epub"];
   Azw => "application/vnd.amazon.ebook", [], ["azw"];
   Abw => "application/x-abiword", [], ["abw"];
-  Rtf => "application/rtf", ["text/rtf"], ["rtf"];
+  Rtf => "application/rtf", ["text/rtf"], ["rtf"], Rtfdown;
   Postscript => "application/postscript", [], ["ps", "eps"];
   Txt => "text/plain", [], ["txt"];
   Markdown => "text/markdown", ["application/text"], ["md"];

@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "strict": true,
+    "strictNullChecks": true,
+    "noUncheckedIndexedAccess": true,
+    "sourceMap": false,
+    "declarationMap": false,
+    "declaration": true,
+    "moduleResolution": "nodenext",
+    "module": "nodenext",
+    "emitDeclarationOnly": true,
+    "noUnusedLocals": true,
+    "paths": {
+      "@/*": ["./*"]
+    },
+    "noUnusedParameters": true,
+    "allowImportingTsExtensions": true,
+    "types": ["*"],
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "lib": [
+      "ES2024",
+      "ScriptHost",
+      "ESNext",
+      "ES2018.AsyncGenerator",
+      "ES2024.Collection",
+      "ES2024.Object",
+      "ESNext.Iterator",
+      "ESNext.AsyncIterable",
+      "ESNext.Collection",
+      "ES2018.AsyncIterable"
+    ]
+  },
+  "include": ["."],
+  "exclude": ["node_modules", "bench", "__test__"]
+}

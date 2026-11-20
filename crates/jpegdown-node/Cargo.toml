@@ -1,0 +1,25 @@
+[package]
+description            = "Convenient jpeg extraction for Node"
+edition.workspace      = true
+keywords               = ["jpeg", "scan", "photo", "extraction", "node-bindings", "rust"]
+license                = { workspace = true }
+name                   = "jpegdown-node"
+publish                = false
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+contentdown.workspace = true
+jpegdown.workspace    = true
+napi.workspace        = true
+napi-derive.workspace = true
+
+[features]
+ocr = ["jpegdown/ocr"]
+
+[build-dependencies]
+napi-build.workspace = true

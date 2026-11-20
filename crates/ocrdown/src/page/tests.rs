@@ -2,7 +2,7 @@ use contentdown::TextSource;
 
 use super::*;
 use crate::read::OcrWord;
-use crate::testing::drawn;
+use crate::testing::{drawn, inked};
 use crate::turn::OrientationSource;
 
 fn word(text: &str, [left, top, right, bottom]: [i32; 4]) -> OcrWord {
@@ -179,4 +179,69 @@ fn a_language_tesseract_has_no_data_for_is_said_and_not_passed_off_as_a_blank_pa
     page.warnings,
     ["page 4: not read: Tesseract has no data here for the language `no-such-language`"]
   );
+}
+
+#[test]
+fn text_set_in_light_gray_is_read_on_a_page_that_also_has_black_text() {
+  // One cut between black and white for the whole page falls below the gray, and the gray
+  // line is then taken for paper. The page is cut a part at a time.
+  let mut picture = image::GrayImage::from_pixel(1700, 2200, image::Luma([255]));
+  inked(&mut picture, "TOTAL 42", 8, (170, 220), 0);
+  inked(&mut picture, "42 TOTAL", 8, (170, 1500), 180);
+  let picture = DynamicImage::ImageLuma8(picture);
+  let page = recognize_page(
+    PagePicture {
+      image: &picture,
+      number: 1,
+      size: (612.0, 792.0),
+    },
+    "eng",
+  );
+  let lines: Vec<&str> = page.lines.iter().map(|line| line.text.as_str()).collect();
+  assert_eq!(lines, ["TOTAL 42", "42 TOTAL"]);
+}
+
+fn reading(confidences: &[f32]) -> Upright {
+  Upright {
+    words: confidences
+      .iter()
+      .map(|confidence| OcrWord {
+        confidence: *confidence,
+        ..word("word", [0, 0, 10, 10])
+      })
+      .collect(),
+    degrees: 0,
+    size: (100, 100),
+    decided: OrientationSource::Upright,
+  }
+}
+
+#[test]
+fn of_two_readings_the_one_with_more_sure_words_is_kept() {
+  // Many unsure words are specks taken for letters, and count for nothing.
+  let few_and_sure = reading(&[95.0, 90.0]);
+  let many_and_unsure = reading(&[40.0, 35.0, 50.0, 45.0, 30.0, 55.0]);
+  assert_eq!(
+    surer(few_and_sure.clone(), many_and_unsure.clone()),
+    few_and_sure
+  );
+  assert_eq!(surer(many_and_unsure, few_and_sure.clone()), few_and_sure);
+  // More sure words is a fuller reading.
+  let fuller = reading(&[95.0, 90.0, 85.0]);
+  assert_eq!(surer(few_and_sure.clone(), fuller.clone()), fuller);
+  // Level, the first is kept.
+  let other = reading(&[90.0, 95.0]);
+  assert_eq!(surer(few_and_sure.clone(), other), few_and_sure);
+}
+
+#[test]
+fn a_picture_of_pure_black_and_white_is_known_for_one() {
+  assert!(two_toned(&total_42()));
+  let mut gray = image::GrayImage::from_pixel(8, 8, image::Luma([255]));
+  gray.put_pixel(3, 3, image::Luma([180]));
+  assert!(!two_toned(&DynamicImage::ImageLuma8(gray)));
+  let color = image::RgbImage::from_pixel(8, 8, image::Rgb([255, 0, 0]));
+  assert!(!two_toned(&DynamicImage::ImageRgb8(color)));
+  let black_and_white = image::RgbImage::from_pixel(8, 8, image::Rgb([0, 0, 0]));
+  assert!(two_toned(&DynamicImage::ImageRgb8(black_and_white)));
 }

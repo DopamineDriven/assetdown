@@ -1,6 +1,6 @@
 # Config updates
 
-What I need from the manifests and configuration, which are yours, to keep going. Each entry has the file it belongs in above it. They are in the order I will run into them: section 1 is done, sections 2 and 3 open the next two crates, and section 4 is a decision and not yet a need.
+What I need from the manifests and configuration, which are yours, to keep going. Each entry has the file it belongs in above it. They are in the order I ran into them: sections 1 to 3 are done, section 4 is a decision that holds up nothing, and section 5 is how the releases that are waiting have to be cut.
 
 Nothing here adds a third-party dependency: every outside crate named is already in the workspace's table. The only new names are the workspace's own crates.
 
@@ -36,97 +36,21 @@ One thing left, and it blocks nothing: the keywords in `crates/tiffdown-node/pac
 
 ## 2. `jpegdown`
 
-The next crate by what the archive holds. It is thin: `image` decodes, `ocrdown` reads, and `contentdown` has the page and the invoice. The plan is [jpegdown.md](jpegdown.md).
+Done (2026-11-19). You made the two manifests and the root's entries. The binding's folder held nothing else, so I made the rest of its scaffold as a copy of `tiffdown-node`'s with the names changed (`package.json`, `ocr/package.json`, `build.rs`, `.gitignore`, `.yarnrc.yml`, `.oxfmtrc.json`, `tsconfig.json`, `.cargo/config.toml`, `yarn.lock`), then its `ci` folder, `.github/workflows/jpegdown-node.yml`, and its entry in `version.sh`. All of it is yours to change.
 
-### `Cargo.toml`
-
-The root. Two members, and two of the workspace's own, each in its alphabetical place:
-
-```toml
-# [workspace] members
-  "crates/jpegdown",
-  "crates/jpegdown-node",
-
-# [workspace.dependencies], the workspace's own
-jpegdown       = { path = "crates/jpegdown" }
-jpegdown-node  = { path = "crates/jpegdown-node" }
-```
-
-### `crates/jpegdown/Cargo.toml`
-
-```toml
-[package]
-description          = "Convenient jpeg extraction"
-edition.workspace    = true
-keywords             = ["jpeg", "scan", "photo", "extraction", "images"]
-license              = { workspace = true }
-name                 = "jpegdown"
-repository.workspace = true
-version              = "0.1.0"
-
-[dependencies]
-contentdown.workspace = true
-image.workspace       = true
-ocrdown               = { workspace = true, optional = true }
-thiserror.workspace   = true
-
-[features]
-ocr = ["dep:ocrdown"]
-```
-
-What each is for: `image` the decoding and the turn a picture's orientation asks for, `contentdown` the page and the paper sizes, `thiserror` the three kinds of error, and `ocrdown` the words, only with the feature.
-
-### `crates/jpegdown-node/Cargo.toml`
-
-```toml
-[package]
-description            = "Convenient jpeg extraction for Node"
-edition.workspace      = true
-keywords               = ["jpeg", "scan", "photo", "extraction", "node-bindings", "rust"]
-license                = { workspace = true }
-name                   = "jpegdown-node"
-publish                = false
-repository.workspace   = true
-rust-version.workspace = true
-version                = "0.1.0"
-
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-contentdown.workspace = true
-jpegdown.workspace    = true
-napi.workspace        = true
-napi-derive.workspace = true
-
-[features]
-ocr = ["jpegdown/ocr"]
-
-[build-dependencies]
-napi-build.workspace = true
-```
-
-The rest of the binding's folder is the scaffold `tiffdown-node` has, with section 1's four scripts, its two `.gitignore` lines, and its `ocr/package.json` in from the start, under this package's names (`@d0paminedriven/jpegdown-ocr`, `jpegdown-node-ocr`, `jpegdown_ocr.napi.js`).
+One difference from `tiffdown-node`: its `.gitignore` has `/index.js`, which ignores the generated loader by itself, so the root `.gitignore` needs no line for this package.
 
 ## 3. `rtfdown`
 
-After `jpegdown`. Its first use is the invoice attached inside a mail message saved as RTF. The plan is [rtfdown.md](rtfdown.md).
+Built (2026-11-20). The library is mine by your word; you made `crates/rtfdown-node` and its manifests. In the root `Cargo.toml` I added `"crates/rtfdown"` among the members and `rtfdown = { path = "crates/rtfdown" }` among the workspace's own, and to the library's manifest `contentdown.workspace = true` and `encoding_rs.workspace = true`, for the text and the pages.
 
-### `Cargo.toml`
+In the binding I wrote the sources, the specs, `build.rs` (which `napi build` needs, and which is the one every binding has), the `ci` folder, `.github/workflows/rtfdown-node.yml`, and the entry in `version.sh`. I changed nothing in its manifests.
 
-The root:
-
-```toml
-# [workspace] members
-  "crates/rtfdown",
-  "crates/rtfdown-node",
-
-# [workspace.dependencies], the workspace's own
-rtfdown        = { path = "crates/rtfdown" }
-rtfdown-node   = { path = "crates/rtfdown-node" }
-```
+Settled by you on 2026-11-20: the package's name, which was spelled `rtfdowm` in four places of `package.json`; its version, now `0.1.0` in all three files; and the generated files that carried the old spelling, rebuilt.
 
 ### `crates/rtfdown/Cargo.toml`
+
+As it stands:
 
 ```toml
 [package]
@@ -144,38 +68,11 @@ encoding_rs.workspace = true
 thiserror.workspace   = true
 ```
 
-What each is for: `encoding_rs` the code pages a file's text is written in, `contentdown` the text set on pages and the invoice, and `thiserror` the three kinds of error. The reader of the compound file an embedded object is kept in is written in the crate.
-
 ### `crates/rtfdown-node/Cargo.toml`
 
-```toml
-[package]
-description            = "Convenient rtf extraction for Node"
-edition.workspace      = true
-keywords               = ["rtf", "rich-text", "extraction", "node-bindings", "rust"]
-license                = { workspace = true }
-name                   = "rtfdown-node"
-publish                = false
-repository.workspace   = true
-rust-version.workspace = true
-version                = "0.1.0"
+Yours, and nothing in it needs to change. It has no OCR package: nothing in it needs Tesseract.
 
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-contentdown.workspace = true
-napi.workspace        = true
-napi-derive.workspace = true
-rtfdown.workspace     = true
-
-[build-dependencies]
-napi-build.workspace = true
-```
-
-It has no OCR package: nothing in it needs Tesseract.
-
-## 4. A decision, not yet a need
+## 4. A decision, not a need
 
 Row 3 of [rtfdown.md](rtfdown.md) recommends that `mimedown`'s RTF reader move into `rtfdown`, and that `mimedown` then take its RTF facts from `rtfdown` behind a feature, as it takes a Word file's from `docxdown`. If you take that row, these follow; if you do not, `mimedown` keeps its own reader and nothing here changes.
 
@@ -196,6 +93,24 @@ rtf = ["dep:rtfdown"]
 ```toml
 mimedown = { workspace = true, features = ["pdf", "office", "audio", "video", "rtf"] }
 ```
+
+## 5. Cutting the releases
+
+CI reads one thing to decide a release: the subject of the newest commit in a push, which must be exactly `<name>@<version>`. And a workflow only starts when the push touches its package's files. Two things follow.
+
+- **One push to a release.** Two release commits pushed together publish only the later one.
+- **A release commit has to touch its own package.** `jpegdown` and `rtfdown` are already at `0.1.0` in every file, so `version.sh` has nothing to change for them, and a commit that changes nothing of theirs starts no workflow. They are both new and uncommitted, so each can be released by the commit that adds something of its own.
+
+In this order, each line a commit and a push of its own:
+
+| Commit | What it holds |
+|---|---|
+| `jpegdown@0.1.0` | everything that is waiting, except `.github/workflows/rtfdown-node.yml` and `crates/rtfdown-node/ci` |
+| `rtfdown@0.1.0` | those two, which start its workflow |
+| `pdfdown@0.19.0` | what `./version.sh pdfdown 0.19.0` changes: the fix to how a page's text is read is already in the tree |
+| `mimedown@0.3.0` | what `./version.sh mimedown 0.3.0` changes: its addon is built with `pdfdown` inside it, so `isSearchable` is only right once it is rebuilt, and it gains the three routes |
+
+None of these pushes cancels a release that is still running, so they need not wait for one another: the only workflow one of them starts a second time is `mimedown-node`, whose first run is a skip. `tiffdown` would take the changes in `ocrdown` (the choice of thresholding a page at a time, and no enlarging of a page already near 200 pixels to the inch) with a `tiffdown@0.2.0` of its own.
 
 ## Nothing needed for
 

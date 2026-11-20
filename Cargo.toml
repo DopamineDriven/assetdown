@@ -5,6 +5,8 @@ members = [
   "crates/contentdown",
   "crates/docxdown",
   "crates/docxdown-node",
+  "crates/jpegdown",
+  "crates/jpegdown-node",
   "crates/mimedown",
   "crates/mimedown-node",
   "crates/ocrdown",
@@ -15,6 +17,8 @@ members = [
   "crates/pdfdown-node",
   "crates/pptxdown",
   "crates/pptxdown-node",
+  "crates/rtfdown",
+  "crates/rtfdown-node",
   "crates/tiffdown",
   "crates/tiffdown-node",
   "crates/videodown",
@@ -75,6 +79,8 @@ audiodown-node = { path = "crates/audiodown-node" }
 contentdown    = { path = "crates/contentdown" }
 docxdown       = { path = "crates/docxdown" }
 docxdown-node  = { path = "crates/docxdown-node" }
+jpegdown       = { path = "crates/jpegdown" }
+jpegdown-node  = { path = "crates/jpegdown-node" }
 mimedown       = { path = "crates/mimedown" }
 mimedown-node  = { path = "crates/mimedown-node" }
 ocrdown        = { path = "crates/ocrdown" }
@@ -85,6 +91,8 @@ pdfdown-node   = { path = "crates/pdfdown-node" }
 pdfdown-ocr    = { path = "crates/pdfdown-ocr" }
 pptxdown       = { path = "crates/pptxdown" }
 pptxdown-node  = { path = "crates/pptxdown-node" }
+rtfdown        = { path = "crates/rtfdown" }
+rtfdown-node   = { path = "crates/rtfdown-node" }
 tiffdown       = { path = "crates/tiffdown" }
 tiffdown-node  = { path = "crates/tiffdown-node" }
 videodown      = { path = "crates/videodown" }

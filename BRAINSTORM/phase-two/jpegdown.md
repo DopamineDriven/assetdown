@@ -1,6 +1,6 @@
 # jpegdown: notes
 
-Status: **not started** (2026-11-18). These are notes toward a plan. Rows marked decided are decided; the rest are recommendations waiting for an answer. The crate and its binding are yours to create.
+Status: **built** (2026-11-19): the library, its `ocr` feature, the Node binding with its OCR package, and the route in `mimedown`. Section 6 says what exists. The rows of section 1 that were recommendations were followed as written, since you were away; say so where you would have chosen otherwise.
 
 Invoices also arrive as JPEG files: a picture of one page. `jpegdown` reads them. It shares its recognition with `tiffdown`; see [tiffdown.md](tiffdown.md), section 5. The third companion is [rtfdown.md](rtfdown.md).
 
@@ -56,6 +56,34 @@ Open: where the floor sits, and which filter. Whether `pdfdown-ocr` should do th
 3. The `ocr` feature: text, layout, and the invoice.
 4. `jpegdown-node`, and the route in `mimedown`.
 
+## 6. As built (2026-11-19)
+
+**The library** (`crates/jpegdown`):
+
+- `Jpeg::open(bytes)` reads the header: every segment up to the picture data. `page()` gives what the file says: the size in pixels, the resolution (JFIF's density first, then Exif's), the depth, the components and what they are, the coding, the orientation, the program, and the date.
+- `raster()` gives the picture turned the way its orientation says, and `png()` the same as a PNG. `image` decodes. A picture kept without loss, one with samples of more than 8 bits, and the arithmetic codings are refused by name; the page is still listed.
+- `Page::size_as_read()` is row 6: the size the stated resolution makes, when a sheet could have it (sides from 2 to 18 inches). A resolution of 72 or 96 is believed only when it makes a standard sheet. Otherwise the picture is taken to be the sheet its shape is nearest to, among letter, A4, and legal, and the answer names it.
+- With `ocr`: `Jpeg::recognize(lang)` gives a `Recognized`, with `page()`, `text()`, and `invoice(options)`. A size that was assumed, an enlarging, and a turn are each said in the page's warnings, and the invoice's warnings begin with them.
+
+**The binding** (`crates/jpegdown-node`): `jpegPage`, `jpegPng`, and `jpegDocument`, and the class `JpegDown`, in the base package; `jpegLayout`, `jpegText`, `jpegInvoice`, and `jpegDocumentOcr`, with the same four on the class, in the OCR package. Each has an `Async` twin.
+
+**`mimedown`** names `jpegdown` as the package that reads `image/jpeg`.
+
+**Checked** on the six public invoice PDFs, first page of each, rendered in gray as JPEG at four resolutions, against the PDFs' own words (`pdftotext`) and what `pdfdown` reads from them:
+
+| Pixels to the inch | Words found | A word's center, the middle case and the worst | Invoice fields that agree |
+| --- | --- | --- | --- |
+| 100 | 89.4% | 1.1 pt, 2.4 pt | 34 of 36 |
+| 150 | 92.7% | 1.0 pt, 2.1 pt | 35 of 36 |
+| 200 | 91.5% | 0.9 pt, 2.7 pt | 35 of 36 |
+| 300 | 91.8% | 0.9 pt, 2.8 pt | 35 of 36 |
+
+Every page's size came out within a point and a half of the PDF page's.
+
+**Tests.** 25 in the library and 6 more behind `ocr`; the binding's specs are 17 for the base package, 6 on the WebAssembly build, and 10 for the OCR package. The specs start from two small JPEGs kept as literals, since the repository holds none. Test-first held in the library; the binding's specs were seen to fail only for want of an addon.
+
+**What I made that is usually yours**, because the binding's folder held a manifest and nothing else: its `package.json`, `ocr/package.json`, `build.rs`, `.gitignore`, and the rest of its scaffold, each a copy of `tiffdown-node`'s with the names changed; its `ci` folder and workflow; and its entry in `version.sh`. Change or replace any of it.
+
 ## Parked
 
 - A photograph of paper, as against a scan: perspective, shadow, a curled sheet.
@@ -63,5 +91,7 @@ Open: where the floor sits, and which filter. Whether `pdfdown-ocr` should do th
 
 ## Not verified
 
-- CMYK and the Adobe marker's inverted samples through `image`.
+- CMYK and the Adobe marker's inverted samples through `image`: still not run.
+- A photograph of a sheet, as against a scan, is expected to read poorly: nothing here corrects perspective or shadow. It is the first item under Parked.
+- No spec reads real files yet.
 - The measurement in section 3 is six pages from clean renders. A scan has noise that a render does not.

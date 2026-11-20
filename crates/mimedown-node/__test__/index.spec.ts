@@ -97,6 +97,14 @@ describe("sniff", () => {
     assert.equal(found.parser, null);
   });
 
+  it("should name the package that reads a scanned page", {}, () => {
+    // A TIFF's first eight bytes, and a directory with nothing in it.
+    const tiff = Buffer.from([0x49, 0x49, 42, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const found = sniff(tiff);
+    assert.equal(found.mime, "image/tiff");
+    assert.equal(found.parser, "tiffdown");
+  });
+
   it("should answer for bytes that name no type, and not throw", {}, () => {
     const found = sniff(Buffer.alloc(64));
     assert.equal(found.mime, "application/octet-stream");

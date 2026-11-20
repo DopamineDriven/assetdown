@@ -46,6 +46,7 @@ pub enum Parser {
   Pptxdown,
   Audiodown,
   Videodown,
+  Tiffdown,
 }
 
 impl Parser {
@@ -57,6 +58,7 @@ impl Parser {
       Parser::Pptxdown => "pptxdown",
       Parser::Audiodown => "audiodown",
       Parser::Videodown => "videodown",
+      Parser::Tiffdown => "tiffdown",
     }
   }
 }
@@ -127,7 +129,7 @@ media_types! {
   Avci => "image/avci", [], ["avci"];
   Svg => "image/svg+xml", [], ["svg"];
   Ico => "image/x-icon", ["image/vnd.microsoft.icon"], ["ico", "cur"];
-  Tiff => "image/tiff", [], ["tiff", "tif"];
+  Tiff => "image/tiff", [], ["tiff", "tif"], Tiffdown;
   Hdr => "image/vnd.radiance", [], ["hdr", "rgbe", "xyze", "pic"];
   Aces => "image/aces", [], ["aces"];
   Dpx => "image/dpx", [], ["dpx"];

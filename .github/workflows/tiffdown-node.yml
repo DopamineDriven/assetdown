@@ -1,0 +1,272 @@
+# CI for @d0paminedriven/tiffdown and @d0paminedriven/tiffdown-ocr (crates/tiffdown-node).
+#
+# GitHub only runs workflows from this directory, so this file holds the triggers and the
+# job graph and nothing else. What each job does lives with the package, as composite
+# actions in crates/tiffdown-node/ci, and the build and test matrices are derived by
+# ci/matrix.ts from `napi.targets` in package.json and, for the OCR package, in
+# ocr/package.json.
+#
+# One crate builds both packages. The base package is cross-compiled for every target; the
+# OCR package (cargo feature `ocr`) links the system Tesseract, so each of its targets is
+# built and tested on a runner of that platform.
+#
+# The two packages are released together: one commit titled `tiffdown@<version>` publishes
+# both, and each publish job waits on every build and test job of either package, so a
+# failure anywhere publishes neither.
+name: tiffdown-node
+env:
+  DEBUG: napi:*
+  # The oldest macOS that Node 24, this package's floor, runs on.
+  MACOSX_DEPLOYMENT_TARGET: "13.5"
+  CARGO_INCREMENTAL: "1"
+  # The git hooks are for local commits.
+  HUSKY: "0"
+on:
+  push:
+    branches:
+      - main
+    tags-ignore:
+      - "**"
+    paths:
+      - crates/tiffdown-node/**
+      - crates/tiffdown/**
+      - crates/ocrdown/**
+      - crates/contentdown/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/tiffdown-node.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - crates/tiffdown-node/**
+      - crates/tiffdown/**
+      - crates/ocrdown/**
+      - crates/contentdown/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/tiffdown-node.yml
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+    working-directory: crates/tiffdown-node
+jobs:
+  plan:
+    name: Plan targets
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      test_host: ${{ steps.plan.outputs.test_host }}
+      test_docker: ${{ steps.plan.outputs.test_docker }}
+      wasi: ${{ steps.plan.outputs.wasi }}
+      freebsd: ${{ steps.plan.outputs.freebsd }}
+      # False when the commit is another package's release (`<name>@<version>`). Every job
+      # below then skips, so one release does not queue every package's pipeline.
+      run: ${{ steps.plan.outputs.run }}
+      ocr: ${{ steps.plan.outputs.ocr }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 26
+      - name: Read napi.targets
+        id: plan
+        run: node ci/matrix.ts >> "$GITHUB_OUTPUT"
+  lint:
+    name: Lint and Rust tests
+    needs: plan
+    if: ${{ needs.plan.outputs.run == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/tiffdown-node/ci/setup
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # ocrdown links the system Tesseract, and its tests and tiffdown's run it.
+      - name: Install Tesseract
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            tesseract-ocr tesseract-ocr-eng tesseract-ocr-osd \
+            libtesseract-dev libleptonica-dev \
+            pkg-config
+          tesseract --version | head -n1 | grep -q "tesseract 5"
+      - name: Oxlint
+        run: yarn lint
+      - name: Clippy
+        working-directory: .
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      # The workspace-wide pass builds the library and this crate with no features; this one
+      # covers the code behind `ocr` in both.
+      - name: Clippy with the words
+        working-directory: .
+        run: cargo clippy --package tiffdown --package tiffdown-node --all-targets --all-features -- -D warnings
+      - name: Rust tests
+        working-directory: .
+        run: cargo test --workspace
+      # The library's tests that read words are behind `ocr`, which the pass above leaves off.
+      - name: Rust tests with the words
+        working-directory: .
+        run: cargo test --package tiffdown --features ocr
+  build:
+    needs: plan
+    if: ${{ needs.plan.outputs.run == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings: ${{ fromJSON(needs.plan.outputs.build) }}
+    name: Build ${{ matrix.settings.target }}
+    runs-on: ${{ matrix.settings.host }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/tiffdown-node/ci/setup
+      - uses: ./crates/tiffdown-node/ci/build
+        with:
+          target: ${{ matrix.settings.target }}
+          flags: ${{ matrix.settings.flags }}
+  build-freebsd:
+    needs: plan
+    if: ${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.freebsd == 'true' }}
+    name: Build x86_64-unknown-freebsd
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/tiffdown-node/ci/build-freebsd
+  test-host:
+    needs:
+      - plan
+      - build
+    if: ${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.test_host != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings: ${{ fromJSON(needs.plan.outputs.test_host) }}
+    name: Test ${{ matrix.settings.target }} - node@${{ matrix.settings.node }}
+    runs-on: ${{ matrix.settings.host }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/tiffdown-node/ci/setup
+        with:
+          node-version: ${{ matrix.settings.node }}
+          architecture: ${{ matrix.settings.architecture }}
+      - uses: ./crates/tiffdown-node/ci/test
+        with:
+          target: ${{ matrix.settings.target }}
+          mode: host
+  test-docker:
+    needs:
+      - plan
+      - build
+    if: ${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.test_docker != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings: ${{ fromJSON(needs.plan.outputs.test_docker) }}
+    name: Test ${{ matrix.settings.target }} - node@${{ matrix.settings.node }}
+    runs-on: ${{ matrix.settings.host }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/tiffdown-node/ci/setup
+        with:
+          node-version: ${{ matrix.settings.node }}
+          # The tests run in a container that may differ from the runner in libc, so
+          # install the native parts of the dev dependencies for both.
+          cpu: '["current", "arm64", "x64", "arm"]'
+          libc: '["current", "musl", "gnu"]'
+      - uses: ./crates/tiffdown-node/ci/test
+        with:
+          target: ${{ matrix.settings.target }}
+          mode: docker
+          image: ${{ matrix.settings.image }}
+          platform: ${{ matrix.settings.platform }}
+          typecheck: ${{ matrix.settings.typecheck }}
+  test-wasi:
+    needs:
+      - plan
+      - build
+    if: ${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.wasi == 'true' }}
+    name: Test wasm32-wasip1-threads - node@26
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/tiffdown-node/ci/setup
+      - uses: ./crates/tiffdown-node/ci/test
+        with:
+          target: wasm32-wasip1-threads
+          mode: wasi
+  ocr:
+    needs: plan
+    if: ${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.ocr != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings: ${{ fromJSON(needs.plan.outputs.ocr) }}
+    name: Build and test OCR ${{ matrix.settings.target }}
+    runs-on: ${{ matrix.settings.host }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/tiffdown-node/ci/setup
+      - uses: ./crates/tiffdown-node/ci/ocr
+        with:
+          target: ${{ matrix.settings.target }}
+  publish:
+    name: Publish tiffdown
+    needs:
+      - plan
+      - lint
+      - build-freebsd
+      - test-host
+      - test-docker
+      - test-wasi
+      - ocr
+    # Runs when nothing it waits on failed, including when one of them was skipped
+    # because package.json lists no target of that kind.
+    if: ${{ needs.plan.outputs.run == 'true' && !failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # For npm provenance.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/tiffdown-node/ci/setup
+      - uses: ./crates/tiffdown-node/ci/publish
+        with:
+          release-name: tiffdown
+          # Only a push to main may publish; pull requests and manual runs never do.
+          allow-release: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          npm-token: ${{ secrets.NPM_TOKEN }}
+  publish-ocr:
+    name: Publish tiffdown-ocr
+    needs:
+      - plan
+      - lint
+      - build-freebsd
+      - test-host
+      - test-docker
+      - test-wasi
+      - ocr
+    if: ${{ needs.plan.outputs.run == 'true' && !failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # For npm provenance.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/tiffdown-node/ci/setup
+      - uses: ./crates/tiffdown-node/ci/publish-ocr
+        with:
+          # Released by the base package's commit; ocr/package.json must be at the same version.
+          release-name: tiffdown
+          # Only a push to main may publish; pull requests and manual runs never do.
+          allow-release: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          npm-token: ${{ secrets.NPM_TOKEN }}

@@ -1,0 +1,9 @@
+*node.wasi.cjs
+*node.wasi-browser.js
+*-node/wasi-worker*.mjs
+browser.js
+../tiffdown/index.js
+wasi-worker*.mjs
+
+ocr/tiffdown_ocr.napi.js
+

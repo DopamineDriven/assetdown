@@ -7,6 +7,7 @@ members = [
   "crates/docxdown-node",
   "crates/mimedown",
   "crates/mimedown-node",
+  "crates/ocrdown",
   "crates/ooxmldown",
   "crates/pdfdown",
   "crates/pdfdown-meta",
@@ -76,6 +77,7 @@ docxdown       = { path = "crates/docxdown" }
 docxdown-node  = { path = "crates/docxdown-node" }
 mimedown       = { path = "crates/mimedown" }
 mimedown-node  = { path = "crates/mimedown-node" }
+ocrdown        = { path = "crates/ocrdown" }
 ooxmldown      = { path = "crates/ooxmldown" }
 pdfdown        = { path = "crates/pdfdown" }
 pdfdown-meta   = { path = "crates/pdfdown-meta" }

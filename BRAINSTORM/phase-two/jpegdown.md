@@ -24,7 +24,7 @@ Said plainly: without recognition this crate has little to give that `mimedown` 
 ## 2. What exists to build on
 
 - **`image`** 0.25.10: the JPEG decoder, the EXIF orientation it reports (`ImageDecoder::orientation`) and `DynamicImage::apply_orientation`, and `imageops::resize`.
-- **`mimedown`** reads a JPEG's size, stated resolution, orientation, coding and color from its header.
+- **`mimedown`** reads a JPEG's size, stated resolution, orientation, coding, and color from its header.
 - **`pdfdown-ocr`** and **`contentdown`**, as [tiffdown.md](tiffdown.md) section 2 has them.
 
 ## 3. Small pictures
@@ -53,7 +53,7 @@ Open: where the floor sits, and which filter. Whether `pdfdown-ocr` should do th
 
 1. After `ocrdown` exists ([tiffdown.md](tiffdown.md), section 6, step 3): decode, the page's facts, the picture upright.
 2. The working resolution in the shared crate.
-3. The `ocr` feature: text, layout and the invoice.
+3. The `ocr` feature: text, layout, and the invoice.
 4. `jpegdown-node`, and the route in `mimedown`.
 
 ## Parked

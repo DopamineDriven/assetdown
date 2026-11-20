@@ -18,5 +18,8 @@ napi.workspace        = true
 napi-derive.workspace = true
 tiffdown.workspace    = true
 
+[features]
+ocr = ["tiffdown/ocr"]
+
 [build-dependencies]
 napi-build.workspace = true

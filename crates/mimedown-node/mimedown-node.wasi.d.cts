@@ -314,7 +314,7 @@ export interface Options {
 }
 
 /** The package of this family that reads a type in full. */
-export type Parser = 'pdfdown' | 'xlsxdown' | 'docxdown' | 'pptxdown' | 'audiodown' | 'videodown'
+export type Parser = 'pdfdown' | 'xlsxdown' | 'docxdown' | 'pptxdown' | 'audiodown' | 'videodown' | 'tiffdown'
 
 export interface PdfDetail {
   version: string | null

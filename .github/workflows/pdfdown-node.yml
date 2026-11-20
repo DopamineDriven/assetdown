@@ -31,6 +31,7 @@ on:
       - crates/pdfdown-node/**
       - crates/pdfdown/**
       - crates/pdfdown-ocr/**
+      - crates/ocrdown/**
       - crates/pdfdown-meta/**
       - crates/contentdown/**
       - Cargo.toml
@@ -43,6 +44,7 @@ on:
       - crates/pdfdown-node/**
       - crates/pdfdown/**
       - crates/pdfdown-ocr/**
+      - crates/ocrdown/**
       - crates/pdfdown-meta/**
       - crates/contentdown/**
       - Cargo.toml

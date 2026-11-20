@@ -11,6 +11,7 @@ mod types;
 pub use document::extract_all_with_ocr;
 pub use ocr::{
   RENDER_MODE_ALWAYS, RENDER_MODE_AUTO, RENDER_MODE_NEVER, detect_headers_footers_ocr,
-  extract_layout_with_ocr, extract_text_with_ocr, normalize_max_threads,
+  extract_layout_with_ocr, extract_text_with_ocr,
 };
+pub use ocrdown::normalize_max_threads;
 pub use types::{OcrPageText, OcrStructuredPageText, PdfDocumentOcr};

@@ -1,0 +1,14 @@
+[package]
+description          = "Text from an image with Tesseract: the words, their boxes, and orienting them upright"
+edition.workspace    = true
+keywords             = ["ocr", "tesseract", "raster", "extraction"]
+license              = { workspace = true }
+name                 = "ocrdown"
+repository.workspace = true
+version              = "0.1.0"
+
+[dependencies]
+contentdown.workspace  = true
+image.workspace        = true
+rayon.workspace        = true
+tesseract-rs.workspace = true

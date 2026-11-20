@@ -18,9 +18,10 @@ version = "0.18.0"
 contentdown.workspace  = true
 image.workspace        = true
 lopdf.workspace        = true
+ocrdown.workspace      = true
 pdfdown.workspace      = true
 pdfdown-meta.workspace = true
 rayon.workspace        = true
-tesseract-rs.workspace = true
+
 [features]
 render = ["pdfdown/render"]

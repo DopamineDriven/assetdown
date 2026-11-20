@@ -1,0 +1,18 @@
+{
+  "extends": "../tsconfig.json",
+  "include": ["."],
+  "lib": [
+    "ES2024",
+    "ScriptHost",
+    "ESNext",
+    "ES2018.AsyncGenerator",
+    "ES2024.Collection",
+    "ES2024.Object",
+    "ESNext.Iterator",
+    "ESNext.AsyncIterable",
+    "ESNext.Collection",
+    "ES2018.AsyncIterable",
+    "DOM"
+  ],
+  "exclude": ["node_modules", "npm"]
+}

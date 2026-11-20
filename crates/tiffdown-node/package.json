@@ -1,17 +1,18 @@
 {
   "name": "@d0paminedriven/tiffdown",
-  "version": "0.2.0",
-  "description": "Convenient mime sniffing for Node",
+  "version": "0.1.0",
+  "description": "Convenient tiff handling for Node",
   "keywords": [
     "N-API",
     "NAPI",
     "Rust",
+    "extraction",
+    "fax",
     "napi-rs",
     "node-addon",
     "node-addon-api",
-    "mime",
-    "sniffing",
-    "identification"
+    "scan",
+    "tiff"
   ],
   "license": "MIT",
   "repository": {
@@ -33,8 +34,11 @@
   },
   "scripts": {
     "artifacts": "napi artifacts",
+    "artifacts:ocr": "napi artifacts --package-json-path ocr/package.json --npm-dir ocr/npm",
     "build": "yarn build:base",
+    "create-npm-dirs:ocr": "napi create-npm-dirs --package-json-path ocr/package.json --npm-dir ocr/npm",
     "build:base": "napi build --platform --esm --release",
+    "build:superset": "napi build --platform --esm --release --features ocr --package-json-path ocr/package.json --output-dir ocr --js tiffdown_ocr.napi.js",
     "build:wasm": "yarn build:wasm32",
     "build:wasm32": "napi build --platform --esm --release --target wasm32-wasip1-threads",
     "format": "run-p format:oxfmt format:rs format:toml",
@@ -46,10 +50,11 @@
     "version": "napi version",
     "prepare": "husky",
     "test": "yarn tsx --test \"__test__/**/*.spec.ts\"",
+    "test:ocr": "yarn tsx --test \"ocr/__test__/**/*.spec.ts\"",
     "test:wasi": "NAPI_RS_FORCE_WASI=error yarn tsx --test \"__test__/wasi.spec.ts\""
   },
   "devDependencies": {
-    "@d0paminedriven/fs": "^11.0.0",
+    "@d0paminedriven/fs": "^12.1.0",
     "@d0paminedriven/type-utils": "^1.3.0",
     "@emnapi/core": "2.0.0-alpha.5",
     "@emnapi/runtime": "2.0.0-alpha.5",

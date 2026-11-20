@@ -5,6 +5,10 @@
 use contentdown::{FontMeta, PageLayout, PlacedImage, TextSource, Word, words_to_lines};
 use image::DynamicImage;
 use lopdf::{Document, ObjectId};
+use ocrdown::{
+  DEFAULT_SOURCE_PPI, OcrWord, Upright, place_words, pool, recognize_text, recognize_words_upright,
+  source_ppi, unrotate_pixel_box,
+};
 use pdfdown::PageText;
 use pdfdown::images::composite::{InkTone, OcrImages, OneBitComposite, collect_page_ocr_images};
 use pdfdown::images::page_path_op_count;
@@ -13,255 +17,12 @@ use pdfdown::images::{page_has_form_xobjects, page_has_image_xobjects};
 use pdfdown::layout::{NativeLayout, PageGeometry, native_layout, page_geometry, page_layout};
 #[cfg(feature = "render")]
 use pdfdown::render;
-use pdfdown::text::{detect_headers_footers, strip_footer_artifacts};
+use pdfdown::text::{detect_headers_footers, strip_footer_artifacts, text_of_layout};
 use rayon::prelude::*;
+#[cfg(feature = "render")]
 use std::sync::Arc;
 
 use crate::types::{OcrPageText, OcrStructuredPageText};
-
-pub fn normalize_max_threads(v: Option<u32>) -> u32 {
-  let default = 4u32;
-  let max = std::thread::available_parallelism()
-    .map(|n| n.get() as u32)
-    .unwrap_or(default);
-  v.unwrap_or(default).clamp(1, max)
-}
-
-fn get_ocr_pool(threads: usize) -> Arc<rayon::ThreadPool> {
-  use std::collections::HashMap;
-  use std::sync::{Mutex, OnceLock};
-
-  static POOLS: OnceLock<Mutex<HashMap<usize, Arc<rayon::ThreadPool>>>> = OnceLock::new();
-  let map = POOLS.get_or_init(|| Mutex::new(HashMap::new()));
-  let mut guard = map.lock().unwrap();
-  Arc::clone(guard.entry(threads).or_insert_with(|| {
-    Arc::new(
-      rayon::ThreadPoolBuilder::new()
-        .num_threads(threads)
-        .build()
-        .expect("failed to build OCR thread pool"),
-    )
-  }))
-}
-
-/// Auto-detect tessdata path, cached for the lifetime of the process.
-fn get_tessdata_prefix() -> Option<&'static str> {
-  use std::sync::OnceLock;
-  static TESSDATA_PATH: OnceLock<Option<String>> = OnceLock::new();
-
-  TESSDATA_PATH
-    .get_or_init(|| {
-      if let Ok(path) = std::env::var("TESSDATA_PREFIX") {
-        return Some(path);
-      }
-
-      let output = std::process::Command::new("tesseract")
-        .arg("--list-langs")
-        .output()
-        .ok()?;
-
-      let stderr = String::from_utf8_lossy(&output.stderr);
-      let text = if stderr.contains('"') {
-        stderr
-      } else {
-        String::from_utf8_lossy(&output.stdout)
-      };
-
-      let start = text.find('"')?;
-      let end = text[start + 1..].find('"')?;
-      Some(text[start + 1..start + 1 + end].to_string())
-    })
-    .as_deref()
-}
-
-/// Mean Tesseract confidence (0..100) below which a page that did produce
-/// text is OCR'd again rotated. Upright copier scans score 80-95; a landscape
-/// page scanned in portrait scores 35-45 and comes back as punctuation soup.
-const ROTATION_RETRY_CONFIDENCE: f32 = 55.0;
-
-/// Tesseract's orientation detector is trusted from this confidence; below it the blind retry
-/// loop decides. Measured on copier scans: upright pages 3.9–13.8, turned pages 6.0–12.2.
-const OSD_MIN_CONFIDENCE: f32 = 3.0;
-/// An upright pass scoring at least this mean word confidence is accepted without consulting the
-/// detector. Measured: correctly oriented reads score ~96 on real and synthetic rasters; upside-down
-/// and sideways reads scored 40–62. Keeps the ~1 s detector off the common, upright page.
-const OSD_SKIP_CONFIDENCE: f32 = 80.0;
-
-/// Whether an upright pass is good enough to skip orientation detection altogether.
-fn upright_is_convincing(words: usize, mean_confidence: f32) -> bool {
-  words > 0 && mean_confidence >= OSD_SKIP_CONFIDENCE
-}
-
-/// Who decided a raster's orientation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OrientationSource {
-  /// The first pass read upright well enough.
-  Upright,
-  /// Tesseract's orientation and script detector named the turn.
-  Osd,
-  /// The confidence retry over the quarter and half turns found a better score.
-  Retry,
-}
-
-impl OrientationSource {
-  fn label(self) -> &'static str {
-    match self {
-      OrientationSource::Upright => "upright",
-      OrientationSource::Osd => "by OSD",
-      OrientationSource::Retry => "by retry",
-    }
-  }
-}
-
-/// `detect_os` reports how the text currently lies (0, 90, 180 or 270 degrees); the clockwise turn
-/// that puts it upright is the complement. The CLI prints "Orientation 270 / Rotate 90".
-fn osd_correction(orient_deg: i32) -> u32 {
-  ((360 - orient_deg.rem_euclid(360)) % 360) as u32
-}
-
-/// The turn to try first, when the detector is confident enough to be worth one OCR pass.
-fn pick_first_rotation(osd: Option<(u32, f32)>) -> Option<u32> {
-  osd
-    .filter(|(_, confidence)| *confidence >= OSD_MIN_CONFIDENCE)
-    .map(|(degrees, _)| degrees)
-}
-
-/// Orientation and confidence from Tesseract's OSD model, or `None` when `osd.traineddata` is not
-/// installed, the image is too sparse for the detector, or anything else goes wrong. The detector
-/// sees the full raster: shrinking it to 1200 px drops its confidence below the trust threshold
-/// while saving almost no time.
-fn osd_rotation(img: &DynamicImage, datapath: &str, ppi: Option<i32>) -> Option<(u32, f32)> {
-  use tesseract_rs::TessPageSegMode;
-
-  let rgb = img.to_rgb8();
-  let (w, h) = rgb.dimensions();
-  let tess = tesseract_rs::TesseractAPI::new();
-  tess.init(datapath, "osd").ok()?;
-  tess.set_page_seg_mode(TessPageSegMode::PSM_OSD_ONLY).ok()?;
-  tess
-    .set_image(rgb.as_raw(), w as i32, h as i32, 3, (w * 3) as i32)
-    .ok()?;
-  // The detector's non-text filter reads the resolution off the Leptonica image itself, which a
-  // raw-pixel image lacks, so Tesseract still prints its "Invalid resolution 0 dpi" line here;
-  // the settings below reach everything else the detector does.
-  set_resolution(&tess, ppi.unwrap_or(DEFAULT_SOURCE_PPI));
-  let (orient_deg, orient_conf, _script, _script_conf) = tess.detect_os().ok()?;
-  Some((osd_correction(orient_deg), orient_conf))
-}
-
-/// One OCR pass over the raster at a given turn.
-struct OrientedPass {
-  words: Vec<OcrWord>,
-  degrees: u32,
-  dims: (u32, u32),
-  confidence: f32,
-  source: OrientationSource,
-}
-
-/// Rotations tried, in order, when the upright pass scores too low. Most
-/// rotated scans are a landscape sheet fed in portrait, so the quarter turns
-/// come first and the half turn is only tried when neither of them is good.
-const ROTATIONS: [u32; 3] = [90, 270, 180];
-
-fn rotate_image(img: &DynamicImage, degrees: u32) -> DynamicImage {
-  match degrees {
-    90 => img.rotate90(),
-    180 => img.rotate180(),
-    270 => img.rotate270(),
-    _ => img.clone(),
-  }
-}
-
-/// Plain-text OCR of one image plus Tesseract's mean confidence (0..100).
-/// Resolution assumed for a raster whose painted size is unknown: a scan, not Tesseract's 70.
-const DEFAULT_SOURCE_PPI: i32 = 300;
-const MIN_SOURCE_PPI: i32 = 70;
-const MAX_SOURCE_PPI: i32 = 1200;
-
-/// Pixels per inch of a raster painted `points` wide. Tesseract sizes its text estimates from
-/// the source resolution and guesses 70 dpi when told nothing, which is wrong for every scan.
-fn source_ppi(pixels: u32, points: f64) -> i32 {
-  if pixels == 0 || !points.is_finite() || points <= 0.0 {
-    return DEFAULT_SOURCE_PPI;
-  }
-  (f64::from(pixels) / (points / 72.0))
-    .round()
-    .clamp(f64::from(MIN_SOURCE_PPI), f64::from(MAX_SOURCE_PPI)) as i32
-}
-
-/// Tell a Tesseract instance the raster's resolution. `user_defined_dpi` is read before the
-/// image's own resolution on every path, the orientation detector included, and the source
-/// resolution after `set_image` covers the recognizer's size estimates.
-fn set_resolution(tess: &tesseract_rs::TesseractAPI, ppi: i32) {
-  let _ = tess.set_variable("user_defined_dpi", &ppi.to_string());
-  let _ = tess.set_source_resolution(ppi);
-}
-
-fn ocr_image_text(img: &DynamicImage, lang: &str, ppi: i32) -> (String, f32) {
-  let datapath = get_tessdata_prefix().unwrap_or("");
-  let rgb = img.to_rgb8();
-  let (w, h) = rgb.dimensions();
-  let pixels = rgb.as_raw();
-
-  let tess = tesseract_rs::TesseractAPI::new();
-  if tess.init(datapath, lang).is_err()
-    || tess
-      .set_image(pixels, w as i32, h as i32, 3, (w * 3) as i32)
-      .is_err()
-  {
-    return (String::new(), 0.0);
-  }
-  set_resolution(&tess, ppi);
-  let text = tess
-    .get_utf8_text()
-    .map(|t| t.trim().to_string())
-    .unwrap_or_default();
-  let conf = tess.mean_text_conf().unwrap_or(0) as f32;
-  (text, conf)
-}
-
-/// OCR a single DynamicImage and return extracted text. The OSD detector names the turn first when
-/// confident; otherwise the upright pass and the retry over the other turns decide.
-fn ocr_dynamic_image(img: &DynamicImage, lang: &str, ppi: i32) -> String {
-  let datapath = get_tessdata_prefix().unwrap_or("");
-  let mut tried: Vec<u32> = Vec::new();
-  let mut best: Option<(String, f32)> = None;
-  let mut consider = |degrees: u32, tried: &mut Vec<u32>| -> (bool, bool) {
-    tried.push(degrees);
-    let candidate = if degrees == 0 {
-      ocr_image_text(img, lang, ppi)
-    } else {
-      ocr_image_text(&rotate_image(img, degrees), lang, ppi)
-    };
-    if best.as_ref().is_none_or(|b| candidate.1 > b.1) {
-      best = Some(candidate);
-    }
-    let b = best.as_ref().expect("a pass was recorded");
-    (
-      !b.0.is_empty() && b.1 >= ROTATION_RETRY_CONFIDENCE,
-      upright_is_convincing(b.0.split_whitespace().count(), b.1),
-    )
-  };
-  let (upright_ok, convincing) = consider(0, &mut tried);
-  if convincing {
-    return best.expect("a pass was recorded").0;
-  }
-  if let Some(degrees) = pick_first_rotation(osd_rotation(img, datapath, Some(ppi)))
-    && degrees != 0
-    && consider(degrees, &mut tried).0
-  {
-    return best.expect("a pass was recorded").0;
-  }
-  if upright_ok {
-    return best.expect("a pass was recorded").0;
-  }
-  for degrees in ROTATIONS {
-    if !tried.contains(&degrees) && consider(degrees, &mut tried).0 {
-      break;
-    }
-  }
-  best.map(|b| b.0).unwrap_or_default()
-}
 
 /// OCR the page's rasters at the resolution their painted size implies: first its one-bit images,
 /// merged onto one raster for each tone (they hold a scanned page's text), then its other images
@@ -279,7 +40,7 @@ fn ocr_page_images(
       composite.image.width(),
       composite.bbox[2] - composite.bbox[0],
     );
-    ocr_dynamic_image(&DynamicImage::ImageLuma8(composite.image), lang, ppi)
+    recognize_text(&DynamicImage::ImageLuma8(composite.image), lang, ppi)
   });
   let separate = named.into_iter().map(|(name, img)| {
     let ppi = placements
@@ -287,7 +48,7 @@ fn ocr_page_images(
       .find(|p| p.xobject_name == name)
       .map(|p| source_ppi(img.width(), p.x1 - p.x0))
       .unwrap_or(DEFAULT_SOURCE_PPI);
-    ocr_dynamic_image(&img, lang, ppi)
+    recognize_text(&img, lang, ppi)
   });
   merged
     .chain(separate)
@@ -325,7 +86,7 @@ pub fn extract_text_with_ocr(
   let page_count_str = pages.len().to_string();
   let page_entries: Vec<(u32, ObjectId)> = pages.iter().map(|(&k, &v)| (k, v)).collect();
 
-  let pool = get_ocr_pool(max_threads as usize);
+  let pool = pool(max_threads as usize);
 
   #[cfg(feature = "render")]
   let pdf_arc: Arc<Vec<u8>> = Arc::new(pdf_bytes.to_vec());
@@ -343,10 +104,10 @@ pub fn extract_text_with_ocr(
     page_entries
       .par_iter()
       .map(|&(page_num, page_id)| {
-        // Tier 1: native text; the routing decision is made on the page's geometry.
-        let raw = doc.extract_text(&[page_num]).unwrap_or_default();
-        let native = strip_footer_artifacts(&raw, &page_count_str);
+        // Tier 1: the page's own text, as its layout has it; the routing decision is made on
+        // the page's geometry.
         let layout = page_layout(doc, page_num, page_id);
+        let native = strip_footer_artifacts(&text_of_layout(&layout), &page_count_str);
         let path_ops = page_path_op_count(doc, page_id);
         #[cfg(feature = "render")]
         let outline = path_ops >= OUTLINE_PATH_OPS;
@@ -438,7 +199,7 @@ fn try_render_ocr_page(pdf_bytes: &[u8], page_num: u32, dpi: u32, lang: &str) ->
   // page_num is 1-based, PDFium page index is 0-based
   let page_index = (page_num - 1) as u16;
   let img = render::render_page_to_image_from_bytes(pdf_bytes, page_index, dpi)?;
-  let text = ocr_dynamic_image(&img, lang, dpi as i32);
+  let text = recognize_text(&img, lang, dpi as i32);
   Some(text)
 }
 
@@ -465,187 +226,6 @@ pub fn detect_headers_footers_ocr(pages: &[OcrPageText]) -> Vec<OcrStructuredPag
 }
 
 // ── Positioned OCR (phase III) ──────────────────────────────────
-
-/// One Tesseract word in image pixel space (origin top-left).
-struct OcrWord {
-  text: String,
-  left: i32,
-  top: i32,
-  right: i32,
-  bottom: i32,
-  confidence: f32,
-}
-
-fn mean_confidence(words: &[OcrWord]) -> f32 {
-  if words.is_empty() {
-    0.0
-  } else {
-    words.iter().map(|w| w.confidence).sum::<f32>() / words.len() as f32
-  }
-}
-
-/// Word boxes in the frame where the text reads upright: the image as given, or rotated by the
-/// returned clockwise angle. The upright pass runs first and is final when it is convincing
-/// ([`OSD_SKIP_CONFIDENCE`]); otherwise the OSD detector names the turn to try next, and the blind
-/// retry over the remaining turns is the last resort. Boxes are in pixels of the rotated image,
-/// whose size is also returned, together with who decided.
-fn ocr_words_best_orientation(
-  img: &DynamicImage,
-  lang: &str,
-  ppi: Option<i32>,
-) -> (Vec<OcrWord>, u32, (u32, u32), OrientationSource) {
-  let datapath = get_tessdata_prefix().unwrap_or("");
-  let mut tried: Vec<u32> = Vec::new();
-  let mut best: Option<OrientedPass> = None;
-
-  let mut consider =
-    |degrees: u32, source: OrientationSource, tried: &mut Vec<u32>| -> (bool, bool) {
-      tried.push(degrees);
-      let (words, dims) = if degrees == 0 {
-        (
-          ocr_dynamic_image_words(img, lang, ppi),
-          (img.width(), img.height()),
-        )
-      } else {
-        let rotated = rotate_image(img, degrees);
-        (
-          ocr_dynamic_image_words(&rotated, lang, ppi),
-          (rotated.width(), rotated.height()),
-        )
-      };
-      let confidence = mean_confidence(&words);
-      if best.as_ref().is_none_or(|b| confidence > b.confidence) {
-        best = Some(OrientedPass {
-          words,
-          degrees,
-          dims,
-          confidence,
-          source,
-        });
-      }
-      let b = best.as_ref().expect("a pass was recorded");
-      (
-        !b.words.is_empty() && b.confidence >= ROTATION_RETRY_CONFIDENCE,
-        upright_is_convincing(b.words.len(), b.confidence),
-      )
-    };
-
-  // Upright first: a convincing read needs no detector.
-  let (upright_ok, convincing) = consider(0, OrientationSource::Upright, &mut tried);
-  if convincing {
-    let b = best.expect("a pass was recorded");
-    return (b.words, b.degrees, b.dims, b.source);
-  }
-  // Not convincing: ask the detector which turn to try before the blind retry.
-  if let Some(degrees) = pick_first_rotation(osd_rotation(img, datapath, ppi))
-    && degrees != 0
-    && consider(degrees, OrientationSource::Osd, &mut tried).0
-  {
-    let b = best.expect("a pass was recorded");
-    return (b.words, b.degrees, b.dims, b.source);
-  }
-  // An acceptable upright read that the detector did not overturn stands; the blind retry is only
-  // for pages nothing has read well yet.
-  if upright_ok {
-    let b = best.expect("a pass was recorded");
-    return (b.words, b.degrees, b.dims, b.source);
-  }
-  for degrees in ROTATIONS {
-    if tried.contains(&degrees) {
-      continue;
-    }
-    if consider(degrees, OrientationSource::Retry, &mut tried).0 {
-      break;
-    }
-  }
-  let b = best.expect("at least the upright pass ran");
-  (b.words, b.degrees, b.dims, b.source)
-}
-
-/// OCR an image and return every recognized word with its pixel box.
-fn ocr_dynamic_image_words(img: &DynamicImage, lang: &str, ppi: Option<i32>) -> Vec<OcrWord> {
-  use tesseract_rs::TessPageIteratorLevel;
-
-  let datapath = get_tessdata_prefix().unwrap_or("");
-  let rgb = img.to_rgb8();
-  let (w, h) = rgb.dimensions();
-  let pixels = rgb.as_raw();
-
-  let tess = tesseract_rs::TesseractAPI::new();
-  if tess.init(datapath, lang).is_err()
-    || tess
-      .set_image(pixels, w as i32, h as i32, 3, (w * 3) as i32)
-      .is_err()
-  {
-    return Vec::new();
-  }
-  set_resolution(&tess, ppi.unwrap_or(DEFAULT_SOURCE_PPI));
-  if tess.recognize().is_err() {
-    return Vec::new();
-  }
-  let Ok(it) = tess.get_iterator() else {
-    return Vec::new();
-  };
-  let mut out = Vec::new();
-  loop {
-    if let Ok((text, left, top, right, bottom, confidence)) = it.get_word_with_bounds()
-      && !text.trim().is_empty()
-    {
-      out.push(OcrWord {
-        text: text.trim().to_string(),
-        left,
-        top,
-        right,
-        bottom,
-        confidence,
-      });
-    }
-    match it.next(TessPageIteratorLevel::RIL_WORD) {
-      Ok(true) => continue,
-      _ => break,
-    }
-  }
-  out
-}
-
-/// Map pixel boxes of an image of `img_w`×`img_h` pixels onto the user-space
-/// rectangle `dest = [x0, y0, x1, y1]` the image covers (y up).
-fn map_ocr_words(words: Vec<OcrWord>, img_w: u32, img_h: u32, dest: [f64; 4]) -> Vec<Word> {
-  let (iw, ih) = (f64::from(img_w.max(1)), f64::from(img_h.max(1)));
-  let (dw, dh) = (dest[2] - dest[0], dest[3] - dest[1]);
-  words
-    .into_iter()
-    .map(|w| {
-      let x0 = dest[0] + f64::from(w.left) / iw * dw;
-      let x1 = dest[0] + f64::from(w.right) / iw * dw;
-      let y1 = dest[1] + (1.0 - f64::from(w.top) / ih) * dh;
-      let y0 = dest[1] + (1.0 - f64::from(w.bottom) / ih) * dh;
-      Word {
-        text: w.text,
-        x0,
-        y0,
-        x1,
-        y1,
-        baseline: y0,
-        font_size: None,
-        font: None,
-        confidence: Some((f64::from(w.confidence) / 100.0).clamp(0.0, 1.0)),
-      }
-    })
-    .collect()
-}
-
-/// A box in a raster that was turned `degrees` clockwise (now `rotated_w` × `rotated_h` pixels),
-/// mapped back onto the raster as painted. Boxes are `[left, top, right, bottom]`, y down.
-fn unrotate_pixel_box(b: [i32; 4], degrees: u32, rotated_w: i32, rotated_h: i32) -> [i32; 4] {
-  let [l, t, r, bt] = b;
-  match degrees {
-    90 => [t, rotated_w - r, bt, rotated_w - l],
-    270 => [rotated_h - bt, l, rotated_h - t, r],
-    180 => [rotated_w - r, rotated_h - bt, rotated_w - l, rotated_h - t],
-    _ => b,
-  }
-}
 
 /// A user-space box re-expressed in the page frame turned `degrees` clockwise about the page
 /// box `bbox`: the box origin is kept and, for quarter turns, width and height swap.
@@ -758,9 +338,14 @@ fn read_placed_raster(
   warnings: &mut Vec<String>,
 ) -> RasterRead {
   let ppi = source_ppi(img.width(), dest[2] - dest[0]);
-  let (words, degrees, (rw, rh), decided) = ocr_words_best_orientation(img, lang, Some(ppi));
+  let Upright {
+    words,
+    degrees,
+    size: (rw, rh),
+    decided,
+  } = recognize_words_upright(img, lang, Some(ppi));
   let painted = words_in_painted_raster(words, degrees, rw, rh);
-  let words = map_ocr_words(painted, img.width(), img.height(), dest);
+  let words = place_words(painted, img.width(), img.height(), dest);
   // A logo or rule that OCR read as a word or two (fewer than WEAK_TIER2_WORDS) has no
   // orientation worth reporting.
   if degrees != 0 && words.len() >= WEAK_TIER2_WORDS {
@@ -896,7 +481,7 @@ fn place_rendered_words(
     (dw, dh)
   };
   (
-    map_ocr_words(painted, pw, ph, geo.bbox),
+    place_words(painted, pw, ph, geo.bbox),
     (geo.rotate + degrees) % 360,
   )
 }
@@ -918,8 +503,12 @@ fn render_page_words(
   }
   let page_index = (page_num - 1) as u16;
   let img = render::render_page_to_image_from_bytes(pdf_bytes, page_index, dpi)?;
-  let (words, degrees, turned_dims, decided) =
-    ocr_words_best_orientation(&img, lang, Some(dpi as i32));
+  let Upright {
+    words,
+    degrees,
+    size: turned_dims,
+    decided,
+  } = recognize_words_upright(&img, lang, Some(dpi as i32));
   if degrees != 0 {
     warnings.push(format!(
       "page {page_num}: text reads upright after a {degrees}° turn ({})",
@@ -1090,7 +679,7 @@ pub fn extract_layout_with_ocr(
 ) -> Vec<PageLayout> {
   let pages = doc.get_pages();
   let page_entries: Vec<(u32, ObjectId)> = pages.iter().map(|(&k, &v)| (k, v)).collect();
-  let pool = get_ocr_pool(max_threads as usize);
+  let pool = pool(max_threads as usize);
 
   #[cfg(feature = "render")]
   let pdf_arc: Arc<Vec<u8>> = Arc::new(pdf_bytes.to_vec());
@@ -1252,22 +841,13 @@ pub fn extract_layout_with_ocr(
 }
 
 #[cfg(test)]
-mod layout_tests;
-
-#[cfg(test)]
 mod cascade_tests;
 
 #[cfg(test)]
 mod composite_tests;
 
 #[cfg(test)]
-mod resolution_tests;
-
-#[cfg(test)]
 mod page_filter_tests;
-
-#[cfg(test)]
-mod osd_tests;
 
 #[cfg(test)]
 mod frame_tests;

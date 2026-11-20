@@ -78,14 +78,14 @@ jobs:
           components: clippy
       - name: Oxlint
         run: yarn lint
-      # pdfdown-ocr links the system Tesseract, which this job does not install; the
-      # pdfdown-node workflow lints and tests it.
+      # pdfdown-ocr and ocrdown link the system Tesseract, which this job does not install;
+      # the pdfdown-node workflow lints and tests them.
       - name: Clippy
         working-directory: .
-        run: cargo clippy --workspace --exclude pdfdown-ocr --all-targets -- -D warnings
+        run: cargo clippy --workspace --exclude pdfdown-ocr --exclude ocrdown --all-targets -- -D warnings
       - name: Rust tests
         working-directory: .
-        run: cargo test --workspace --exclude pdfdown-ocr
+        run: cargo test --workspace --exclude pdfdown-ocr --exclude ocrdown
   build:
     needs: plan
     if: ${{ needs.plan.outputs.run == 'true' }}

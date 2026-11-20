@@ -12,5 +12,9 @@ contentdown.workspace = true
 flate2.workspace      = true
 hayro-ccitt.workspace = true
 image.workspace       = true
+ocrdown               = { workspace = true, optional = true }
 thiserror.workspace   = true
 weezl.workspace       = true
+
+[features]
+ocr = ["dep:ocrdown"]

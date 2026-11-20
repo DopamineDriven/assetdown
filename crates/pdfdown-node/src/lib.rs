@@ -377,7 +377,7 @@ impl Task for RenderPagesTask {
       pages
         .iter()
         .filter_map(|(&page_num, &page_id)| {
-          let raw = doc.extract_text(&[page_num]).unwrap_or_default();
+          let raw = pdfdown::text::page_text(&doc, page_num, page_id);
           let non_ws: usize = raw.chars().filter(|c| !c.is_whitespace()).count();
           if non_ws > 0 {
             return None;
@@ -1187,7 +1187,7 @@ impl Task for SharedRenderPagesTask {
       pages
         .iter()
         .filter_map(|(&page_num, &page_id)| {
-          let raw = doc.extract_text(&[page_num]).unwrap_or_default();
+          let raw = pdfdown::text::page_text(&doc, page_num, page_id);
           let non_ws: usize = raw.chars().filter(|c| !c.is_whitespace()).count();
           if non_ws > 0 {
             return None;

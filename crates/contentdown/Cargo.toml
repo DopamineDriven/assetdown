@@ -1,5 +1,5 @@
   [package]
-  description            = "Structured content from pages of positioned text: the page model, the line builder and invoice extraction"
+  description            = "Structured content from pages of positioned text: the page model, the line builder, and invoice extraction"
   edition.workspace      = true
   license.workspace      = true
   name                   = "contentdown"

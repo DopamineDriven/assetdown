@@ -41,3 +41,26 @@ fn osd_orientation_becomes_a_clockwise_correction() {
   assert_eq!(osd_correction(180), 180);
   assert_eq!(osd_correction(0), 0);
 }
+
+#[test]
+fn unrotating_a_pixel_box_undoes_the_raster_turn() {
+  // an 800×200 raster turned 90° clockwise is 200×800; a box in the turned raster maps back
+  assert_eq!(
+    unrotate_pixel_box([140, 10, 180, 110], 90, 200, 800),
+    [10, 20, 110, 60]
+  );
+  // 270° clockwise (= 90° counter-clockwise): the same original box lands elsewhere
+  assert_eq!(
+    unrotate_pixel_box([20, 690, 60, 790], 270, 200, 800),
+    [10, 20, 110, 60]
+  );
+  // 180° keeps the dimensions
+  assert_eq!(
+    unrotate_pixel_box([690, 140, 790, 180], 180, 800, 200),
+    [10, 20, 110, 60]
+  );
+  assert_eq!(
+    unrotate_pixel_box([10, 20, 110, 60], 0, 800, 200),
+    [10, 20, 110, 60]
+  );
+}

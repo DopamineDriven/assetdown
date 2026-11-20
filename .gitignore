@@ -150,3 +150,4 @@ notes.md
   crates/pdfdown-node/ocr/index.d.ts
 crates/pdfdown-node/index.js
 notes/*
+crates/tiffdown-node/index.js

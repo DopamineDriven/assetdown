@@ -1,15 +1,33 @@
+use crate::layout::page_layout;
 use crate::types::{PageText, StructuredPageText};
-use lopdf::Document;
+use contentdown::PageLayout;
+use lopdf::{Document, ObjectId};
 use rayon::prelude::*;
+
+/// The text of a page that has been laid out: its lines from the top of the page down, a line
+/// of text to each, and the words of a line from the left.
+pub fn text_of_layout(layout: &PageLayout) -> String {
+  let lines: Vec<&str> = layout.lines.iter().map(|line| line.text.as_str()).collect();
+  lines.join("\n")
+}
+
+/// The text of one page, read from where its glyphs are drawn, as [`page_layout`] reads them:
+/// through the forms the page draws, with each font's own map and encoding, and with words and
+/// lines told apart by position. `lopdf`'s own `extract_text` is not used: it reads no form,
+/// drops the codes a font's map gives outside the range the map declares, and breaks words by
+/// drawing operation.
+pub fn page_text(doc: &Document, page_num: u32, page_id: ObjectId) -> String {
+  text_of_layout(&page_layout(doc, page_num, page_id))
+}
 
 pub fn extract_text(doc: &Document) -> Vec<PageText> {
   let pages = doc.get_pages();
   let page_count_str = pages.len().to_string();
-  let page_nums: Vec<u32> = pages.keys().copied().collect();
-  let mut results: Vec<PageText> = page_nums
+  let page_entries: Vec<(u32, ObjectId)> = pages.iter().map(|(&k, &v)| (k, v)).collect();
+  let mut results: Vec<PageText> = page_entries
     .par_iter()
-    .map(|&page_num| {
-      let raw = doc.extract_text(&[page_num]).unwrap_or_default();
+    .map(|&(page_num, page_id)| {
+      let raw = page_text(doc, page_num, page_id);
       let text = strip_footer_artifacts(&raw, &page_count_str);
       PageText {
         page: page_num,

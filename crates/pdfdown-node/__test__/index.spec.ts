@@ -160,30 +160,34 @@ describe("metadata", () => {
     assert.ok(new PdfDown(form).metadata().form);
     assert.equal(meta.form, undefined);
   });
-  it("should say what the document calls itself, as the file writes it", {}, () => {
-    assert.equal(meta.title, "PDF Invoice Example");
-    assert.equal(meta.author, "Sliced Invoices");
-    assert.equal(
-      meta.subject,
-      "Example PDF invoice that was created using the Sli"
-    );
-    const scan = new PdfDown(dctScan).metadata();
-    assert.equal(scan.title, "Sample PDF - scanned, image only");
-    assert.equal(scan.author, "ConvertICO.com");
-    assert.equal(
-      scan.subject,
-      "Free sample PDF from convertico.com/samples/pdf/"
-    );
-    // What a file does not say is left out, not made up: neither states keywords or a language,
-    // and the form states nothing of itself at all.
-    assert.equal(meta.keywords, undefined);
-    assert.equal(meta.language, undefined);
-    const plain = new PdfDown(form).metadata();
-    assert.deepEqual(
-      [plain.title, plain.author, plain.subject, plain.keywords],
-      [undefined, undefined, undefined, undefined]
-    );
-  });
+  it(
+    "should say what the document calls itself, as the file writes it",
+    {},
+    () => {
+      assert.equal(meta.title, "PDF Invoice Example");
+      assert.equal(meta.author, "Sliced Invoices");
+      assert.equal(
+        meta.subject,
+        "Example PDF invoice that was created using the Sli"
+      );
+      const scan = new PdfDown(dctScan).metadata();
+      assert.equal(scan.title, "Sample PDF - scanned, image only");
+      assert.equal(scan.author, "ConvertICO.com");
+      assert.equal(
+        scan.subject,
+        "Free sample PDF from convertico.com/samples/pdf/"
+      );
+      // What a file does not say is left out, not made up: neither states keywords or a language,
+      // and the form states nothing of itself at all.
+      assert.equal(meta.keywords, undefined);
+      assert.equal(meta.language, undefined);
+      const plain = new PdfDown(form).metadata();
+      assert.deepEqual(
+        [plain.title, plain.author, plain.subject, plain.keywords],
+        [undefined, undefined, undefined, undefined]
+      );
+    }
+  );
   it("should say whether the file was encrypted on disk", {}, () => {
     assert.equal(meta.isEncrypted, false);
     assert.equal(new PdfDown(form).metadata().isEncrypted, false);
@@ -208,7 +212,13 @@ describe("text", () => {
     );
     const [first] = pages;
     assert.ok(first);
-    assert.equal(first.text.length, 681);
+    assert.equal(first.text.length, 680);
+    // Lines from the top of the page down, and no line break after the last.
+    assert.deepEqual(first.text.split("\n").slice(0, 2), [
+      "Invoice",
+      "Invoice Number INV-3337"
+    ]);
+    assert.ok(!first.text.endsWith("\n"));
   });
   it("should split each page into header, body and footer", {}, () => {
     const [structured] = doc.structuredText();
@@ -260,16 +270,20 @@ describe("images", () => {
       assert.equal(t.isPng(scan.data), true);
     }
   );
-  it("should count the images the pages paint without decoding them", {}, async () => {
-    assert.equal(doc.imageCount(), 1);
-    assert.equal(doc.imageCount(), images.length);
-    // The same picture painted on two pages is two.
-    assert.equal(new PdfDown(layoutSample).imageCount(), 2);
-    assert.equal(new PdfDown(form).imageCount(), 0);
-    assert.equal(await doc.imageCountAsync(), 1);
-    assert.equal(pdfImageCount(invoice), 1);
-    assert.equal(await pdfImageCountAsync(invoice), 1);
-  });
+  it(
+    "should count the images the pages paint without decoding them",
+    {},
+    async () => {
+      assert.equal(doc.imageCount(), 1);
+      assert.equal(doc.imageCount(), images.length);
+      // The same picture painted on two pages is two.
+      assert.equal(new PdfDown(layoutSample).imageCount(), 2);
+      assert.equal(new PdfDown(form).imageCount(), 0);
+      assert.equal(await doc.imageCountAsync(), 1);
+      assert.equal(pdfImageCount(invoice), 1);
+      assert.equal(await pdfImageCountAsync(invoice), 1);
+    }
+  );
   it("should decode a CCITT Group 4 fax image", {}, () => {
     const [fax] = new PdfDown(ccitt).imagesPerPage();
     assert.ok(fax);

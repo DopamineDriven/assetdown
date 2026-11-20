@@ -997,7 +997,7 @@ const chunks = pages
 
 ### Positioned text: words and lines with boxes
 
-`extractTextPerPage` returns text in content-stream order, which is whatever order the generator happened to paint it in (a header drawn last comes out last). `layoutPerPage` interprets the content stream instead: it tracks the graphics and text state, measures each glyph with the font's `/Widths` (or built-in Standard 14 metrics), groups glyphs into words and words into baseline-clustered lines, and returns everything top-to-bottom, left-to-right with boxes in points. Form XObjects are entered through their `/Matrix`, and image XObjects report where they were painted so a scan's OCR words can be mapped back onto the page.
+`layoutPerPage` interprets the content stream: it tracks the graphics and text state, measures each glyph with the font's `/Widths` (or built-in Standard 14 metrics), groups glyphs into words and words into baseline-clustered lines, and returns everything top-to-bottom, left-to-right with boxes in points. `extractTextPerPage` is the same reading with the boxes left out: each page's lines from the top down, joined by line breaks, whatever order the generator painted them in. A page set in two columns therefore reads across both, line by line. Form XObjects are entered through their `/Matrix`, and image XObjects report where they were painted so a scan's OCR words can be mapped back onto the page.
 
 ```typescript
 import { readFileSync } from "node:fs";

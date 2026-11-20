@@ -204,3 +204,74 @@ fn merge_drops_ocr_duplicates_of_native_words() {
     "the disjoint OCR word survives"
   );
 }
+
+/// A document of one page whose own content has no text: it draws a form, and "Invoice 42" is
+/// set inside the form, in a font the form brings with it.
+fn text_inside_a_form() -> Document {
+  use lopdf::content::{Content, Operation};
+  use lopdf::{Object, Stream, dictionary};
+
+  let op = |name: &str, operands: Vec<Object>| Operation::new(name, operands);
+  let mut doc = Document::with_version("1.7");
+  let pages_id = doc.new_object_id();
+  let font = doc
+    .add_object(dictionary! { "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica" });
+  let form_ops = vec![
+    op("BT", vec![]),
+    op("Tf", vec!["F9".into(), 10.into()]),
+    op("Td", vec![100.into(), 700.into()]),
+    op("Tj", vec![Object::string_literal("Invoice 42")]),
+    op("ET", vec![]),
+  ];
+  let form = doc.add_object(Stream::new(
+    dictionary! {
+      "Type" => "XObject", "Subtype" => "Form",
+      "BBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+      "Resources" => Object::Dictionary(dictionary! {
+        "Font" => Object::Dictionary(dictionary! { "F9" => Object::Reference(font) }),
+      }),
+    },
+    Content {
+      operations: form_ops,
+    }
+    .encode()
+    .unwrap(),
+  ));
+  let draws = Content {
+    operations: vec![
+      op("q", vec![]),
+      op("Do", vec!["Fx".into()]),
+      op("Q", vec![]),
+    ],
+  };
+  let content = doc.add_object(Stream::new(dictionary! {}, draws.encode().unwrap()));
+  let page = doc.add_object(dictionary! {
+    "Type" => "Page", "Parent" => Object::Reference(pages_id),
+    "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+    "Contents" => Object::Reference(content),
+    "Resources" => Object::Dictionary(dictionary! {
+      "XObject" => Object::Dictionary(dictionary! { "Fx" => Object::Reference(form) }),
+    }),
+  });
+  doc.objects.insert(
+    pages_id,
+    Object::Dictionary(
+      dictionary! { "Type" => "Pages", "Kids" => vec![Object::Reference(page)], "Count" => 1 },
+    ),
+  );
+  let catalog =
+    doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => Object::Reference(pages_id) });
+  doc.trailer.set("Root", Object::Reference(catalog));
+  doc
+}
+
+#[test]
+fn a_page_whose_text_is_inside_a_form_gives_that_text_and_is_not_recognized() {
+  let doc = text_inside_a_form();
+  let pages = extract_text_with_ocr(&doc, &[], "eng", 5, 1, 300, RENDER_MODE_NEVER);
+  let [page] = pages.as_slice() else {
+    panic!("one page was made, and {} came back", pages.len());
+  };
+  assert_eq!((page.page, page.text.as_str()), (1, "Invoice 42"));
+  assert_eq!(page.source, TextSource::Native);
+}

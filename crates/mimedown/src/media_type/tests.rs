@@ -168,6 +168,7 @@ fn a_type_names_the_package_that_reads_it_in_full() {
     (MediaType::Mov, Parser::Videodown),
     (MediaType::Webm, Parser::Videodown),
     (MediaType::Mkv, Parser::Videodown),
+    (MediaType::Tiff, Parser::Tiffdown),
   ];
   for (media_type, parser) in expected {
     assert_eq!(media_type.parser(), Some(parser), "{media_type}");
@@ -177,7 +178,10 @@ fn a_type_names_the_package_that_reads_it_in_full() {
     .filter(|media_type| media_type.parser().is_some());
   assert_eq!(read.count(), expected.len());
   assert_eq!(MediaType::Png.parser(), None);
+  // A camera's raw file is laid out as a TIFF is, and is not a page to read.
+  assert_eq!(MediaType::Dng.parser(), None);
   assert_eq!(Parser::Pdfdown.as_str(), "pdfdown");
+  assert_eq!(Parser::Tiffdown.as_str(), "tiffdown");
 }
 
 #[test]

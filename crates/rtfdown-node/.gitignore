@@ -4,3 +4,8 @@
 browser.js
 index.js
 wasi-worker*.mjs
+wasm/*.wasi.cjs
+wasm/*.wasip1.cjs
+wasm/*-browser.js
+wasm/*-deferred.js
+wasm/npm

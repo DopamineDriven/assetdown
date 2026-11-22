@@ -110,7 +110,15 @@ case "$package" in
       "crates/$package/Cargo.toml"
     )
     ;;
-  rtfdown | xlsxdown | docxdown | pptxdown | audiodown | videodown | mimedown)
+  rtfdown)
+    files=(
+      "crates/$package-node/package.json"
+      "crates/$package-node/wasm/package.json"
+      "crates/$package-node/Cargo.toml"
+      "crates/$package/Cargo.toml"
+    )
+    ;;
+  xlsxdown | docxdown | pptxdown | audiodown | videodown | mimedown)
     files=(
       "crates/$package-node/package.json"
       "crates/$package-node/Cargo.toml"

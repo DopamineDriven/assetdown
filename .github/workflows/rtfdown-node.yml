@@ -174,6 +174,25 @@ jobs:
         with:
           target: wasm32-wasip1-threads
           mode: wasi
+  wasm:
+    needs: plan
+    if: ${{ needs.plan.outputs.run == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The newest Node, and the oldest this package supports.
+        node: ["26", "24"]
+    name: WebAssembly package - node@${{ matrix.node }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/rtfdown-node/ci/setup
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: ./crates/rtfdown-node/ci/wasm
+        with:
+          # One of the two keeps what it built, for the publish job.
+          upload: ${{ matrix.node == '26' }}
   publish:
     name: Publish
     needs:
@@ -183,6 +202,7 @@ jobs:
       - test-host
       - test-docker
       - test-wasi
+      - wasm
     # Runs when nothing it waits on failed, including when one of them was skipped
     # because package.json lists no target of that kind.
     if: ${{ needs.plan.outputs.run == 'true' && !failure() && !cancelled() }}
@@ -196,6 +216,32 @@ jobs:
       - uses: ./crates/rtfdown-node/ci/setup
       - uses: ./crates/rtfdown-node/ci/publish
         with:
+          release-name: rtfdown
+          # Only a push to main may publish; pull requests and manual runs never do.
+          allow-release: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          npm-token: ${{ secrets.NPM_TOKEN }}
+  publish-wasm:
+    name: Publish rtfdown-wasm
+    needs:
+      - plan
+      - lint
+      - build-freebsd
+      - test-host
+      - test-docker
+      - test-wasi
+      - wasm
+    if: ${{ needs.plan.outputs.run == 'true' && !failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # For npm provenance.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./crates/rtfdown-node/ci/setup
+      - uses: ./crates/rtfdown-node/ci/publish-wasm
+        with:
+          # Released by the base package's commit; wasm/package.json must be at the same version.
           release-name: rtfdown
           # Only a push to main may publish; pull requests and manual runs never do.
           allow-release: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}

@@ -115,6 +115,21 @@ describe("sniff", () => {
     assert.equal(found.parser, "jpegdown");
   });
 
+  it("should tell a form's data from the form", {}, () => {
+    // It opens as a PDF does, with its own name in the place of `PDF`.
+    const found = sniff(Buffer.from("%FDF-1.2\r%\xE2\xE3\xCF\xD3\r\n", "latin1"));
+    assert.equal(found.mime, "application/vnd.fdf");
+    assert.equal(found.ext, "fdf");
+    assert.equal(found.parser, null);
+  });
+
+  it("should say that a file with nothing in it is empty", {}, () => {
+    const found = sniff(Buffer.alloc(0));
+    assert.equal(found.mime, "application/x-empty");
+    // One byte is a file with something in it, of a kind the bytes do not name.
+    assert.equal(sniff(Buffer.alloc(1)).mime, "application/octet-stream");
+  });
+
   it("should name the package that reads a rich text document", {}, () => {
     const found = sniff(Buffer.from("{\\rtf1\\ansi Invoice 42\\par}", "latin1"));
     assert.equal(found.mime, "application/rtf");

@@ -165,6 +165,10 @@ media_types! {
 
   // What has pages, sheets or slides, and text of every kind, wherever the registry files it.
   Pdf => "application/pdf", [], ["pdf"], Pdfdown;
+  // The data of a PDF form, or a file sent with one: it opens as a PDF does, and is not one.
+  Fdf => "application/vnd.fdf", [], ["fdf"];
+  // A fixed page, as Windows prints one to a file. It is kept in a zip.
+  Xps => "application/vnd.ms-xpsdocument", [], ["xps"];
   Docx => "application/vnd.openxmlformats-officedocument.wordprocessingml.document", [], ["docx"], Docxdown;
   Xlsx => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", [], ["xlsx"], Xlsxdown;
   Pptx => "application/vnd.openxmlformats-officedocument.presentationml.presentation", [], ["pptx"], Pptxdown;
@@ -262,6 +266,9 @@ media_types! {
   FreeArc => "application/x-freearc", [], ["arc"];
   // A compound file that is none of the Office documents kept in one.
   Cfb => "application/x-cfb", ["application/x-ole-storage"], ["cfb"];
+  // A Word, Excel, or PowerPoint file of 2007 or later saved with a password: a compound
+  // file around a package that cannot be read, or told apart, without it.
+  EncryptedOffice => "application/x-ooxml-encrypted", ["application/x-tika-ooxml-protected"], ["cfb"];
 
   // Fonts. The second strings are what they went by before `font/` was registered.
   Woff => "font/woff", ["application/font-woff"], ["woff"];
@@ -303,6 +310,8 @@ media_types! {
 
   // What bytes are called when they name no type.
   OctetStream => "application/octet-stream", [], ["bin", "pk1"];
+  // A file with nothing in it. That is known of it, where `OctetStream` is what is not known.
+  Empty => "application/x-empty", ["inode/x-empty", "application/x-zerosize"], ["empty"];
 }
 
 impl MediaType {

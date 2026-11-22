@@ -178,6 +178,16 @@ fn unshifted(range: ByteRange, by: u64) -> ByteRange {
 
 /// The answer, and how many bytes stand in front of the file it describes.
 pub(crate) fn located(source: &Source<'_>, options: Options<'_>) -> (Sniffed, u64) {
+  // A file known to be of no bytes has nothing to look at, and that is its answer.
+  if source.size() == Some(0) {
+    let empty = Sniffed::Named {
+      media_type: MediaType::Empty,
+      evidence: Evidence::Content,
+      needs: None,
+      retry: None,
+    };
+    return (empty, 0);
+  }
   let first = first_pass(source, options);
   if !options.retry_on_unknown || !matches!(first, Sniffed::Unknown { .. }) {
     return (first, 0);
@@ -686,6 +696,12 @@ fn listed(listing: &zip::Listing, source: &Source<'_>) -> Hit {
     .names
     .iter()
     .any(|listed| listed.eq_ignore_ascii_case("3D/3dmodel.model"));
+  // A fixed-page document's root part is its sequence of documents. It may have any name
+  // and stand anywhere, and is told by how its name ends.
+  let page_sequence = listing
+    .names
+    .iter()
+    .any(|listed| listed.to_ascii_lowercase().ends_with(".fdseq"));
 
   let named = if declared.is_some() {
     declared
@@ -701,6 +717,8 @@ fn listed(listing: &zip::Listing, source: &Source<'_>) -> Hit {
     Some(MediaType::Usdz)
   } else if model_part {
     Some(MediaType::ThreeMf)
+  } else if page_sequence {
+    Some(MediaType::Xps)
   } else if lists("META-INF/MANIFEST.MF") {
     Some(MediaType::Jar)
   } else {
@@ -739,7 +757,7 @@ const INSTALLER_CLASS: [u8; 16] = [
 ];
 
 /// A compound file, named by the stream its root holds. One that holds none of these is a
-/// compound file and no more, which is also what a document saved with a password is.
+/// compound file and no more.
 fn streams(probe: &mut Probe<'_, '_>) -> Option<Hit> {
   let root = probe.found(cfb::root(probe.source))?;
   Some(held_by(&root))
@@ -763,6 +781,10 @@ fn held_by(root: &cfb::Root) -> Hit {
     Some(MediaType::Ppt)
   } else if holds("VisioDocument") {
     Some(MediaType::Vsd)
+  } else if holds("EncryptedPackage") && holds("EncryptionInfo") {
+    // What Word, Excel, and PowerPoint write for a file of 2007 or later saved with a
+    // password: the package, encrypted, beside how it was encrypted.
+    Some(MediaType::EncryptedOffice)
   } else if root.class_id == INSTALLER_CLASS {
     Some(MediaType::Msi)
   } else {
@@ -811,7 +833,7 @@ const fn in_iges_first_line(bytes: &'static [u8]) -> Signature {
   }
 }
 
-const SIGNATURES: [Signature; 43] = [
+const SIGNATURES: [Signature; 44] = [
   at_start(b"\x89PNG\r\n\x1A\n", MediaType::Png),
   // JPEG XL in its container, a JPEG 2000 codestream with no boxes around it, and JPEG XR in
   // either of its versions.
@@ -839,6 +861,8 @@ const SIGNATURES: [Signature; 43] = [
   at_start(b"\xABKTX 11\xBB\r\n\x1A\n", MediaType::Ktx),
   at_start(b"\xABKTX 20\xBB\r\n\x1A\n", MediaType::Ktx2),
   at_start(b"%PDF-", MediaType::Pdf),
+  // A form's data opens as the form does, with its own name in the place of `PDF`.
+  at_start(b"%FDF-", MediaType::Fdf),
   at_start(b"{\\rtf", MediaType::Rtf),
   at_start(b"\x1F\x8B\x08", MediaType::Gzip),
   at_start(b"7z\xBC\xAF\x27\x1C", MediaType::SevenZip),

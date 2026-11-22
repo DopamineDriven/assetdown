@@ -352,9 +352,53 @@ fn a_compound_file_is_named_by_what_its_root_holds() {
 fn a_compound_file_that_holds_none_of_those_is_a_compound_file() {
   let plain = by_signature(MediaType::Cfb, None);
   assert_eq!(sniff(&compound(&[("Contents", &[])], [0; 16])), plain);
-  // A document saved with a password: a compound file around what cannot be read.
-  let locked: [(&str, &[&str]); 2] = [("EncryptionInfo", &[]), ("EncryptedPackage", &[])];
-  assert_eq!(sniff(&compound(&locked, [0; 16])), plain);
+  // Half of what a document saved with a password holds is not one.
+  assert_eq!(sniff(&compound(&[("EncryptionInfo", &[])], [0; 16])), plain);
+}
+
+#[test]
+fn an_office_file_saved_with_a_password_is_named_for_what_it_is() {
+  // Word, Excel, and PowerPoint all write the same thing: the package, encrypted, and how
+  // it was encrypted, in a compound file. Which of the three it was cannot be told.
+  let locked: [(&str, &[&str]); 3] = [
+    ("\u{6}DataSpaces", &["Version", "DataSpaceMap"]),
+    ("EncryptionInfo", &[]),
+    ("EncryptedPackage", &[]),
+  ];
+  assert_eq!(
+    sniff(&compound(&locked, [0; 16])),
+    contained(MediaType::EncryptedOffice)
+  );
+  assert_eq!(
+    MediaType::EncryptedOffice.mime(),
+    "application/x-ooxml-encrypted"
+  );
+  // A Word document of before 2007 keeps its own stream when it has a password.
+  let older: [(&str, &[&str]); 2] = [("WordDocument", &[]), ("1Table", &[])];
+  assert_eq!(sniff(&compound(&older, [0; 16])), contained(MediaType::Doc));
+}
+
+#[test]
+fn a_fixed_page_document_is_named_by_its_sequence_part() {
+  // As the Windows writer lays one out, with the content types last.
+  let entries: Vec<Entry> = vec![
+    ("Documents/1/Pages/1.fpage", b"<FixedPage/>"),
+    ("Documents/1/FixedDocument.fdoc", b"<FixedDocument/>"),
+    ("FixedDocumentSequence.fdseq", b"<FixedDocumentSequence/>"),
+    ("_rels/.rels", b"<Relationships/>"),
+    ("[Content_Types].xml", b"<Types/>"),
+  ];
+  assert_eq!(sniff(&zipped(&entries)), contained(MediaType::Xps));
+  assert_eq!(MediaType::Xps.mime(), "application/vnd.ms-xpsdocument");
+  // The part may have any name and stand anywhere: it is told by how its name ends.
+  let renamed: Vec<Entry> = vec![
+    ("[Content_Types].xml", b"<Types/>"),
+    ("Sequence/Root.FDSEQ", b"<FixedDocumentSequence/>"),
+  ];
+  assert_eq!(sniff(&zipped(&renamed)), contained(MediaType::Xps));
+  // A page with no sequence over it is not a document.
+  let loose: Vec<Entry> = vec![("1.fpage", b"<FixedPage/>")];
+  assert_eq!(sniff(&zipped(&loose)).media_type(), MediaType::Zip);
 }
 
 #[test]

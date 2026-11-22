@@ -247,6 +247,11 @@ fn every_fixed_signature_names_its_type() {
       MediaType::Pdf,
     ),
     (
+      "fdf",
+      b"%FDF-1.2\r%\xE2\xE3\xCF\xD3\r\n".to_vec(),
+      MediaType::Fdf,
+    ),
+    (
       "rtf",
       b"{\\rtf1\\ansi\\deff0 {\\fonttbl}}".to_vec(),
       MediaType::Rtf,
@@ -402,8 +407,7 @@ fn an_id3_tag_is_an_mp3_unless_what_follows_it_says_otherwise() {
 
 #[test]
 fn bytes_that_name_nothing_are_an_answer() {
-  let cases: [&[u8]; 4] = [
-    b"",
+  let cases: [&[u8]; 3] = [
     b"a zero\0in the middle of words",
     &[0; 64],
     &[0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04],
@@ -413,6 +417,23 @@ fn bytes_that_name_nothing_are_an_answer() {
   }
   assert_eq!(UNKNOWN.media_type(), MediaType::OctetStream);
   assert_eq!(UNKNOWN.needs(), None);
+}
+
+#[test]
+fn a_file_of_no_bytes_is_empty_and_a_head_of_none_says_nothing() {
+  // The whole file, with nothing in it. That is a thing known of it, and not an unknown.
+  let empty = Sniffed::Named {
+    media_type: MediaType::Empty,
+    evidence: Evidence::Content,
+    needs: None,
+    retry: None,
+  };
+  assert_eq!(sniff(b""), empty);
+  assert_eq!(empty.media_type().mime(), "application/x-empty");
+  // No bytes of a file whose size is not known: nothing was given, and nothing is known.
+  assert!(matches!(sniff_head(b""), Sniffed::Unknown { .. }));
+  // One byte is a file with something in it.
+  assert_eq!(sniff(b"\0"), UNKNOWN);
 }
 
 /// Words: text of no kind the bytes can name.

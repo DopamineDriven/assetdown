@@ -1050,3 +1050,26 @@ In the order I would take them. Each is its own unit: built, tested, reported, t
 - `xlsxdown`'s chart, pivot table and link counts on a real file: no public fixture holds any, so they are tested on parts built in memory.
 - The size of an addon holding all six parsers, and the time `specs` takes on a large PDF.
 - That each parser's metadata is cheap enough to call for a row. `docxdown` and `pptxdown` build their whole model to answer.
+
+## Four more answers (2026-11-22)
+
+Each is a kind of file the sniffer used to name by its container, or not at all.
+
+| Type | String | Extension | Told by |
+|---|---|---|---|
+| `Fdf` | `application/vnd.fdf` | `fdf` | `%FDF-` at the start. It opens as a PDF does and is not one: it is a form's data, or a file sent with a form |
+| `Xps` | `application/vnd.ms-xpsdocument` | `xps` | a zip that lists a part whose name ends in `.fdseq`, the sequence that is a fixed-page document's root |
+| `EncryptedOffice` | `application/x-ooxml-encrypted` | `cfb` | a compound file whose root holds both `EncryptedPackage` and `EncryptionInfo`: what Word, Excel, and PowerPoint write for a file of 2007 or later saved with a password |
+| `Empty` | `application/x-empty` | `empty` | a file known to be of no bytes |
+
+Two of these change an answer on purpose, and the tests that pinned the old one were changed with them:
+
+- A file of no bytes was unknown, and so `application/octet-stream`. It is now `Empty`, with `Content` as its evidence. No bytes of a file whose size is not known are still unknown: nothing was given, so nothing is known.
+- An Office file saved with a password was a compound file and no more. It is now named, though which of the three it was cannot be told without the password.
+
+The calls that are mine and easily changed: the two strings that are not registered anywhere (`application/x-ooxml-encrypted`, which also answers to the name Tika gives it, and `application/x-empty`, which also answers to `inode/x-empty` and `application/x-zerosize`), and the two extensions. Every type must have an extension, so the encrypted file shares `cfb` with the compound file it is, and the empty one has `empty`.
+
+Not done: OpenXPS (`application/oxps`) is not told from XPS, since both list a sequence part; and no package reads any of the four. An FDF may carry a PDF inside it, which nothing unwraps yet.
+
+343 tests in the library, and two more in the binding's spec, which has 21. Test-first held for the library. The binding's two were written before the addon was rebuilt, but not run against the old one.
+

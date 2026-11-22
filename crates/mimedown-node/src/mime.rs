@@ -81,6 +81,10 @@ pub enum Mime {
   Raw,
   #[napi(value = "application/pdf")]
   Pdf,
+  #[napi(value = "application/vnd.fdf")]
+  Fdf,
+  #[napi(value = "application/vnd.ms-xpsdocument")]
+  Xps,
   #[napi(value = "application/vnd.openxmlformats-officedocument.wordprocessingml.document")]
   Docx,
   #[napi(value = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")]
@@ -261,6 +265,8 @@ pub enum Mime {
   FreeArc,
   #[napi(value = "application/x-cfb")]
   Cfb,
+  #[napi(value = "application/x-ooxml-encrypted")]
+  EncryptedOffice,
   #[napi(value = "font/woff")]
   Woff,
   #[napi(value = "font/woff2")]
@@ -323,6 +329,8 @@ pub enum Mime {
   Msi,
   #[napi(value = "application/octet-stream")]
   OctetStream,
+  #[napi(value = "application/x-empty")]
+  Empty,
 }
 
 impl From<mimedown::MediaType> for Mime {
@@ -365,6 +373,8 @@ impl From<mimedown::MediaType> for Mime {
       mimedown::MediaType::Rw2 => Mime::Rw2,
       mimedown::MediaType::Raw => Mime::Raw,
       mimedown::MediaType::Pdf => Mime::Pdf,
+      mimedown::MediaType::Fdf => Mime::Fdf,
+      mimedown::MediaType::Xps => Mime::Xps,
       mimedown::MediaType::Docx => Mime::Docx,
       mimedown::MediaType::Xlsx => Mime::Xlsx,
       mimedown::MediaType::Pptx => Mime::Pptx,
@@ -455,6 +465,7 @@ impl From<mimedown::MediaType> for Mime {
       mimedown::MediaType::Pkpass => Mime::Pkpass,
       mimedown::MediaType::FreeArc => Mime::FreeArc,
       mimedown::MediaType::Cfb => Mime::Cfb,
+      mimedown::MediaType::EncryptedOffice => Mime::EncryptedOffice,
       mimedown::MediaType::Woff => Mime::Woff,
       mimedown::MediaType::Woff2 => Mime::Woff2,
       mimedown::MediaType::Otf => Mime::Otf,
@@ -486,6 +497,7 @@ impl From<mimedown::MediaType> for Mime {
       mimedown::MediaType::InstallerPackage => Mime::InstallerPackage,
       mimedown::MediaType::Msi => Mime::Msi,
       mimedown::MediaType::OctetStream => Mime::OctetStream,
+      mimedown::MediaType::Empty => Mime::Empty,
     }
   }
 }

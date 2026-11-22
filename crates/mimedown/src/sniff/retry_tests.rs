@@ -161,7 +161,12 @@ fn bytes_that_are_nothing_are_still_nothing() {
     .collect();
   assert_eq!(second_look(&noise), Sniffed::Unknown { needs: None });
   assert_eq!(second_look(&[0; 600]), Sniffed::Unknown { needs: None });
-  assert_eq!(second_look(b""), Sniffed::Unknown { needs: None });
+}
+
+#[test]
+fn a_file_of_no_bytes_needs_no_second_look() {
+  // It is empty, which the first look says: there is nothing to look at again.
+  assert_eq!(retried(second_look(b"")), (MediaType::Empty, None));
 }
 
 #[test]

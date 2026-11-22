@@ -100,12 +100,21 @@ fn tokens(src: &[u8]) -> Vec<Token> {
         out.push(Token::ArrayClose);
         i += 1;
       }
-      b'>' | b'{' | b'}' => i += 1,
+      // A closing mark that closes nothing stands for nothing. A writer leaves a `)` behind
+      // when a string's own text holds one, which ends the string early.
+      b'>' | b')' | b'{' | b'}' => i += 1,
       c if c.is_ascii_whitespace() => i += 1,
       _ => {
         let start = i;
         while i < src.len() && !src[i].is_ascii_whitespace() && !b"<>[](){}%".contains(&src[i]) {
           i += 1;
+        }
+        // Every byte that ends a word is read by an arm above, so a word has a byte in it.
+        // Should that ever stop being so, the byte is passed over: the reading never stands
+        // still, because standing still here is a file that fills memory.
+        if i == start {
+          i += 1;
+          continue;
         }
         out.push(Token::Word(
           String::from_utf8_lossy(&src[start..i]).into_owned(),

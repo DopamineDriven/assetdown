@@ -1,6 +1,6 @@
 # Config updates
 
-What I need from the manifests and configuration, which are yours, to keep going. Each entry has the file it belongs in above it. They are in the order I ran into them: sections 1 to 3 are done, section 4 is a decision that holds up nothing, section 5 is how releases have to be cut, and section 6 is the pilot of a WebAssembly package of its own.
+What I need from the manifests and configuration, which are yours, to keep going. Each entry has the file it belongs in above it. They are in the order I ran into them: sections 1 to 3 are done, section 4 is a decision that holds up nothing, section 5 is how releases have to be cut, section 6 is the pilot of a WebAssembly package of its own, and section 7 is what the legacy Office crates need.
 
 Nothing here adds a third-party dependency: every outside crate named is already in the workspace's table. The only new names are the workspace's own crates.
 
@@ -209,6 +209,183 @@ Three dev dependencies came with this, all in `crates/rtfdown-node/package.json`
 - A copy command for an app whose bundler does not pick up a worker's file, as `sttworklet` is for your worklet.
 
 Two things to know. `NAPI_RS_WASI_FLAVOR` speaks to every napi package in the process, and one that ships a single build throws on a name it does not have, so nothing here uses it. And the first shape tried, napi's own (a root package and a package to a build), works too, but its root entry types the target as `'native' | 'wasm32-wasi' | 'wasm32-wasip1'` and looks for native packages that are never published before it falls through.
+
+## 7. The legacy Office crates: `cfbdown`, `xlsdown`, and `docdown`
+
+Planned on 2026-11-22 in [xlsdown.md](xlsdown.md) and [docdown.md](docdown.md). Nothing is built. These are the manifests I need, in the order the work takes them. No crate from outside the workspace is added.
+
+`cfbdown` is a library only: it has no binding and no npm package.
+
+### `Cargo.toml` (the root)
+
+Among `members`:
+
+```toml
+"crates/cfbdown",
+"crates/docdown",
+"crates/docdown-node",
+"crates/xlsdown",
+"crates/xlsdown-node",
+```
+
+Among the workspace's own, under `[workspace.dependencies]`:
+
+```toml
+cfbdown      = { path = "crates/cfbdown" }
+docdown      = { path = "crates/docdown" }
+docdown-node = { path = "crates/docdown-node" }
+xlsdown      = { path = "crates/xlsdown" }
+xlsdown-node = { path = "crates/xlsdown-node" }
+```
+
+### `crates/cfbdown/Cargo.toml`
+
+```toml
+[package]
+description            = "Compound file reading: the streams and storages of the container legacy Office files are kept in"
+edition.workspace      = true
+keywords               = ["cfb", "ole", "compound-file", "extraction"]
+license.workspace      = true
+name                   = "cfbdown"
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.1.0"
+
+[dependencies]
+```
+
+### `crates/rtfdown/Cargo.toml`
+
+One line more, once `cfbdown` exists and the reader has moved into it:
+
+```toml
+cfbdown.workspace = true
+```
+
+### `crates/xlsdown/Cargo.toml`
+
+```toml
+[package]
+description            = "xls extraction: the cells, formats, and sheet geometry of an Excel 97 to 2003 workbook"
+edition.workspace      = true
+keywords               = ["xls", "excel", "extraction", "spreadsheet"]
+license.workspace      = true
+name                   = "xlsdown"
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.1.0"
+
+[dependencies]
+cfbdown.workspace     = true
+contentdown.workspace = true
+thiserror.workspace   = true
+xlsxdown.workspace    = true
+```
+
+### `crates/xlsdown-node/Cargo.toml`
+
+```toml
+[package]
+description            = "Node bindings for xlsdown: xls extraction, workbook cells, formats, and sheet geometry"
+edition.workspace      = true
+license.workspace      = true
+name                   = "xlsdown-node"
+publish                = false
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+contentdown.workspace = true
+napi.workspace        = true
+napi-derive.workspace = true
+xlsdown.workspace     = true
+xlsxdown.workspace    = true
+
+[build-dependencies]
+napi-build.workspace = true
+```
+
+### `crates/docdown/Cargo.toml`
+
+```toml
+[package]
+description            = "doc extraction: the text, tables, pictures, and embedded files of a Word 97 to 2003 document"
+edition.workspace      = true
+keywords               = ["doc", "word", "extraction", "documents"]
+license.workspace      = true
+name                   = "docdown"
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.1.0"
+
+[dependencies]
+cfbdown.workspace     = true
+contentdown.workspace = true
+encoding_rs.workspace = true
+thiserror.workspace   = true
+```
+
+### `crates/docdown-node/Cargo.toml`
+
+```toml
+[package]
+description            = "Node bindings for docdown: doc extraction, text, tables, pictures, and embedded files"
+edition.workspace      = true
+license.workspace      = true
+name                   = "docdown-node"
+publish                = false
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+contentdown.workspace = true
+docdown.workspace     = true
+napi.workspace        = true
+napi-derive.workspace = true
+
+[build-dependencies]
+napi-build.workspace = true
+```
+
+### `crates/xlsdown-node/package.json` and `crates/docdown-node/package.json`
+
+Each is `crates/rtfdown-node/package.json` with the name changed, at version `0.1.0`, with the same fourteen targets and without the `wasm` scripts and the three dev dependencies that came with the WebAssembly pilot (`tsdown`, `rolldown-plugin-wasm`, `playwright-core`). The fields that differ:
+
+```json
+"name": "@d0paminedriven/xlsdown",
+"description": "Convenient Rust-powered xls parsing for Node",
+"keywords": ["N-API", "NAPI", "Rust", "napi-rs", "node-addon", "node-addon-api", "xls", "excel"],
+"napi": {
+  "binaryName": "xlsdown-node",
+  "dtsHeader": "/* auto-generated by @d0paminedriven/xlsdown */\n\n",
+  "packageName": "@d0paminedriven/xlsdown"
+}
+```
+
+```json
+"name": "@d0paminedriven/docdown",
+"description": "Convenient Rust-powered doc parsing for Node",
+"keywords": ["N-API", "NAPI", "Rust", "napi-rs", "node-addon", "node-addon-api", "doc", "word"],
+"napi": {
+  "binaryName": "docdown-node",
+  "dtsHeader": "/* auto-generated by @d0paminedriven/docdown */\n\n",
+  "packageName": "@d0paminedriven/docdown"
+}
+```
+
+The rest of each binding's folder is the scaffold `rtfdown-node` has: `build.rs`, `.gitignore`, `.yarnrc.yml`, `.oxfmtrc.json`, `tsconfig.json`, `.cargo/config.toml`, and `__test__/tsconfig.json` and `__test__/workup.ts`. Mine once the folders are there: the sources, the specs, the `ci` folder, the workflow, and the line in `version.sh`.
+
+### `.xlsm`, which needs no manifest
+
+`xlsxdown` refuses a macro-enabled workbook today, and names it. Reading one changes no manifest: the package reader already tells the kinds apart, and the workbook inside is the same.
 
 ## Nothing needed for
 

@@ -58,3 +58,35 @@ fn garbage_and_empty_destinations_do_not_map_or_panic() {
   );
   assert_eq!(ToUnicode::parse(b"").lookup(b"\x41"), None);
 }
+
+#[test]
+fn a_closing_parenthesis_with_nothing_to_close_is_passed_over() {
+  // As one writer leaves a font's name in its map: a raw `)` inside the string ends it
+  // early, and the `)` meant to end it is left standing by itself.
+  let cmap = ToUnicode::parse(
+    b"/CIDSystemInfo << /Registry (Adobe) /Ordering (AAAAAA+\xa0\xb5)\x07) /Supplement 0 >> def\n1 begincodespacerange\n<00> <FF>\nendcodespacerange\n1 beginbfchar\n<41> <0058>\nendbfchar\n",
+  );
+  assert_eq!(cmap.lookup(b"\x41").as_deref(), Some("X"));
+}
+
+#[test]
+fn no_byte_holds_the_tokenizer_in_place() {
+  // Every byte there is, alone and between two words. Whatever it is, it is read past: a
+  // map is whatever a writer left, and one byte of it must not be the end of the reading.
+  for byte in 0..=u8::MAX {
+    let _ = tokens(&[byte]);
+    let between = tokens(&[b'a', byte, b'b']);
+    assert!(
+      between.len() <= 3,
+      "byte {byte:#04x} gave {} tokens",
+      between.len()
+    );
+  }
+  assert_eq!(
+    tokens(b"abc)def"),
+    [
+      Token::Word("abc".to_string()),
+      Token::Word("def".to_string())
+    ]
+  );
+}

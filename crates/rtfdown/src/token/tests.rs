@@ -100,3 +100,23 @@ fn bin_is_followed_by_that_many_bytes_as_they_are() {
 fn a_backslash_at_the_end_of_the_file_is_nothing() {
   assert_eq!(tokens(b"end\\"), [Token::Text(b"end")]);
 }
+
+#[test]
+fn no_byte_holds_the_tokens_in_place() {
+  // Every byte there is: alone, between two letters, after a backslash, and after the
+  // apostrophe that opens a byte given in hex. Each is read past, so the tokens of a few
+  // bytes are few. Ten are asked for at most, so that a reader that stood still would fail
+  // here and not fill memory.
+  for byte in 0..=u8::MAX {
+    let cases: [&[u8]; 4] = [
+      &[byte],
+      &[b'a', byte, b'b'],
+      &[b'\\', byte, b'b'],
+      &[b'\\', b'\'', byte, b'b'],
+    ];
+    for bytes in cases {
+      let read = Tokens::over(bytes).take(10).count();
+      assert!(read < 10, "{bytes:?} gave ten tokens or more");
+    }
+  }
+}

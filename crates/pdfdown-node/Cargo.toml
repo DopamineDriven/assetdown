@@ -6,7 +6,7 @@ name                   = "pdfdown-node"
 publish                = false
 repository.workspace   = true
 rust-version.workspace = true
-version                = "0.19.0"
+version                = "0.20.0"
 
 [lib]
 crate-type = ["cdylib"]

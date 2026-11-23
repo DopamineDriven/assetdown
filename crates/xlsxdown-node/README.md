@@ -13,3 +13,4 @@
 | FreeBSD       | x64               |
 | Android       | ARM64, ARMv7      |
 | WASI          | wasm32            |
+ 

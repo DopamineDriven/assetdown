@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use xlsxdown::{CellRange, FontSpec, Horizontal, SpreadsheetError, Styles, Vertical, Xf};
 
+use crate::formula::{Book, Links, SheetSpan};
 use crate::record::{BOF, EOF, Record, Records};
 use crate::text::Parts;
 
@@ -35,6 +36,9 @@ pub(crate) struct Globals {
   pub print_areas: HashMap<usize, Option<CellRange>>,
   /// Names the workbook defines, the built-in ones left out.
   pub defined_names: usize,
+  /// What a formula's references are resolved against: the sheets, the names, and the books
+  /// formulas refer to.
+  pub links: Links,
 }
 
 fn malformed(detail: &str) -> SpreadsheetError {
@@ -99,34 +103,82 @@ fn one_area(tokens: &[u8]) -> Option<CellRange> {
   })
 }
 
-/// What a name is: a built-in one by its code and the sheet it is for, with its formula, or
-/// one the workbook defines.
-enum Name<'a> {
-  Builtin {
-    code: u8,
-    sheet: u16,
-    tokens: &'a [u8],
-  },
-  Own,
+/// A name the workbook lists: how a formula spells it, the sheet it is for (counted from 1,
+/// or nought for the whole workbook), and its own formula. A built-in name is kept as a code.
+struct Name<'a> {
+  text: String,
+  builtin: Option<u8>,
+  sheet: u16,
+  tokens: &'a [u8],
+}
+
+/// A built-in name, as a sheet spells it.
+fn builtin_name(code: u8) -> &'static str {
+  match code {
+    0 => "Consolidate_Area",
+    1 => "Auto_Open",
+    2 => "Auto_Close",
+    3 => "Extract",
+    4 => "Database",
+    5 => "Criteria",
+    6 => "Print_Area",
+    7 => "Print_Titles",
+    8 => "Recorder",
+    9 => "Data_Form",
+    10 => "Auto_Activate",
+    11 => "Auto_Deactivate",
+    12 => "Sheet_Title",
+    _ => "_FilterDatabase",
+  }
 }
 
 fn name(record: Record<'_>) -> Option<Name<'_>> {
-  if record.u16_at(0)? & 0x0020 == 0 {
-    return Some(Name::Own);
-  }
+  let builtin = record.u16_at(0)? & 0x0020 != 0;
   let characters = usize::from(*record.data.get(3)?);
   let formula = usize::from(record.u16_at(4)?);
   let sheet = record.u16_at(8)?;
   // The name follows a byte that says how its characters are kept. A built-in name is one
   // character: its code.
   let wide = record.data.get(14)? & 0x01 != 0;
-  let code = *record.data.get(15)?;
   let after = 15 + characters * if wide { 2 } else { 1 };
-  Some(Name::Builtin {
-    code,
+  let spelled = record.data.get(15..after)?;
+  let units: Vec<u16> = match wide {
+    true => spelled
+      .as_chunks::<2>()
+      .0
+      .iter()
+      .map(|pair| u16::from_le_bytes(*pair))
+      .collect(),
+    false => spelled.iter().map(|byte| u16::from(*byte)).collect(),
+  };
+  let code = builtin.then(|| spelled.first().copied()).flatten();
+  Some(Name {
+    text: match code {
+      Some(code) => builtin_name(code).to_string(),
+      None => String::from_utf16_lossy(&units),
+    },
+    builtin: code,
     sheet,
-    tokens: record.data.get(after..after + formula)?,
+    tokens: record.data.get(after..after + formula).unwrap_or(&[]),
   })
+}
+
+/// A book formulas refer to: the workbook itself, the functions add-ins give, or another
+/// workbook, whose sheets are listed after where it is kept.
+fn book(record: Record<'_>, more: Vec<&[u8]>) -> Book {
+  match record.u16_at(2) {
+    Some(0x0401) => Book::Own,
+    Some(0x3A01) => Book::AddIn { names: Vec::new() },
+    _ => {
+      let count = record.u16_at(0).unwrap_or(0);
+      let mut parts = Parts::of(record.data.get(2..).unwrap_or(&[]), more);
+      let _kept_at = parts.string();
+      Book::Other {
+        sheets: (0..count).map_while(|_| parts.string()).collect(),
+        names: Vec::new(),
+      }
+    }
+  }
 }
 
 /// The strings cells share: a count of them all, a count of the different ones, and the
@@ -168,6 +220,7 @@ pub(crate) fn read(stream: &[u8]) -> Result<Globals, SpreadsheetError> {
     sheets: Vec::new(),
     print_areas: HashMap::new(),
     defined_names: 0,
+    links: Links::default(),
   };
   let mut fonts = Vec::new();
   while let Some(record) = records.next() {
@@ -203,18 +256,59 @@ pub(crate) fn read(stream: &[u8]) -> Result<Globals, SpreadsheetError> {
       0x0085 => globals.sheets.extend(bound(record)),
       0x00FC => globals.strings = shared_strings(record.data, records.continued()),
       0x0018 => match name(record) {
-        Some(Name::Own) => globals.defined_names += 1,
-        Some(Name::Builtin {
-          code: PRINT_AREA,
-          sheet,
-          tokens,
-        }) if sheet > 0 => {
-          globals
-            .print_areas
-            .insert(usize::from(sheet) - 1, one_area(tokens));
+        Some(named) => {
+          match named.builtin {
+            None => globals.defined_names += 1,
+            Some(PRINT_AREA) if named.sheet > 0 => {
+              globals
+                .print_areas
+                .insert(usize::from(named.sheet) - 1, one_area(named.tokens));
+            }
+            Some(_) => {}
+          }
+          globals.links.names.push(named.text);
         }
-        Some(Name::Builtin { .. }) | None => {}
+        // A formula names a name by its place among these, so one that cannot be read
+        // still takes its place.
+        None => globals.links.names.push("#NAME?".to_string()),
       },
+      0x01AE => {
+        let more = records.continued();
+        globals.links.books.push(book(record, more));
+      }
+      // A name of the book listed last: a function an add-in gives, or a name another
+      // workbook defines. It follows six bytes about it, with its length in one byte.
+      0x0023 => {
+        let named = record
+          .data
+          .get(6..)
+          .and_then(|data| Parts::one(data).short_string())
+          .unwrap_or_default();
+        if let Some(Book::AddIn { names } | Book::Other { names, .. }) =
+          globals.links.books.last_mut()
+        {
+          names.push(named);
+        }
+      }
+      // Which sheets references name: a count, and for each a book and its first and last
+      // sheet.
+      0x0017 => {
+        let mut data = record.data.to_vec();
+        for more in records.continued() {
+          data.extend_from_slice(more);
+        }
+        let count = usize::from(record.u16_at(0).unwrap_or(0));
+        let spans = data.get(2..).unwrap_or(&[]).as_chunks::<6>().0;
+        globals.links.sheet_spans = spans
+          .iter()
+          .take(count)
+          .map(|span| SheetSpan {
+            book: usize::from(u16::from_le_bytes([span[0], span[1]])),
+            first: i32::from(i16::from_le_bytes([span[2], span[3]])),
+            last: i32::from(i16::from_le_bytes([span[4], span[5]])),
+          })
+          .collect();
+      }
       _ => {}
     }
   }
@@ -222,5 +316,10 @@ pub(crate) fn read(stream: &[u8]) -> Result<Globals, SpreadsheetError> {
     globals.styles.normal_font = first.clone();
     globals.styles.fonts = fonts;
   }
+  globals.links.sheets = globals
+    .sheets
+    .iter()
+    .map(|sheet| sheet.name.clone())
+    .collect();
   Ok(globals)
 }

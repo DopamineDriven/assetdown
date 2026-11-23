@@ -27,8 +27,12 @@ const workbook = new XlsDown(await readFile("costs.xls"));
 
 const [sheet] = workbook.spreadsheetCells();
 sheet?.cells[0]; // { type: "Text", ref: "A1", value: "Total", text: "Total", ... }
+sheet?.cells.find((cell) => cell.formula !== undefined)?.formula; // "SUM(B2:B9)"
 
-workbook.metadata().sheetCount;
+const meta = workbook.metadata();
+meta.sheetCount;
+meta.author; // who wrote it, where the file says
+meta.modified; // when it was last saved: "2026-11-15T10:30:00Z"
 workbook.invoice().fields.invoiceId?.value; // the invoice's number, where it has one
 ```
 
@@ -36,13 +40,13 @@ workbook.invoice().fields.invoiceId?.value; // the invoice's number, where it ha
 
 `XlsDown` parses a workbook once, in its constructor or in `XlsDown.openAsync`, and is then asked as often as needed. Every method has an `Async` twin that works off the JavaScript thread.
 
-| Method | Gives |
-| --- | --- |
-| `spreadsheetCells(opts?)` | The cells of the selected sheets, each typed, with its display text, its number format, and its box in the sheet |
-| `spreadsheetGrid(opts?)` | The same cells keyed by row and column |
-| `layout(opts?)` | Each sheet set on a page of positioned words |
-| `invoice(opts?)` | Invoice fields read from those pages, each with where it was found |
-| `metadata()` | Counts of what the workbook holds, sheet by sheet and in total, with whether it holds macros and which date system it counts in |
+| Method                    | Gives                                                                                                                                                                                                                                                                      |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `spreadsheetCells(opts?)` | The cells of the selected sheets, each typed, with its display text, its number format, and its box in the sheet                                                                                                                                                           |
+| `spreadsheetGrid(opts?)`  | The same cells keyed by row and column                                                                                                                                                                                                                                     |
+| `layout(opts?)`           | Each sheet set on a page of positioned words                                                                                                                                                                                                                               |
+| `invoice(opts?)`          | Invoice fields read from those pages, each with where it was found                                                                                                                                                                                                         |
+| `metadata()`              | What the workbook says about itself (title, author, who saved it last, when it was created and saved, the application and its version, company), and counts of what it holds, sheet by sheet and in total, with whether it holds macros and which date system it counts in |
 
 `spreadsheetCells(buffer, opts?)` and `spreadsheetCellsAsync(buffer, opts?)` are the first of these as functions, for a workbook that is read once.
 
@@ -54,7 +58,7 @@ A cell is a union on `type`: `Text`, `Number`, `Date`, `Time`, `Boolean`, `Error
 
 A number under a date format is a `Date`, with an ISO date as its value and the serial in `raw`. The workbook's date system (1900 or 1904) is honored.
 
-**Formulas.** A formula cell gives the value Excel last left beside it. The formula's text is not read: `formula` is present and empty on a cell that has one, and `sharedFormula` names the cell a shared formula is held in.
+**Formulas.** A formula cell gives the value Excel last left beside it, and the formula's text in `formula`, without the `=` it opens with: `SUM(B2:B9)*Rate`, `'Unit prices'!A1`. That is what lets a total be checked against the cells it adds up. A cell that shares a formula with others has it written for itself, with the references moved to it, and `sharedFormula` names the cell the formula is kept for. A formula that fills a range together is on each cell of the range. The spaces a formula was typed with are not kept.
 
 ## Errors
 
@@ -66,7 +70,7 @@ A workbook that cannot be read throws, and rejects from the `Async` twins, with 
 
 ## Not read yet
 
-The text of formulas, what a workbook says about itself (title, author, dates), charts, pivot tables, and pictures (they are counted). A workbook saved with a password is refused.
+Charts, pivot tables, and pictures (they are counted), and the formula of a table of what-ifs (its text is empty). A workbook saved with a password is refused.
 
 ## Supported platforms
 

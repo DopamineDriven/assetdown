@@ -57,8 +57,8 @@ export function wasmSuite(
       });
       assert.partialDeepStrictEqual(xlsTest.cell(sheet, "B3"), {
         type: "Number",
-        value: 8,
-        formula: ""
+        value: 2469,
+        formula: "B2*2"
       });
     });
 

@@ -1,11 +1,13 @@
 //! One sheet's records: its extent, its rows and columns, its cells, and its merged ranges.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use xlsxdown::{
-  Cell, CellRange, ColSpec, MAX_CELLS, RowSpec, Sheet, SpreadsheetError, Stored, Styles, cell_ref,
+  Cell, CellRange, ColSpec, MAX_CELLS, MAX_FORMULA_CHARS, RowSpec, Sheet, SpreadsheetError, Stored,
+  Styles, cell_ref,
 };
 
+use crate::formula::{self, Links};
 use crate::globals::Bound;
 use crate::record::{BOF, EOF, Record, Records};
 use crate::text::Parts;
@@ -23,23 +25,36 @@ const MAX_ROW_HEIGHT: f64 = 409.5;
 const DEFAULT_COLUMN_CHARACTERS: u16 = 8;
 const COLUMN_PADDING: f64 = 8.0 / 7.0;
 
-/// What every sheet of a workbook shares: the string table, the styles, and the date system.
+/// What every sheet of a workbook shares: the string table, the styles, the date system,
+/// and what a formula's references are resolved against.
 #[derive(Clone, Copy)]
 pub(crate) struct Context<'a> {
   pub strings: &'a [String],
   pub styles: &'a Styles,
   pub date1904: bool,
+  pub links: &'a Links,
 }
 
 /// What a cell's formula is.
-#[derive(Clone, Copy)]
 enum Formula {
   /// The cell holds a value and no formula.
   None,
-  /// The cell has a formula of its own.
-  Own,
-  /// The cell follows the shared formula of the cell at this row and column.
-  Follows((u32, u32)),
+  /// The cell has a formula of its own: its text, or nothing where it could not be
+  /// written out.
+  Own(Option<String>),
+  /// The cell takes its formula from the one kept for the cell at this row and column,
+  /// which may be the cell itself.
+  Kept((u32, u32)),
+}
+
+/// A formula kept once for the cells that use it.
+struct Kept {
+  tokens: Vec<u8>,
+  /// What follows the tokens in their record: the lists of constants the formula uses.
+  extra: Vec<u8>,
+  /// Whether the formula's references are steps from the cell that uses it. They are for a
+  /// formula cells share; a formula that fills a range together is the same in each cell.
+  steps: bool,
 }
 
 /// A formula that gave text, whose text is in a record still to come.
@@ -84,6 +99,14 @@ struct Reader<'a, 'b> {
   context: Context<'a>,
   cells_left: &'b mut usize,
   awaited: Option<Awaited>,
+  /// The formulas kept for more than one cell, by the cell each is kept after.
+  kept: HashMap<(u32, u32), Kept>,
+  /// The cells that take their formula from one of those, each with the cell it is kept for.
+  taking: Vec<((u32, u32), (u32, u32))>,
+  /// The cell of the formula read last, which a kept formula that follows is kept for.
+  last_formula: Option<(u32, u32)>,
+  /// How many formulas could not be written out.
+  unwritten: usize,
   /// The characters a default column holds, and its width when the sheet states it outright.
   column_characters: Option<u16>,
   column_width: Option<u16>,
@@ -106,13 +129,20 @@ impl Reader<'_, '_> {
       &cell_ref(position.0, position.1),
       &mut self.sheet.warnings,
     );
+    let (text, shared_master) = match formula {
+      Formula::None => (None, None),
+      // A formula that could not be written out is there all the same, with its text empty.
+      Formula::Own(text) => {
+        self.unwritten += usize::from(text.is_none());
+        (Some(text.unwrap_or_default()), None)
+      }
+      // The text is written once the whole sheet is read, when the formula kept for the
+      // cell is known.
+      Formula::Kept(holder) => (None, (holder != position).then_some(holder)),
+    };
     let cell = Cell {
-      // The text of a formula is not read: a cell that has one has it empty.
-      formula: matches!(formula, Formula::Own).then(String::new),
-      shared_master: match formula {
-        Formula::Follows(master) => Some(master),
-        Formula::None | Formula::Own => None,
-      },
+      formula: text,
+      shared_master,
       cached,
       ..styled
     };
@@ -202,21 +232,27 @@ impl Reader<'_, '_> {
     let Some(Ok(result)) = value.get(..8).map(<[u8; 8]>::try_from) else {
       return Ok(());
     };
-    // A cell that takes its formula from another's names that cell and holds no more.
-    let formula = match value.get(16..) {
-      Some([0x01, r0, r1, c0, c1, ..]) => {
-        let master = (
+    let position = (u32::from(at.0), u32::from(at.1));
+    // The tokens follow some flags and their own length, and what follows the tokens is
+    // the lists of constants they use.
+    let length = value.get(14..16).map_or(0, |length| {
+      usize::from(u16::from_le_bytes([length[0], length[1]]))
+    });
+    let tokens = value.get(16..16 + length).unwrap_or(&[]);
+    let extra = value.get(16 + length..).unwrap_or(&[]);
+    let formula = match tokens {
+      // A cell that takes its formula from one kept for several says only which.
+      [0x01, r0, r1, c0, c1, ..] => {
+        let holder = (
           u32::from(u16::from_le_bytes([*r0, *r1])),
           u32::from(u16::from_le_bytes([*c0, *c1])),
         );
-        if master == (u32::from(at.0), u32::from(at.1)) {
-          Formula::Own
-        } else {
-          Formula::Follows(master)
-        }
+        self.taking.push((position, holder));
+        Formula::Kept(holder)
       }
-      _ => Formula::Own,
+      _ => Formula::Own(formula::text(tokens, extra, position, self.context.links)),
     };
+    self.last_formula = Some(position);
     let stored = match result {
       // Text, which the next record holds.
       [0, _, _, _, _, _, 0xFF, 0xFF] => {
@@ -333,6 +369,8 @@ impl Reader<'_, '_> {
       0x01B8 => sheet.links += 1,
       0x001C => sheet.comments += 1,
       0x00B0 => sheet.pivot_tables += 1,
+      // A table, as Excel 2003 keeps one and as a later Excel keeps one in this format.
+      0x0872 | 0x0878 => sheet.tables += 1,
       0x00EC => sheet.drawings = 1,
       // An object: what it is comes first, after the number and the length of that statement.
       0x005D if record.u16_at(0) == Some(0x0015) => match record.u16_at(4) {
@@ -346,7 +384,8 @@ impl Reader<'_, '_> {
 }
 
 /// The sheet the workbook lists as `bound`, read from where its records start. `cells_left`
-/// is how many cells the workbook may still hold, and is counted down.
+/// is how many cells the workbook may still hold, and `text_left` how many bytes of formula
+/// text it may still write out for the cells that share a formula; both are counted down.
 pub(crate) fn read(
   stream: &[u8],
   bound: &Bound,
@@ -354,6 +393,7 @@ pub(crate) fn read(
   context: Context<'_>,
   print_area: Option<CellRange>,
   cells_left: &mut usize,
+  text_left: &mut usize,
 ) -> Result<Sheet, SpreadsheetError> {
   let mut reader = Reader {
     sheet: Sheet {
@@ -380,6 +420,10 @@ pub(crate) fn read(
     context,
     cells_left,
     awaited: None,
+    kept: HashMap::new(),
+    taking: Vec::new(),
+    last_formula: None,
+    unwritten: 0,
     column_characters: None,
     column_width: None,
   };
@@ -433,7 +477,26 @@ pub(crate) fn read(
           }
         }
       }
-      0x04BC | 0x0221 | 0x0236 => {}
+      // A formula kept for several cells, after the first of them: one they share, with
+      // its references as steps from each, or one that fills a range together. Both say
+      // which rows and columns they cover, and then give their tokens with their length.
+      0x04BC | 0x0221 => {
+        let at = if record.id == 0x04BC { 8 } else { 12 };
+        let length = usize::from(record.u16_at(at).unwrap_or(0));
+        let tokens = record.data.get(at + 2..at + 2 + length);
+        if let (Some(holder), Some(tokens)) = (reader.last_formula, tokens) {
+          reader.kept.insert(
+            holder,
+            Kept {
+              tokens: tokens.to_vec(),
+              extra: record.data[at + 2 + length..].to_vec(),
+              steps: record.id == 0x04BC,
+            },
+          );
+        }
+      }
+      // A table of what-ifs, which is not written out.
+      0x0236 => {}
       0x0203 | 0x027E | 0x00FD | 0x0204 | 0x00D6 | 0x0205 | 0x0006 => {
         reader.settle()?;
         reader.cell(record)?;
@@ -450,12 +513,49 @@ pub(crate) fn read(
     mut sheet,
     column_characters,
     column_width,
+    kept,
+    taking,
+    mut unwritten,
     ..
   } = reader;
   if !ended {
     sheet
       .warnings
       .push("the sheet's records stop before its end".to_string());
+  }
+  // Each cell that takes its formula from one kept for several has it written for itself.
+  // The cell the formula is kept for always has its text. The cells that follow it have
+  // theirs while the workbook's budget for such text lasts, and name that cell either way.
+  let mut left_out = 0usize;
+  for (position, holder) in taking {
+    let written = kept.get(&holder).and_then(|kept| {
+      let base = if kept.steps { position } else { holder };
+      formula::text(&kept.tokens, &kept.extra, base, context.links)
+    });
+    let Some(cell) = sheet.cells.get_mut(&position) else {
+      continue;
+    };
+    match written {
+      _ if cell.shared_master.is_none() => {
+        unwritten += usize::from(written.is_none());
+        cell.formula = Some(written.unwrap_or_default());
+      }
+      Some(text) if text.len() <= MAX_FORMULA_CHARS && text.len() <= *text_left => {
+        *text_left -= text.len();
+        cell.formula = Some(text);
+      }
+      _ => left_out += 1,
+    }
+  }
+  if unwritten > 0 {
+    sheet.warnings.push(format!(
+      "{unwritten} formula(s) hold what this release does not write out; their text is empty"
+    ));
+  }
+  if left_out > 0 {
+    sheet.warnings.push(format!(
+      "{left_out} cell(s) follow a shared formula that was not written out for them; they name their master only"
+    ));
   }
   // A width stated outright is in 256ths of a character. A count of characters has the room
   // around them added, and is cut to a 256th, as a workbook of 2007 states the same width.

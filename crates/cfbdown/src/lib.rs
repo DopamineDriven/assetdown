@@ -5,14 +5,17 @@
 //!
 //! [`CompoundFile::open`] reads one, and gives a stream by its path or every stream by its
 //! name. [`compound`] writes one, which is how a storage is handed back as a file of its own.
-//! [`packaged`] and [`HOLDING`] are how an embedded object keeps a file.
+//! [`packaged`] and [`HOLDING`] are how an embedded object keeps a file, and
+//! [`CompoundFile::summary`] reads what the document says about itself.
 
 mod error;
 mod file;
 mod object;
+mod summary;
 mod write;
 
 pub use error::CfbError;
 pub use file::{Child, CompoundFile, Stream};
 pub use object::{HOLDING, packaged};
+pub use summary::Summary;
 pub use write::compound;

@@ -286,10 +286,10 @@ export interface PaymentDetail {
  * times). `format` is the cell's number-format code; `formatSupported` says whether `text`
  * was rendered from it, and when false `text` is the stored spelling.
  *
- * `formula` is present on a cell that has a formula of its own, and is empty: the text of
- * a formula is not read from an `.xls`, only the value Excel last left beside it. A cell
- * that follows a shared formula has no `formula`, and `sharedFormula` names the cell that
- * holds it. `cached` says whether a result was stored.
+ * `formula` is the cell's formula without the leading `=`. On a cell that shares a formula
+ * with others it is that formula written for this cell, with its references moved here,
+ * and `sharedFormula` names the cell the formula is kept for. A formula that could not be
+ * written out is there with its text empty. `cached` says whether a result was stored.
  *
  * `merge` is the range this cell anchors, `hidden` whether its row or column is hidden, and
  * `box` its rectangle in the sheet frame (a merged anchor spans its range).

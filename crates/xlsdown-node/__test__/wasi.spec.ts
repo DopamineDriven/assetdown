@@ -39,8 +39,8 @@ describe("wasm32-wasi build", { skip }, () => {
     });
     assert.partialDeepStrictEqual(t.cell(sheet, "B3"), {
       type: "Number",
-      value: 8,
-      formula: ""
+      value: 2469,
+      formula: "B2*2"
     });
   });
   it(

@@ -3,6 +3,12 @@ import assert from "node:assert/strict";
 import { WorkupService } from "@/__test__/workup.ts";
 import type { SheetCells } from "@/index.js";
 
+/** One stream of a compound file under construction. */
+export interface StreamSpec {
+  readonly name: string;
+  readonly data: Buffer;
+}
+
 /** One sheet of a workbook under construction. */
 export interface SheetSpec {
   readonly name: string;
@@ -90,9 +96,13 @@ export class XlsTest extends WorkupService {
     return this.cellRecord(0x00fd, row, col, xf, this.u32(index));
   }
 
-  /** A formula cell left with the number `value`. Its tokens are the whole number 1. */
+  /**
+   * A formula cell left with the number `value`. Its formula is the second cell of the second
+   * column, times two: the cell as two bytes of row and two of column, with the bits that
+   * say both move, then a whole number, and then the sign that joins them.
+   */
   public formula(row: number, col: number, xf: number, value: number) {
-    const tokens = Buffer.from([0x1e, 1, 0]);
+    const tokens = Buffer.from([0x44, 1, 0, 0x01, 0xc0, 0x1e, 2, 0, 0x05]);
     return this.cellRecord(
       0x0006,
       row,
@@ -167,6 +177,7 @@ export class XlsTest extends WorkupService {
     name: string,
     kind: number,
     child: number,
+    right: number,
     start: number,
     size: number
   ) {
@@ -176,7 +187,7 @@ export class XlsTest extends WorkupService {
     entry.writeUInt8(kind, 0x42);
     entry.writeUInt8(1, 0x43);
     entry.writeUInt32LE(FREE, 0x44);
-    entry.writeUInt32LE(FREE, 0x48);
+    entry.writeUInt32LE(right, 0x48);
     entry.writeUInt32LE(child, 0x4c);
     entry.writeUInt32LE(start, 0x74);
     entry.writeUInt32LE(size, 0x78);
@@ -184,19 +195,29 @@ export class XlsTest extends WorkupService {
   }
 
   /**
-   * A compound file with `stream` as its `Workbook`. The stream is filled out to 4,096 bytes,
-   * so that it lies in sectors of its own: the table that chains the sectors comes first
-   * after the header, in as many sectors as it needs, then the directory in one, and the
-   * stream is the rest.
+   * A compound file of these streams, each in the root. Every stream is filled out to 4,096
+   * bytes, so that it lies in sectors of its own: the table that chains the sectors comes
+   * first after the header, in as many sectors as it needs, then the directory, and then
+   * the streams one after another.
    */
-  private compound(stream: Buffer) {
-    const length = Math.max(4096, Math.ceil(stream.length / SECTOR) * SECTOR);
-    const padded = Buffer.alloc(length);
-    stream.copy(padded);
-    const sectors = length / SECTOR;
+  private compound(streams: readonly StreamSpec[]) {
+    const filled = streams.map(({ name, data }) => {
+      const length = Math.max(4096, Math.ceil(data.length / SECTOR) * SECTOR);
+      const padded = Buffer.alloc(length);
+      data.copy(padded);
+      return { name, padded };
+    });
+    const directorySectors = Math.ceil((filled.length + 1) / 4);
+    const streamSectors = filled.reduce(
+      (sum, { padded }) => sum + padded.length / SECTOR,
+      0
+    );
     // The table chains its own sectors too, so they are counted until the count holds.
     let tableSectors = 1;
-    while (tableSectors * (SECTOR / 4) < tableSectors + 1 + sectors) {
+    while (
+      tableSectors * (SECTOR / 4) <
+      tableSectors + directorySectors + streamSectors
+    ) {
       tableSectors += 1;
     }
     // The header lists the table's sectors, and has room for 109 of them.
@@ -223,28 +244,116 @@ export class XlsTest extends WorkupService {
     for (let sector = 0; sector < tableSectors; sector++) {
       table.writeUInt32LE(0xfffffffd, sector * 4);
     }
-    // The directory is the sector after the table, and the stream starts after that.
-    table.writeUInt32LE(END, tableSectors * 4);
-    const first = tableSectors + 1;
-    for (let sector = 0; sector < sectors; sector++) {
-      const next = sector + 1 === sectors ? END : first + sector + 1;
-      table.writeUInt32LE(next, (first + sector) * 4);
+    for (let sector = 0; sector < directorySectors; sector++) {
+      const at = tableSectors + sector;
+      const next = sector + 1 === directorySectors ? END : at + 1;
+      table.writeUInt32LE(next, at * 4);
     }
-
-    const unused = Buffer.alloc(128);
-    unused.fill(0xff, 0x44, 0x50);
-    const directory = Buffer.concat([
-      this.entry("Root Entry", 5, 1, END, 0),
-      this.entry("Workbook", 2, FREE, first, length),
-      unused,
-      unused
+    // The root holds the first stream, and each stream leads to the one after it.
+    const directory = Buffer.alloc(directorySectors * SECTOR);
+    this.entry(
+      "Root Entry",
+      5,
+      filled.length > 0 ? 1 : FREE,
+      FREE,
+      END,
+      0
+    ).copy(directory);
+    let next = tableSectors + directorySectors;
+    filled.forEach(({ name, padded }, index) => {
+      const sectors = padded.length / SECTOR;
+      for (let sector = 0; sector < sectors; sector++) {
+        const after = sector + 1 === sectors ? END : next + sector + 1;
+        table.writeUInt32LE(after, (next + sector) * 4);
+      }
+      const right = index + 1 === filled.length ? FREE : index + 2;
+      this.entry(name, 2, FREE, right, next, padded.length).copy(
+        directory,
+        (index + 1) * 128
+      );
+      next += sectors;
+    });
+    // An entry of the directory that is not in use leads nowhere.
+    for (let index = filled.length + 1; index < directorySectors * 4; index++) {
+      directory.fill(0xff, index * 128 + 0x44, index * 128 + 0x50);
+    }
+    return Buffer.concat([
+      header,
+      table,
+      directory,
+      ...filled.map(({ padded }) => padded)
     ]);
-    return Buffer.concat([header, table, directory, padded]);
   }
 
-  /** An `.xls` file of these sheets, with `globals` among the workbook's own records. */
-  public file(globals: readonly Buffer[], sheets: readonly SheetSpec[]) {
-    return this.compound(this.stream(globals, sheets));
+  /**
+   * A property stream of one set, in the Western code page: each property a number and its
+   * value, which is text, a whole number, or a moment in tenths of a microsecond since 1601.
+   */
+  public properties(
+    stated: readonly (readonly [number, string | number | bigint])[]
+  ) {
+    const page = Buffer.alloc(8);
+    page.writeUInt32LE(2, 0);
+    page.writeUInt16LE(1252, 4);
+    const values = Array.of<Buffer>(page);
+    for (const [, value] of stated) {
+      if (typeof value === "string") {
+        const text = Buffer.from(`${value}\0`, "latin1");
+        const kept = Buffer.alloc(Math.ceil((8 + text.length) / 4) * 4);
+        kept.writeUInt32LE(0x1e, 0);
+        kept.writeUInt32LE(text.length, 4);
+        text.copy(kept, 8);
+        values.push(kept);
+      } else if (typeof value === "bigint") {
+        const kept = Buffer.alloc(12);
+        kept.writeUInt32LE(0x40, 0);
+        kept.writeBigUInt64LE(value, 4);
+        values.push(kept);
+      } else {
+        const kept = Buffer.alloc(8);
+        kept.writeUInt32LE(3, 0);
+        kept.writeInt32LE(value, 4);
+        values.push(kept);
+      }
+    }
+    // The set: its length, how many properties, where each is, and then the values. The
+    // first property is the code page.
+    const ids = [1, ...stated.map(([id]) => id)];
+    const listed = Buffer.alloc(values.length * 8);
+    let at = 8 + listed.length;
+    values.forEach((value, index) => {
+      listed.writeUInt32LE(ids[index] ?? 0, index * 8);
+      listed.writeUInt32LE(at, index * 8 + 4);
+      at += value.length;
+    });
+    // The stream: its byte order, a version, who wrote it, a count of sets, and for the one
+    // set what it is and where it starts.
+    const head = Buffer.alloc(48);
+    head.writeUInt16LE(0xfffe, 0);
+    head.writeUInt32LE(1, 24);
+    head.writeUInt32LE(48, 44);
+    return Buffer.concat([
+      head,
+      this.u32(at),
+      this.u32(values.length),
+      listed,
+      ...values
+    ]);
+  }
+
+  /**
+   * An `.xls` file of these sheets, with `globals` among the workbook's own records, and
+   * `beside` as streams beside the workbook's.
+   */
+  public file(
+    globals: readonly Buffer[],
+    sheets: readonly SheetSpec[],
+    beside: readonly StreamSpec[] = []
+  ) {
+    return this.compound([
+      { name: "Workbook", data: this.stream(globals, sheets) },
+      ...beside
+    ]);
   }
 
   /** The first sheet of a result. */
@@ -263,7 +372,7 @@ export class XlsTest extends WorkupService {
 
   /**
    * A workbook of two sheets, the second hidden. The first holds a label, a date, an amount,
-   * and a formula left with 8; the second holds one label.
+   * and a formula that doubles the amount; the second holds one label.
    */
   public get costs() {
     return this.file(
@@ -280,10 +389,70 @@ export class XlsTest extends WorkupService {
             this.shared(0, 0, 0, 0),
             this.number(0, 1, 1, 46349),
             this.number(1, 1, 2, 1234.5),
-            this.formula(2, 1, 0, 8)
+            this.formula(2, 1, 0, 2469)
           ]
         },
         { name: "Notes", hidden: true, records: [this.shared(0, 0, 0, 1)] }
+      ]
+    );
+  }
+
+  /** The moment the described workbook says it was made: 2026-11-15 09:30:00. */
+  public get aMorning() {
+    return 134_392_086_000_000_000n;
+  }
+
+  /**
+   * The same two sheets, in a file that says what it is: a title, who wrote it and who saved
+   * it last, when, and with what.
+   */
+  public get described() {
+    return this.file(
+      [
+        this.sharedStrings(["Total", "kept back"]),
+        this.xf(0),
+        this.xf(14),
+        this.xf(4)
+      ],
+      [
+        {
+          name: "Costs",
+          records: [
+            this.shared(0, 0, 0, 0),
+            this.number(0, 1, 1, 46349),
+            this.number(1, 1, 2, 1234.5),
+            this.formula(2, 1, 0, 2469)
+          ]
+        },
+        { name: "Notes", hidden: true, records: [this.shared(0, 0, 0, 1)] }
+      ],
+      [
+        {
+          name: "\u0005SummaryInformation",
+          data: this.properties([
+            [2, "Order form"],
+            [3, "Parts"],
+            [4, "A. Clerk"],
+            [5, "orders; parts"],
+            [6, "For the spring"],
+            [8, "B. Checker"],
+            [9, "7"],
+            [12, this.aMorning],
+            // An hour later.
+            [13, this.aMorning + 36_000_000_000n],
+            [18, "Microsoft Excel"]
+          ])
+        },
+        {
+          name: "\u0005DocumentSummaryInformation",
+          data: this.properties([
+            [2, "Forms"],
+            [15, "Acme Tooling"],
+            // Two halves of one number: twelve, and nought.
+            [23, 0x000c0000],
+            [28, "en-US"]
+          ])
+        }
       ]
     );
   }

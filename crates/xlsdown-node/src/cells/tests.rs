@@ -47,7 +47,7 @@ fn the_visible_sheets_come_back_with_each_value_as_its_own_variant() {
 }
 
 #[test]
-fn a_formula_s_text_is_empty_and_a_cell_that_follows_one_names_the_cell_that_holds_it() {
+fn a_formula_cell_carries_its_text_and_one_that_shares_a_formula_names_the_cell_that_holds_it() {
   let sheets = cells_of(&workbook(), &options(false));
   match &sheets[0].cells[2] {
     SheetCell::Number {
@@ -57,7 +57,7 @@ fn a_formula_s_text_is_empty_and_a_cell_that_follows_one_names_the_cell_that_hol
       ..
     } => assert_eq!(
       (formula.as_deref(), shared_formula.as_deref(), *cached),
-      (Some(""), None, true)
+      (Some("A2*2"), None, true)
     ),
     other => panic!("{other:?}"),
   }
@@ -68,7 +68,7 @@ fn a_formula_s_text_is_empty_and_a_cell_that_follows_one_names_the_cell_that_hol
       ..
     } => assert_eq!(
       (formula.as_deref(), shared_formula.as_deref()),
-      (None, Some("B2"))
+      (Some("A3*2"), Some("B2"))
     ),
     other => panic!("{other:?}"),
   }

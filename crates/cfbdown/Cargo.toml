@@ -9,3 +9,4 @@ rust-version.workspace = true
 version                = "0.1.0"
 
 [dependencies]
+encoding_rs.workspace = true

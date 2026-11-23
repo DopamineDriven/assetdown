@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import { XlsTest } from "@/__test__/xls-test.ts";
 import { XlsDown, spreadsheetCells, spreadsheetCellsAsync } from "@/index.js";
+import type { SheetCells, SpreadsheetOptions } from "@/index.js";
 
 const t = new XlsTest();
 const costs = t.costs;
@@ -69,19 +70,15 @@ describe("spreadsheetCells", () => {
       text: "1,234.50"
     });
   });
-  it(
-    "should give a formula's value, with its text present and empty",
-    {},
-    () => {
-      assert.partialDeepStrictEqual(t.cell(sheet, "B3"), {
-        type: "Number",
-        value: 8,
-        formula: "",
-        cached: true
-      });
-      assert.equal(t.cell(sheet, "B2").formula, undefined);
-    }
-  );
+  it("should give a formula's value and its text", {}, () => {
+    assert.partialDeepStrictEqual(t.cell(sheet, "B3"), {
+      type: "Number",
+      value: 2469,
+      formula: "B2*2",
+      cached: true
+    });
+    assert.equal(t.cell(sheet, "B2").formula, undefined);
+  });
   it("should include a hidden sheet when it is asked for", {}, () => {
     const all = doc.spreadsheetCells({ hiddenSheets: true });
     assert.deepEqual(
@@ -151,4 +148,177 @@ describe("metadata", () => {
   it("should resolve to the same metadata off the thread", {}, async () => {
     assert.deepEqual(await doc.metadataAsync(), meta);
   });
+});
+
+describe("metadata of a workbook that says what it is", () => {
+  const described = new XlsDown(t.described);
+  const meta = described.metadata();
+  it("should read what the file says about itself", {}, () => {
+    assert.partialDeepStrictEqual(meta, {
+      title: "Order form",
+      subject: "Parts",
+      author: "A. Clerk",
+      keywords: "orders; parts",
+      description: "For the spring",
+      category: "Forms",
+      language: "en-US",
+      lastModifiedBy: "B. Checker",
+      revision: "7",
+      created: "2026-11-15T09:30:00Z",
+      modified: "2026-11-15T10:30:00Z",
+      application: "Microsoft Excel",
+      appVersion: "12.0000",
+      company: "Acme Tooling"
+    });
+  });
+  it("should leave out what the file does not state", {}, () => {
+    const bare = doc.metadata();
+    assert.equal(bare.title, undefined);
+    assert.equal(bare.author, undefined);
+    assert.equal(bare.created, undefined);
+    assert.equal(bare.modified, undefined);
+    assert.equal(bare.application, undefined);
+    assert.equal(bare.appVersion, undefined);
+    assert.equal(bare.company, undefined);
+  });
+  it("should count the same whatever the file says about itself", {}, () => {
+    const bare = doc.metadata();
+    assert.equal(meta.sheetCount, bare.sheetCount);
+    assert.equal(meta.cellCount, bare.cellCount);
+    assert.equal(meta.formulaCount, bare.formulaCount);
+    assert.equal(meta.wordCount, bare.wordCount);
+    assert.deepEqual(meta.sheets, bare.sheets);
+    assert.deepEqual(
+      described.spreadsheetCells({ hiddenSheets: true }),
+      doc.spreadsheetCells({ hiddenSheets: true })
+    );
+  });
+  it("should resolve to the same metadata off the thread", {}, async () => {
+    assert.deepEqual(await described.metadataAsync(), meta);
+    const opened = await XlsDown.openAsync(t.described);
+    assert.deepEqual(opened.metadata(), meta);
+  });
+});
+
+describe("the async twins", () => {
+  const choices = Array.of<SpreadsheetOptions | undefined>(
+    undefined,
+    { hiddenSheets: true },
+    { sheets: ["Notes"] },
+    { sheets: ["Notes", "Costs"], hiddenCells: false },
+    { sheets: ["Nope"] }
+  );
+  it(
+    "should each resolve to what its twin returns, whatever is asked for",
+    {},
+    async () => {
+      for (const opts of choices) {
+        assert.deepEqual(
+          await doc.spreadsheetCellsAsync(opts),
+          doc.spreadsheetCells(opts)
+        );
+        assert.deepEqual(
+          await doc.spreadsheetGridAsync(opts),
+          doc.spreadsheetGrid(opts)
+        );
+        assert.deepEqual(await doc.layoutAsync(opts), doc.layout(opts));
+        assert.deepEqual(
+          await spreadsheetCellsAsync(costs, opts),
+          spreadsheetCells(costs, opts)
+        );
+      }
+      assert.deepEqual(await doc.invoiceAsync(), doc.invoice());
+      assert.deepEqual(await doc.metadataAsync(), doc.metadata());
+    }
+  );
+  it("should pass its options through to the worker thread", {}, async () => {
+    const all = await doc.spreadsheetCellsAsync({ hiddenSheets: true });
+    assert.deepEqual(
+      all.map((s) => s.sheet),
+      ["Costs", "Notes"]
+    );
+    const none = await spreadsheetCellsAsync(costs, { sheets: ["Nope"] });
+    assert.deepEqual(none, []);
+  });
+  it(
+    "should return the same cells to 32 readers running at once",
+    {},
+    async () => {
+      const expected = doc.spreadsheetCells({ hiddenSheets: true });
+      const readers = Array.of<Promise<SheetCells[]>>();
+      for (let i = 0; i < 16; i++) {
+        readers.push(doc.spreadsheetCellsAsync({ hiddenSheets: true }));
+        readers.push(spreadsheetCellsAsync(costs, { hiddenSheets: true }));
+      }
+      for (const result of await Promise.all(readers)) {
+        assert.deepEqual(result, expected);
+      }
+    }
+  );
+  it(
+    "should answer every kind of question at once from one parsed workbook",
+    {},
+    async () => {
+      const [cells, grid, pages, invoice, meta] = await Promise.all([
+        doc.spreadsheetCellsAsync(),
+        doc.spreadsheetGridAsync(),
+        doc.layoutAsync(),
+        doc.invoiceAsync(),
+        doc.metadataAsync()
+      ]);
+      assert.deepEqual(cells, doc.spreadsheetCells());
+      assert.deepEqual(grid, doc.spreadsheetGrid());
+      assert.deepEqual(pages, doc.layout());
+      assert.deepEqual(invoice, doc.invoice());
+      assert.deepEqual(meta, doc.metadata());
+    }
+  );
+  it(
+    "should not be affected when the caller overwrites its buffer after the async call",
+    {},
+    async () => {
+      const scratch = Buffer.from(costs);
+      const pending = spreadsheetCellsAsync(scratch);
+      const opening = XlsDown.openAsync(scratch);
+      scratch.fill(0);
+      assert.deepEqual(await pending, doc.spreadsheetCells());
+      assert.deepEqual((await opening).metadata(), doc.metadata());
+    }
+  );
+  it("should keep answering after a call that was rejected", {}, async () => {
+    const message = "malformed workbook: not a compound file";
+    const outcomes = await Promise.allSettled([
+      spreadsheetCellsAsync(costs),
+      spreadsheetCellsAsync(Buffer.from("not a workbook")),
+      XlsDown.openAsync(t.locked),
+      spreadsheetCellsAsync(costs)
+    ]);
+    assert.deepEqual(
+      outcomes.map((outcome) => outcome.status),
+      ["fulfilled", "rejected", "rejected", "fulfilled"]
+    );
+    await assert.rejects(spreadsheetCellsAsync(Buffer.from("not a workbook")), {
+      message
+    });
+    assert.deepEqual(
+      await spreadsheetCellsAsync(costs),
+      spreadsheetCells(costs)
+    );
+  });
+  it(
+    "should read a long workbook off the thread as it reads it on it",
+    {},
+    async () => {
+      const long = t.long;
+      const expected = t.first(spreadsheetCells(long));
+      assert.equal(expected.cells.length, 40_000);
+      const [fromBuffer, opened] = await Promise.all([
+        spreadsheetCellsAsync(long),
+        XlsDown.openAsync(long)
+      ]);
+      assert.deepEqual(t.first(fromBuffer), expected);
+      assert.equal(opened.metadata().cellCount, 40_000);
+      assert.deepEqual(t.first(await opened.spreadsheetCellsAsync()), expected);
+    }
+  );
 });

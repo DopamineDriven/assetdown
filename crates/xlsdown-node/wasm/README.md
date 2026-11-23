@@ -115,7 +115,7 @@ This entry takes a `WebAssembly.Module` and reads no file, which is what a runti
 
 Every method of `XlsDown` has an `Async` twin.
 
-A formula gives the value Excel last left beside it. Its text is not read: a cell with a formula has `formula` present and empty. A workbook of Excel 95 or earlier, and one saved with a password, is refused by name.
+A formula gives the value Excel last left beside it, and its text in `formula`: `SUM(B2:B9)*Rate`. A workbook of Excel 95 or earlier, and one saved with a password, is refused by name.
 
 ## What has been tried
 

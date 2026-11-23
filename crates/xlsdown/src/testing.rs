@@ -371,3 +371,106 @@ impl Book {
     cfbdown::compound(&[("Workbook", &self.stream())]).unwrap()
   }
 }
+
+/// A property stream of one set, in the Western code page: each property a number and
+/// either text or a moment, in tenths of a microsecond since 1601.
+pub(crate) fn properties(stated: &[(u32, Result<&str, u64>)]) -> Vec<u8> {
+  let mut values: Vec<Vec<u8>> = vec![joined(&[
+    &2u32.to_le_bytes(),
+    &1252u16.to_le_bytes(),
+    &[0; 2],
+  ])];
+  for (_, value) in stated {
+    let mut kept = match value {
+      Ok(text) => joined(&[
+        &0x1Eu32.to_le_bytes(),
+        &u32::try_from(text.len() + 1).unwrap().to_le_bytes(),
+        text.as_bytes(),
+        &[0],
+      ]),
+      Err(ticks) => joined(&[&0x40u32.to_le_bytes(), &ticks.to_le_bytes()]),
+    };
+    kept.resize(kept.len().next_multiple_of(4), 0);
+    values.push(kept);
+  }
+  // The set: its length, how many properties, where each is, and then the values. The
+  // first property is the code page.
+  let ids = std::iter::once(1).chain(stated.iter().map(|(id, _)| *id));
+  let mut at = 8 + values.len() * 8;
+  let mut listed = Vec::new();
+  for (id, value) in ids.zip(&values) {
+    listed.extend(id.to_le_bytes());
+    listed.extend(u32::try_from(at).unwrap().to_le_bytes());
+    at += value.len();
+  }
+  let mut out = vec![0xFE, 0xFF, 0, 0];
+  out.extend([0u8; 20]);
+  out.extend(1u32.to_le_bytes());
+  out.extend([0u8; 16]);
+  out.extend(48u32.to_le_bytes());
+  out.extend(u32::try_from(at).unwrap().to_le_bytes());
+  out.extend(u32::try_from(values.len()).unwrap().to_le_bytes());
+  out.extend(listed);
+  out.extend(values.concat());
+  out
+}
+
+/// The record that defines a formula many cells share, after the first of them: the rows
+/// and the columns it covers, and its tokens.
+pub(crate) fn shared_formula(rows: (u16, u16), cols: (u8, u8), tokens: &[u8]) -> Vec<u8> {
+  record(
+    0x04BC,
+    &joined(&[
+      &rows.0.to_le_bytes(),
+      &rows.1.to_le_bytes(),
+      &[cols.0, cols.1, 0, 0],
+      &u16::try_from(tokens.len()).unwrap().to_le_bytes(),
+      tokens,
+    ]),
+  )
+}
+
+/// The record that defines a formula a range of cells is filled by together.
+pub(crate) fn array_formula(rows: (u16, u16), cols: (u8, u8), tokens: &[u8]) -> Vec<u8> {
+  record(
+    0x0221,
+    &joined(&[
+      &rows.0.to_le_bytes(),
+      &rows.1.to_le_bytes(),
+      &[cols.0, cols.1],
+      &[0u8; 6],
+      &u16::try_from(tokens.len()).unwrap().to_le_bytes(),
+      tokens,
+    ]),
+  )
+}
+
+/// The workbook's own entry among the books its formulas refer to.
+pub(crate) fn own_book(sheets: u16) -> Vec<u8> {
+  record(
+    0x01AE,
+    &joined(&[&sheets.to_le_bytes(), &0x0401u16.to_le_bytes()]),
+  )
+}
+
+/// The entry for the functions add-ins give, and one such function's name after it.
+pub(crate) fn add_in_book(function: &str) -> Vec<u8> {
+  joined(&[
+    &record(
+      0x01AE,
+      &joined(&[&1u16.to_le_bytes(), &0x3A01u16.to_le_bytes()]),
+    ),
+    &record(0x0023, &joined(&[&[0u8; 6], &short_text(function)])),
+  ])
+}
+
+/// Which sheets references name: for each, a book by its place, and its first and last sheet.
+pub(crate) fn sheet_spans(spans: &[(u16, i16, i16)]) -> Vec<u8> {
+  let mut data = u16::try_from(spans.len()).unwrap().to_le_bytes().to_vec();
+  for (book, first, last) in spans {
+    data.extend(book.to_le_bytes());
+    data.extend(first.to_le_bytes());
+    data.extend(last.to_le_bytes());
+  }
+  record(0x0017, &data)
+}

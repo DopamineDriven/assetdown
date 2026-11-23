@@ -4,12 +4,18 @@
 //!
 //! The file is a compound file (`cfbdown`) whose `Workbook` stream is a run of records.
 //! `record` walks them, `text` reads their strings, `globals` reads the workbook's own
-//! records (sheets, shared strings, fonts, formats, and names), and `sheet` reads each sheet's.
+//! records (sheets, shared strings, fonts, formats, names, and what formulas refer to), and
+//! `sheet` reads each sheet's.
 //!
-//! A formula gives the value Excel last left beside it. Its text is not read: a cell with a
-//! formula has `formula` set and empty, and one that follows a shared formula names the cell
-//! that holds it. Nothing here depends on Node.
+//! What the workbook says about itself (its title, its author, when it was made) is read
+//! from the property streams beside the `Workbook` stream.
+//!
+//! A formula gives the value Excel last left beside it, and its text, which `formula` writes
+//! out from the tokens the file keeps it as. A cell that shares a formula with others has it
+//! written for itself, and names the cell the formula is kept for. Nothing here depends on
+//! Node.
 
+mod formula;
 mod globals;
 mod record;
 mod sheet;
@@ -17,8 +23,10 @@ mod sheet;
 mod testing;
 mod text;
 
-use cfbdown::{CfbError, CompoundFile};
-use xlsxdown::{DocProps, MAX_CELLS, MAX_MERGES, SpreadsheetError, Workbook};
+use cfbdown::{CfbError, CompoundFile, Summary};
+use xlsxdown::{
+  DocProps, MAX_CELLS, MAX_EXPANDED_FORMULA_BYTES, MAX_MERGES, SpreadsheetError, Workbook,
+};
 
 use crate::sheet::Context;
 
@@ -32,6 +40,29 @@ fn older_worksheet(bytes: &[u8]) -> bool {
     bytes,
     [0x09, 0x00, 0x04, 0x00, ..] | [0x09, 0x02 | 0x04, 0x06, 0x00, ..]
   )
+}
+
+/// What the file's property streams say, in the shape a workbook of 2007 states the same
+/// things in.
+fn props_of(summary: Summary) -> DocProps {
+  DocProps {
+    title: summary.title,
+    subject: summary.subject,
+    creator: summary.author,
+    keywords: summary.keywords,
+    description: summary.comments,
+    category: summary.category,
+    language: summary.language,
+    last_modified_by: summary.last_author,
+    revision: summary.revision,
+    created: summary.created,
+    modified: summary.modified,
+    application: summary.application,
+    app_version: summary.app_version,
+    company: summary.company,
+    template: summary.template,
+    ..DocProps::default()
+  }
 }
 
 /// Read a workbook from the bytes of an `.xls` file. A file of an older Excel, and one saved
@@ -67,14 +98,24 @@ pub fn open(bytes: &[u8]) -> Result<Workbook, SpreadsheetError> {
     strings: &globals.strings,
     styles: &globals.styles,
     date1904: globals.date1904,
+    links: &globals.links,
   };
   let mut sheets = Vec::with_capacity(globals.sheets.len());
   let mut cells_left = MAX_CELLS;
+  let mut text_left = MAX_EXPANDED_FORMULA_BYTES;
   let mut merges = 0usize;
   for (index, bound) in globals.sheets.iter().enumerate() {
     let print_area = globals.print_areas.get(&index).copied().flatten();
     let index = u32::try_from(index).unwrap_or(u32::MAX);
-    let sheet = sheet::read(&stream, bound, index, context, print_area, &mut cells_left)?;
+    let sheet = sheet::read(
+      &stream,
+      bound,
+      index,
+      context,
+      print_area,
+      &mut cells_left,
+      &mut text_left,
+    )?;
     merges += sheet.merges.len();
     if merges > MAX_MERGES {
       return Err(SpreadsheetError::LimitExceeded(format!(
@@ -87,7 +128,7 @@ pub fn open(bytes: &[u8]) -> Result<Workbook, SpreadsheetError> {
     sheets,
     date1904: globals.date1904,
     styles: globals.styles,
-    props: DocProps::default(),
+    props: props_of(file.summary()),
     defined_names: globals.defined_names,
     has_macros: file.is_storage(MACROS),
     is_template: false,

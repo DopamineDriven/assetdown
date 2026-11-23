@@ -42,7 +42,7 @@ fn sheet(name: &str, index: u32, hidden: bool, cells: BTreeMap<(u32, u32), Cell>
 }
 
 /// Two sheets, the second hidden. The first holds a label, a date, a number with a formula of
-/// its own, and a number that follows that formula; the second holds one label.
+/// its own, and a number that shares that formula; the second holds one label.
 pub(crate) fn workbook() -> Workbook {
   let styles = Styles {
     xfs: vec![xf(0), xf(14), xf(4)],
@@ -53,11 +53,12 @@ pub(crate) fn workbook() -> Workbook {
     Cell::styled(stored, style, &styles, false, reference, &mut warnings)
   };
   let own = Cell {
-    formula: Some(String::new()),
+    formula: Some("A2*2".to_string()),
     cached: true,
     ..styled(Stored::number(1234.5), 2, "B2")
   };
   let follower = Cell {
+    formula: Some("A3*2".to_string()),
     shared_master: Some((1, 1)),
     cached: true,
     ..styled(Stored::number(8.0), 0, "B3")

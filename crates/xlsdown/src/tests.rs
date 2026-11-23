@@ -239,8 +239,7 @@ fn a_formula_gives_the_value_it_was_left_with_and_says_it_is_one() {
   assert_eq!(value(sheet, 0, 4), &CellValue::Text(String::new()));
   for col in 0..5 {
     let cell = &sheet.cells[&(0, col)];
-    // The text of a formula is not read: a cell with one has it empty.
-    assert_eq!(cell.formula.as_deref(), Some(""), "column {col}");
+    assert_eq!(cell.formula.as_deref(), Some("1+2"), "column {col}");
     assert!(cell.cached);
   }
   assert_eq!(sheet.cells[&(1, 0)].formula, None);
@@ -259,33 +258,235 @@ fn a_formula_whose_text_never_comes_is_a_cell_with_no_value() {
   let workbook = opened(book);
   let cell = &workbook.sheets[0].cells[&(0, 0)];
   assert_eq!(cell.value, CellValue::Blank);
-  assert_eq!((cell.formula.as_deref(), cell.cached), (Some(""), false));
+  assert_eq!((cell.formula.as_deref(), cell.cached), (Some("1"), false));
   assert_eq!(value(&workbook.sheets[0], 0, 1), &CellValue::Number(2.0));
 }
 
+/// The tokens of the formula the tests share: the cell two columns to the left of the one
+/// that uses it, times the cell one column to the left.
+fn two_left_times_one_left() -> Vec<u8> {
+  let step = |columns: u8| [0x4C, 0, 0, columns, 0xC0];
+  [&step(0xFE)[..], &step(0xFF), &[0x05]].concat()
+}
+
 #[test]
-fn a_cell_that_follows_a_shared_formula_names_the_cell_that_holds_it() {
+fn each_cell_that_shares_a_formula_has_it_written_for_itself_and_names_the_cell_that_holds_it() {
   let book = Book::new().sheet(
     "S",
     &[
-      formula(1, 2, 0, 1.0f64.to_le_bytes(), &follows(1, 2)),
-      record(0x04BC, &[0u8; 10]),
-      formula(2, 2, 0, 2.0f64.to_le_bytes(), &follows(1, 2)),
+      formula(1, 2, 0, 6.0f64.to_le_bytes(), &follows(1, 2)),
+      shared_formula((1, 3), (2, 2), &two_left_times_one_left()),
+      formula(2, 2, 0, 12.0f64.to_le_bytes(), &follows(1, 2)),
+      formula(3, 2, 0, 20.0f64.to_le_bytes(), &follows(1, 2)),
     ],
   );
   let workbook = opened(book);
   let sheet = &workbook.sheets[0];
-  let first = &sheet.cells[&(1, 2)];
+  let found: Vec<_> = sheet
+    .cells
+    .values()
+    .map(|cell| (cell.formula.as_deref(), cell.shared_master))
+    .collect();
+  assert_eq!(
+    found,
+    [
+      (Some("A2*B2"), None),
+      (Some("A3*B3"), Some((1, 2))),
+      (Some("A4*B4"), Some((1, 2)))
+    ]
+  );
+  assert_eq!(value(sheet, 3, 2), &CellValue::Number(20.0));
+  assert_eq!(workbook.metadata().formula_count, 3);
+  assert!(sheet.warnings.is_empty(), "{:?}", sheet.warnings);
+}
+
+#[test]
+fn a_formula_that_fills_a_range_of_cells_together_is_written_on_each_of_them() {
+  // A1:A2 times two, in D1 and D2.
+  let tokens = [
+    &[0x25, 0, 0, 1, 0, 0x00, 0xC0, 0x00, 0xC0][..],
+    &[0x1E, 2, 0, 0x05],
+  ]
+  .concat();
+  let book = Book::new().sheet(
+    "S",
+    &[
+      formula(0, 3, 0, 2.0f64.to_le_bytes(), &follows(0, 3)),
+      array_formula((0, 1), (3, 3), &tokens),
+      formula(1, 3, 0, 4.0f64.to_le_bytes(), &follows(0, 3)),
+    ],
+  );
+  let workbook = opened(book);
+  let sheet = &workbook.sheets[0];
+  let first = &sheet.cells[&(0, 3)];
   assert_eq!(
     (first.formula.as_deref(), first.shared_master),
-    (Some(""), None)
+    (Some("A1:A2*2"), None)
   );
-  let second = &sheet.cells[&(2, 2)];
+  // The same formula, and not one moved to the cell: the range is filled as one.
+  let second = &sheet.cells[&(1, 3)];
   assert_eq!(
     (second.formula.as_deref(), second.shared_master),
-    (None, Some((1, 2)))
+    (Some("A1:A2*2"), Some((0, 3)))
   );
-  assert_eq!(workbook.metadata().formula_count, 2);
+}
+
+#[test]
+fn a_formula_names_the_sheets_the_names_and_the_functions_the_workbook_lists() {
+  let rate = [&[0x23][..], &1u32.to_le_bytes()].concat();
+  // The first cell of the second sheet, times a name, and a function an add-in gives.
+  let other_sheet = [&[0x3A][..], &1u16.to_le_bytes(), &[0, 0, 0x00, 0xC0]].concat();
+  let month_end = [
+    &[0x39][..],
+    &2u16.to_le_bytes(),
+    &1u32.to_le_bytes(),
+    &[0x44, 0, 0, 0x00, 0xC0],
+    &[0x1E, 1, 0],
+    &[0x42, 3, 0xFF, 0x00],
+  ]
+  .concat();
+  let book = Book::new()
+    .global(own_book(2))
+    .global(add_in_book("EOMONTH"))
+    .global(sheet_spans(&[(0, 0, 0), (0, 1, 1), (1, -2, -2)]))
+    .global(name(None, "Rate", 0, &[0x1E, 5, 0]))
+    .sheet(
+      "Costs",
+      &[
+        formula(
+          0,
+          0,
+          0,
+          10.0f64.to_le_bytes(),
+          &[other_sheet, rate, vec![0x05]].concat(),
+        ),
+        formula(1, 0, 0, 46357.0f64.to_le_bytes(), &month_end),
+      ],
+    )
+    .sheet("Unit prices", &[number(0, 0, 0, 2.0)]);
+  let workbook = opened(book);
+  let sheet = &workbook.sheets[0];
+  assert_eq!(
+    sheet.cells[&(0, 0)].formula.as_deref(),
+    Some("'Unit prices'!A1*Rate")
+  );
+  assert_eq!(
+    sheet.cells[&(1, 0)].formula.as_deref(),
+    Some("EOMONTH(A1,1)")
+  );
+  assert!(sheet.warnings.is_empty(), "{:?}", sheet.warnings);
+}
+
+#[test]
+fn a_formula_that_cannot_be_written_out_has_its_text_empty_and_the_sheet_says_how_many() {
+  let book = Book::new().sheet(
+    "S",
+    &[
+      // A token this release does not know, and a table of what-ifs.
+      formula(0, 0, 0, 1.0f64.to_le_bytes(), &[0x1A, 0, 0]),
+      formula(0, 1, 0, 2.0f64.to_le_bytes(), &[0x02, 0, 0, 1, 0]),
+      formula(0, 2, 0, 3.0f64.to_le_bytes(), &[0x1E, 3, 0]),
+      // A formula that says it is shared, with nothing that defines it, and a cell after it.
+      formula(1, 0, 0, 4.0f64.to_le_bytes(), &follows(1, 0)),
+      formula(2, 0, 0, 5.0f64.to_le_bytes(), &follows(1, 0)),
+    ],
+  );
+  let workbook = opened(book);
+  let sheet = &workbook.sheets[0];
+  let text = |row: u32, col: u32| sheet.cells[&(row, col)].formula.as_deref();
+  assert_eq!(
+    (text(0, 0), text(0, 1), text(0, 2)),
+    (Some(""), Some(""), Some("3"))
+  );
+  assert_eq!(text(1, 0), Some(""));
+  // A cell that follows it names it, and has no text.
+  let follower = &sheet.cells[&(2, 0)];
+  assert_eq!(
+    (follower.formula.as_deref(), follower.shared_master),
+    (None, Some((1, 0)))
+  );
+  // The values are there whatever the text.
+  assert_eq!(value(sheet, 0, 0), &CellValue::Number(1.0));
+  assert_eq!(
+    sheet.warnings,
+    [
+      "3 formula(s) hold what this release does not write out; their text is empty",
+      "1 cell(s) follow a shared formula that was not written out for them; they name their master only"
+    ]
+  );
+  assert_eq!(workbook.metadata().formula_count, 5);
+}
+
+/// The tokens of a formula that joins `count` pieces of text of 255 characters each.
+fn long_text(count: usize) -> Vec<u8> {
+  let piece: Vec<u8> = [&[0x17, 255, 0][..], &[b'x'; 255]].concat();
+  let mut tokens = piece.clone();
+  for _ in 1..count {
+    tokens.extend(&piece);
+    tokens.push(0x08);
+  }
+  tokens
+}
+
+#[test]
+fn a_shared_formula_longer_than_a_formula_may_be_is_not_written_for_the_cells_that_follow_it() {
+  // Thirty-three pieces come to more than 8,192 characters.
+  let book = Book::new().sheet(
+    "S",
+    &[
+      formula(0, 0, 0, result_of(3, 0), &follows(0, 0)),
+      shared_formula((0, 1), (0, 0), &long_text(33)),
+      formula(1, 0, 0, result_of(3, 0), &follows(0, 0)),
+    ],
+  );
+  let workbook = opened(book);
+  let sheet = &workbook.sheets[0];
+  assert!(
+    sheet.cells[&(0, 0)]
+      .formula
+      .as_ref()
+      .is_some_and(|text| text.len() > 8192)
+  );
+  let follower = &sheet.cells[&(1, 0)];
+  assert_eq!(
+    (follower.formula.as_deref(), follower.shared_master),
+    (None, Some((0, 0)))
+  );
+  assert_eq!(
+    sheet.warnings,
+    [
+      "1 cell(s) follow a shared formula that was not written out for them; they name their master only"
+    ]
+  );
+}
+
+#[test]
+fn shared_formulas_are_written_out_until_the_workbook_s_budget_for_them_is_spent() {
+  // Each follower's text is 2,061 bytes, and the budget is 64 MiB: 32,561 of them fit.
+  let tokens = long_text(8);
+  let followers = 33_000u16;
+  let mut records = vec![
+    formula(0, 0, 0, result_of(3, 0), &follows(0, 0)),
+    shared_formula((0, followers), (0, 0), &tokens),
+  ];
+  records.extend((1..=followers).map(|row| formula(row, 0, 0, result_of(3, 0), &follows(0, 0))));
+  let workbook = opened(Book::new().sheet("S", &records));
+  let sheet = &workbook.sheets[0];
+  let each = 8 * 257 + 7;
+  let fit = xlsxdown::MAX_EXPANDED_FORMULA_BYTES / each;
+  let written = sheet
+    .cells
+    .values()
+    .filter(|cell| cell.shared_master.is_some() && cell.formula.is_some())
+    .count();
+  assert_eq!(written, fit);
+  assert_eq!(
+    sheet.warnings,
+    [format!(
+      "{} cell(s) follow a shared formula that was not written out for them; they name their master only",
+      usize::from(followers) - fit
+    )]
+  );
 }
 
 #[test]
@@ -646,4 +847,73 @@ fn a_workbook_with_more_cells_than_the_limit_is_refused() {
       xlsxdown::MAX_CELLS
     )
   );
+}
+
+#[test]
+fn what_the_workbook_says_about_itself_is_read_from_its_property_streams() {
+  let stream = Book::new().sheet("S", &[number(0, 0, 0, 1.0)]).stream();
+  let first = properties(&[
+    (2, Ok("Order form")),
+    (3, Ok("Parts")),
+    (4, Ok("A. Clerk")),
+    (5, Ok("orders; parts")),
+    (6, Ok("For the spring")),
+    (8, Ok("B. Checker")),
+    (9, Ok("7")),
+    (12, Err(134_392_086_000_000_000)),
+    (13, Err(134_392_122_000_000_000)),
+    (18, Ok("Microsoft Excel")),
+  ]);
+  let second = properties(&[
+    (2, Ok("Forms")),
+    (15, Ok("Acme Tooling")),
+    (28, Ok("en-US")),
+  ]);
+  let file = cfbdown::compound(&[
+    ("Workbook", &stream),
+    ("\u{5}SummaryInformation", &first),
+    ("\u{5}DocumentSummaryInformation", &second),
+  ])
+  .unwrap();
+  let props = open(&file).unwrap().props;
+  let text = |value: &str| Some(value.to_string());
+  assert_eq!(props.title, text("Order form"));
+  assert_eq!(props.subject, text("Parts"));
+  // The author is the creator, as a workbook of 2007 names them.
+  assert_eq!(props.creator, text("A. Clerk"));
+  assert_eq!(props.keywords, text("orders; parts"));
+  assert_eq!(props.description, text("For the spring"));
+  assert_eq!(props.last_modified_by, text("B. Checker"));
+  assert_eq!(props.revision, text("7"));
+  assert_eq!(props.created, text("2026-11-15T09:30:00Z"));
+  assert_eq!(props.modified, text("2026-11-15T10:30:00Z"));
+  assert_eq!(props.application, text("Microsoft Excel"));
+  assert_eq!(props.category, text("Forms"));
+  assert_eq!(props.company, text("Acme Tooling"));
+  assert_eq!(props.language, text("en-US"));
+
+  // A workbook with no property streams states nothing about itself.
+  let bare = open(&Book::new().sheet("S", &[]).file()).unwrap().props;
+  assert_eq!(bare, xlsxdown::DocProps::default());
+}
+
+#[test]
+fn the_tables_of_a_sheet_are_counted() {
+  let book = Book::new()
+    .sheet(
+      "S",
+      &[
+        number(0, 0, 0, 1.0),
+        // A table as Excel 2003 keeps one, and as a later Excel keeps one in this format.
+        record(0x0872, &[0u8; 30]),
+        record(0x0878, &[0u8; 30]),
+      ],
+    )
+    .sheet("T", &[number(0, 0, 0, 2.0)]);
+  let workbook = opened(book);
+  assert_eq!(
+    (workbook.sheets[0].tables, workbook.sheets[1].tables),
+    (2, 0)
+  );
+  assert_eq!(workbook.metadata().table_count, 2);
 }

@@ -5,11 +5,11 @@
 //! follows the header is the object's own data, which for most classes is a compound file with
 //! the embedded file in one of its streams.
 
+use cfbdown::{CompoundFile, HOLDING, packaged};
 use contentdown::PageLayout;
 use contentdown::invoice::{InvoiceOptions, InvoiceResult, extract_from_pages};
 
 use crate::body::{self, Block, Body, Paper, Running};
-use crate::cfb;
 use crate::error::RtfError;
 use crate::layout;
 use crate::token::{Token, Tokens};
@@ -136,14 +136,6 @@ fn u32_of(bytes: &mut &[u8]) -> Option<u32> {
   Some(value)
 }
 
-/// Text up to a zero byte, and the bytes after it.
-fn terminated<'a>(bytes: &mut &'a [u8]) -> Option<&'a [u8]> {
-  let end = bytes.iter().position(|byte| *byte == 0)?;
-  let text = &bytes[..end];
-  *bytes = &bytes[end + 1..];
-  Some(text)
-}
-
 fn text(bytes: &[u8]) -> Option<String> {
   // Names are kept in the code page of the machine that wrote them; the Western one is the
   // usual, and its letters are these.
@@ -167,23 +159,6 @@ fn native(mut data: &[u8]) -> Option<(Option<String>, &[u8])> {
   Some((text(class), data.get(..length)?))
 }
 
-/// A file dropped into a document, as the packager keeps it: its label, the path it came
-/// from, a path it was copied to, and then its bytes with their length before them.
-fn packaged(mut data: &[u8]) -> Option<(Option<String>, &[u8])> {
-  data = data.get(2..)?;
-  let label = terminated(&mut data)?;
-  let _from = terminated(&mut data)?;
-  let _kind = u32_of(&mut data)?;
-  let _length_of_path = u32_of(&mut data)?;
-  let _copied_to = terminated(&mut data)?;
-  let length = usize::try_from(u32_of(&mut data)?).ok()?;
-  Some((text(label), data.get(..length)?))
-}
-
-/// The streams of a compound file that hold a file whole, in the order they are looked for:
-/// a mail attachment, a document of 2007 or later, and what Acrobat embeds.
-const HOLDING: [&str; 3] = ["AttachContents", "Package", "CONTENTS"];
-
 /// The embedded file, from an object's class and its data.
 fn embedded(stated: &str, data: &[u8]) -> Embedded {
   let stated = text(stated.as_bytes());
@@ -195,7 +170,7 @@ fn embedded(stated: &str, data: &[u8]) -> Embedded {
     };
   };
   let class = class.or(stated);
-  if let Some(mut streams) = cfb::streams(native) {
+  if let Some(mut streams) = CompoundFile::open(native).ok().map(|file| file.streams()) {
     let held = HOLDING
       .iter()
       .find_map(|name| streams.iter().position(|stream| stream.name == *name));

@@ -85,6 +85,8 @@ pub enum Parser {
   Tiffdown,
   Jpegdown,
   Rtfdown,
+  Xlsdown,
+  Docdown,
 }
 
 impl From<mimedown::Parser> for Parser {
@@ -99,6 +101,8 @@ impl From<mimedown::Parser> for Parser {
       mimedown::Parser::Tiffdown => Parser::Tiffdown,
       mimedown::Parser::Jpegdown => Parser::Jpegdown,
       mimedown::Parser::Rtfdown => Parser::Rtfdown,
+      mimedown::Parser::Xlsdown => Parser::Xlsdown,
+      mimedown::Parser::Docdown => Parser::Docdown,
     }
   }
 }

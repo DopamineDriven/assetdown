@@ -55,3 +55,18 @@ fn ranges_are_given_in_a1_form_and_an_empty_sheet_has_no_used_range() {
     (0, 0)
   );
 }
+
+#[test]
+fn what_kind_of_file_the_workbook_came_from_is_passed_on() {
+  let mut workbook = form();
+  let plain = metadata_of(&workbook);
+  assert!(!plain.has_macros && !plain.is_template);
+
+  workbook.has_macros = true;
+  let enabled = metadata_of(&workbook);
+  assert!(enabled.has_macros && !enabled.is_template);
+
+  workbook.is_template = true;
+  let template = metadata_of(&workbook);
+  assert!(template.has_macros && template.is_template);
+}

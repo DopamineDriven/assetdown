@@ -30,6 +30,6 @@ pub use meta::{Metadata, SheetInfo};
 pub use ooxmldown::DocProps;
 pub use workbook::{
   Cell, CellValue, ColSpec, FontSpec, Horizontal, MAX_CELLS, MAX_EXPANDED_FORMULA_BYTES,
-  MAX_FORMULA_CHARS, MAX_MERGES, RowSpec, Sheet, Styles, Vertical, Workbook, Xf, format_code,
-  parse_workbook,
+  MAX_FORMULA_CHARS, MAX_MERGES, RowSpec, Sheet, Stored, Styles, Vertical, Workbook, Xf,
+  format_code, parse_workbook,
 };

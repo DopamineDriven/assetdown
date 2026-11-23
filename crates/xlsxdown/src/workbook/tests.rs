@@ -1,4 +1,5 @@
 use super::*;
+use crate::testing::{Parts, SheetSpec};
 
 #[test]
 fn styles_count_every_xf_and_resolve_format_codes() {
@@ -377,4 +378,110 @@ fn a_master_longer_than_a_formula_may_be_is_not_written_out() {
     "{:?}",
     sheet.warnings
   );
+}
+
+const PLAIN_MAIN: &str =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
+const MACRO_MAIN: &str = "application/vnd.ms-excel.sheet.macroEnabled.main+xml";
+const TEMPLATE_MAIN: &str =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.template.main+xml";
+const MACRO_TEMPLATE_MAIN: &str = "application/vnd.ms-excel.template.macroEnabled.main+xml";
+
+/// A file of one sheet with 42 in its first cell, its main part of the content type given.
+fn file_of_kind(main_type: &str) -> Vec<u8> {
+  let sheet = SheetSpec::visible(
+    "Costs",
+    r#"<sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData>"#,
+  );
+  Parts::workbook(&[sheet], "").package(main_type)
+}
+
+/// Whether the file opened carries macros, and whether it is a template.
+fn nature_of(main_type: &str) -> (bool, bool) {
+  let workbook = Workbook::open(file_of_kind(main_type)).unwrap();
+  assert_eq!(
+    workbook.sheets[0].cells[&(0, 0)].value,
+    CellValue::Number(42.0),
+    "{main_type}"
+  );
+  (workbook.has_macros, workbook.is_template)
+}
+
+#[test]
+fn a_plain_workbook_carries_no_macros_and_is_no_template() {
+  assert_eq!(nature_of(PLAIN_MAIN), (false, false));
+}
+
+#[test]
+fn a_macro_enabled_workbook_opens_and_says_it_can_carry_macros() {
+  assert_eq!(nature_of(MACRO_MAIN), (true, false));
+}
+
+#[test]
+fn a_template_opens_and_says_it_is_one() {
+  assert_eq!(nature_of(TEMPLATE_MAIN), (false, true));
+}
+
+#[test]
+fn a_macro_enabled_template_says_both() {
+  assert_eq!(nature_of(MACRO_TEMPLATE_MAIN), (true, true));
+}
+
+#[test]
+fn a_stored_value_is_typed_and_shown_through_the_format_its_style_selects() {
+  let xf = |num_fmt_id: u32| Xf {
+    num_fmt_id,
+    font_id: 0,
+    horizontal: Horizontal::General,
+    vertical: Vertical::Bottom,
+    wrap: false,
+    indent: 0,
+  };
+  let styles = Styles {
+    xfs: vec![xf(0), xf(14), xf(4)],
+    ..Styles::default()
+  };
+  let mut warnings = Vec::new();
+  let mut cell =
+    |stored: Stored, style: usize| Cell::styled(stored, style, &styles, false, "A1", &mut warnings);
+
+  let date = cell(Stored::number(46349.0), 1);
+  assert_eq!(date.value, CellValue::Date("2026-11-23".to_string()));
+  assert_eq!(
+    (date.text.as_str(), date.raw.as_str()),
+    ("11/23/2026", "46349")
+  );
+  assert_eq!(date.format.as_deref(), Some("m/d/yyyy"));
+
+  let amount = cell(Stored::number(1234.5), 2);
+  assert_eq!(amount.value, CellValue::Number(1234.5));
+  assert_eq!(
+    (amount.text.as_str(), amount.raw.as_str()),
+    ("1,234.50", "1234.5")
+  );
+
+  let plain = cell(Stored::number(42.0), 0);
+  assert_eq!((plain.text.as_str(), plain.format.as_deref()), ("42", None));
+
+  // Only a number goes through a number format.
+  let label = cell(Stored::text("Total".to_string()), 1);
+  assert_eq!(label.value, CellValue::Text("Total".to_string()));
+  assert_eq!(
+    (label.text.as_str(), label.raw.as_str()),
+    ("Total", "Total")
+  );
+  let on = cell(Stored::boolean(true), 2);
+  assert_eq!(
+    (on.value.clone(), on.text.as_str()),
+    (CellValue::Boolean(true), "TRUE")
+  );
+  let error = cell(Stored::error("#DIV/0!".to_string()), 0);
+  assert_eq!(error.value, CellValue::Error("#DIV/0!".to_string()));
+
+  // What the caller knows and the format does not is left for the caller to set.
+  assert_eq!(
+    (date.formula.clone(), date.cached, date.merge),
+    (None, false, None)
+  );
+  assert!(warnings.is_empty(), "{warnings:?}");
 }

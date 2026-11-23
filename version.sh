@@ -5,7 +5,7 @@
 #   ./version.sh <package> <version>
 #   ./version.sh pdfdown 0.17.0
 #
-#   <package>  pdfdown, tiffdown, jpegdown, rtfdown, xlsxdown, docxdown, pptxdown, audiodown, videodown, or mimedown
+#   <package>  pdfdown, tiffdown, jpegdown, rtfdown, xlsxdown, xlsdown, docxdown, docdown, pptxdown, audiodown, videodown, or mimedown
 #   <version>  a semver version: 1.2.3, or 1.2.3-next.1 for a prerelease
 #
 # Every file is read before any is written, so a file that is missing or states no version
@@ -24,7 +24,7 @@ usage() {
   cat >&2 <<'EOF'
 usage: ./version.sh <package> <version>
 
-  <package>  pdfdown, tiffdown, jpegdown, rtfdown, xlsxdown, docxdown, pptxdown, audiodown, videodown, or mimedown
+  <package>  pdfdown, tiffdown, jpegdown, rtfdown, xlsxdown, xlsdown, docxdown, docdown, pptxdown, audiodown, videodown, or mimedown
   <version>  a semver version: 1.2.3, or 1.2.3-next.1 for a prerelease
 
 example: ./version.sh pdfdown 0.17.0
@@ -110,7 +110,7 @@ case "$package" in
       "crates/$package/Cargo.toml"
     )
     ;;
-  rtfdown)
+  rtfdown | xlsdown | docdown)
     files=(
       "crates/$package-node/package.json"
       "crates/$package-node/wasm/package.json"

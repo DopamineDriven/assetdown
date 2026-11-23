@@ -21,6 +21,7 @@ on:
     paths:
       - crates/rtfdown-node/**
       - crates/rtfdown/**
+      - crates/cfbdown/**
       - crates/contentdown/**
       - Cargo.toml
       - Cargo.lock
@@ -31,6 +32,7 @@ on:
     paths:
       - crates/rtfdown-node/**
       - crates/rtfdown/**
+      - crates/cfbdown/**
       - crates/contentdown/**
       - Cargo.toml
       - Cargo.lock

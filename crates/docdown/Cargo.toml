@@ -1,0 +1,16 @@
+[package]
+description            = "doc extraction: the text, tables, pictures, and embedded files of a Word 97 to 2003 document"
+edition.workspace      = true
+keywords               = ["doc", "word", "extraction", "documents"]
+license.workspace      = true
+name                   = "docdown"
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.1.0"
+
+[dependencies]
+cfbdown.workspace     = true
+contentdown.workspace = true
+encoding_rs.workspace = true
+flate2.workspace      = true
+thiserror.workspace   = true

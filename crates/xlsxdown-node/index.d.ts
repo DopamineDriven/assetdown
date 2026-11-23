@@ -552,5 +552,9 @@ export interface XlsxMeta {
   commentCount: number
   /** Whether dates count from 1904, as workbooks from old versions of Excel for Mac do. */
   date1904: boolean
+  /** The file is macro-enabled. Macros are never read or run. */
+  hasMacros: boolean
+  /** The file is a template. */
+  isTemplate: boolean
   sheets: Array<SheetMeta>
 }

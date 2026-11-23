@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "arrowParens": "always",
+  "insertFinalNewline": true,
+  "trailingComma": "none",
+  "semi": true,
+  "printWidth": 80,
+  "tabWidth": 2,
+  "sortImports": true,
+  "useTabs": false,
+  "singleQuote": false,
+  "ignorePatterns": [
+    "target",
+    ".yarn",
+    "index.js",
+    "*.wasi-browser.js",
+    "*.wasi.cjs",
+    "wasi-worker-browser.mjs",
+    "wasi-worker.mjs",
+    ".yarnrc.yml",
+    "**/*.toml",
+    "*.wasi.d.cts",
+    "*.wasip1.cjs",
+    "*.wasip1-browser.js",
+    "*.wasip1-deferred.js",
+    "*.wasip1.d.cts",
+    "*-deferred.d.ts"
+  ]
+}

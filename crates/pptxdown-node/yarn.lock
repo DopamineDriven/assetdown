@@ -5,14 +5,312 @@ __metadata:
   version: 10
   cacheKey: 10c0
 
-"@d0paminedriven/fs@npm:^11.0.0":
-  version: 11.0.0
-  resolution: "@d0paminedriven/fs@npm:11.0.0"
+"@d0paminedriven/fs@npm:^12.3.0":
+  version: 12.3.0
+  resolution: "@d0paminedriven/fs@npm:12.3.0"
   dependencies:
-    dotenv: "npm:^17.2.3"
-    dotenv-expand: "npm:^12.0.3"
-    fflate: "npm:^0.8.2"
-  checksum: 10c0/9100227b6b1fe26718403c02dc9f82c14000c78bc172c7e81f71ec8c20a026abad0c9141db47ca8954a5a956f3b9882efa881de928a273bed052ae91bbdbd21e
+    "@d0paminedriven/mimedown": "npm:^0.4.0"
+    "@d0paminedriven/pdfdown": "npm:^0.20.0"
+    dotenv: "npm:^18.0.10"
+    dotenv-expand: "npm:^1000.0.0"
+    fflate: "npm:^0.8.3"
+  checksum: 10c0/c6f6705482398db545e604bbcd52304cf13a8ac68c213773c1fb68ffd064ea9ff422dd66bbdba3e5ac1d9ad7a007699ba7231c3660193a28f0fff9827bbb8ef9
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-android-arm64@npm:0.4.0":
+  version: 0.4.0
+  resolution: "@d0paminedriven/mimedown-android-arm64@npm:0.4.0"
+  conditions: os=android & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-darwin-arm64@npm:0.4.0":
+  version: 0.4.0
+  resolution: "@d0paminedriven/mimedown-darwin-arm64@npm:0.4.0"
+  conditions: os=darwin & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-darwin-x64@npm:0.4.0":
+  version: 0.4.0
+  resolution: "@d0paminedriven/mimedown-darwin-x64@npm:0.4.0"
+  conditions: os=darwin & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-freebsd-x64@npm:0.4.0":
+  version: 0.4.0
+  resolution: "@d0paminedriven/mimedown-freebsd-x64@npm:0.4.0"
+  conditions: os=freebsd & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-linux-arm-gnueabihf@npm:0.4.0":
+  version: 0.4.0
+  resolution: "@d0paminedriven/mimedown-linux-arm-gnueabihf@npm:0.4.0"
+  conditions: os=linux & cpu=arm
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-linux-arm64-gnu@npm:0.4.0":
+  version: 0.4.0
+  resolution: "@d0paminedriven/mimedown-linux-arm64-gnu@npm:0.4.0"
+  conditions: os=linux & cpu=arm64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-linux-arm64-musl@npm:0.4.0":
+  version: 0.4.0
+  resolution: "@d0paminedriven/mimedown-linux-arm64-musl@npm:0.4.0"
+  conditions: os=linux & cpu=arm64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-linux-x64-gnu@npm:0.4.0":
+  version: 0.4.0
+  resolution: "@d0paminedriven/mimedown-linux-x64-gnu@npm:0.4.0"
+  conditions: os=linux & cpu=x64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-linux-x64-musl@npm:0.4.0":
+  version: 0.4.0
+  resolution: "@d0paminedriven/mimedown-linux-x64-musl@npm:0.4.0"
+  conditions: os=linux & cpu=x64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-wasm32-wasi@npm:0.4.0":
+  version: 0.4.0
+  resolution: "@d0paminedriven/mimedown-wasm32-wasi@npm:0.4.0"
+  dependencies:
+    "@emnapi/core": "npm:2.0.0-alpha.5"
+    "@emnapi/runtime": "npm:2.0.0-alpha.5"
+    "@napi-rs/wasm-runtime": "npm:~1.2.7"
+  conditions: cpu=wasm32
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-win32-arm64-msvc@npm:0.4.0":
+  version: 0.4.0
+  resolution: "@d0paminedriven/mimedown-win32-arm64-msvc@npm:0.4.0"
+  conditions: os=win32 & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-win32-ia32-msvc@npm:0.4.0":
+  version: 0.4.0
+  resolution: "@d0paminedriven/mimedown-win32-ia32-msvc@npm:0.4.0"
+  conditions: os=win32 & cpu=ia32
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-win32-x64-msvc@npm:0.4.0":
+  version: 0.4.0
+  resolution: "@d0paminedriven/mimedown-win32-x64-msvc@npm:0.4.0"
+  conditions: os=win32 & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown@npm:^0.4.0":
+  version: 0.4.0
+  resolution: "@d0paminedriven/mimedown@npm:0.4.0"
+  dependencies:
+    "@d0paminedriven/mimedown-android-arm64": "npm:0.4.0"
+    "@d0paminedriven/mimedown-darwin-arm64": "npm:0.4.0"
+    "@d0paminedriven/mimedown-darwin-x64": "npm:0.4.0"
+    "@d0paminedriven/mimedown-freebsd-x64": "npm:0.4.0"
+    "@d0paminedriven/mimedown-linux-arm-gnueabihf": "npm:0.4.0"
+    "@d0paminedriven/mimedown-linux-arm64-gnu": "npm:0.4.0"
+    "@d0paminedriven/mimedown-linux-arm64-musl": "npm:0.4.0"
+    "@d0paminedriven/mimedown-linux-x64-gnu": "npm:0.4.0"
+    "@d0paminedriven/mimedown-linux-x64-musl": "npm:0.4.0"
+    "@d0paminedriven/mimedown-wasm32-wasi": "npm:0.4.0"
+    "@d0paminedriven/mimedown-win32-arm64-msvc": "npm:0.4.0"
+    "@d0paminedriven/mimedown-win32-ia32-msvc": "npm:0.4.0"
+    "@d0paminedriven/mimedown-win32-x64-msvc": "npm:0.4.0"
+  dependenciesMeta:
+    "@d0paminedriven/mimedown-android-arm64":
+      optional: true
+    "@d0paminedriven/mimedown-darwin-arm64":
+      optional: true
+    "@d0paminedriven/mimedown-darwin-x64":
+      optional: true
+    "@d0paminedriven/mimedown-freebsd-x64":
+      optional: true
+    "@d0paminedriven/mimedown-linux-arm-gnueabihf":
+      optional: true
+    "@d0paminedriven/mimedown-linux-arm64-gnu":
+      optional: true
+    "@d0paminedriven/mimedown-linux-arm64-musl":
+      optional: true
+    "@d0paminedriven/mimedown-linux-x64-gnu":
+      optional: true
+    "@d0paminedriven/mimedown-linux-x64-musl":
+      optional: true
+    "@d0paminedriven/mimedown-wasm32-wasi":
+      optional: true
+    "@d0paminedriven/mimedown-win32-arm64-msvc":
+      optional: true
+    "@d0paminedriven/mimedown-win32-ia32-msvc":
+      optional: true
+    "@d0paminedriven/mimedown-win32-x64-msvc":
+      optional: true
+  checksum: 10c0/be85619e8e1246e754f5322fb922ee38c4320ff7cb1f64198227118be0ce18b236f4c7409cfc78af63a598fd8deb90990f49dbaea7c0ed76e0408dee347530c6
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-android-arm-eabi@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-android-arm-eabi@npm:0.20.0"
+  conditions: os=android & cpu=arm
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-android-arm64@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-android-arm64@npm:0.20.0"
+  conditions: os=android & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-darwin-arm64@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-darwin-arm64@npm:0.20.0"
+  conditions: os=darwin & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-darwin-x64@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-darwin-x64@npm:0.20.0"
+  conditions: os=darwin & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-freebsd-x64@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-freebsd-x64@npm:0.20.0"
+  conditions: os=freebsd & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-linux-arm-gnueabihf@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-linux-arm-gnueabihf@npm:0.20.0"
+  conditions: os=linux & cpu=arm
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-linux-arm64-gnu@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-linux-arm64-gnu@npm:0.20.0"
+  conditions: os=linux & cpu=arm64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-linux-arm64-musl@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-linux-arm64-musl@npm:0.20.0"
+  conditions: os=linux & cpu=arm64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-linux-x64-gnu@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-linux-x64-gnu@npm:0.20.0"
+  conditions: os=linux & cpu=x64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-linux-x64-musl@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-linux-x64-musl@npm:0.20.0"
+  conditions: os=linux & cpu=x64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-wasm32-wasi@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-wasm32-wasi@npm:0.20.0"
+  dependencies:
+    "@emnapi/core": "npm:2.0.0-alpha.5"
+    "@emnapi/runtime": "npm:2.0.0-alpha.5"
+    "@napi-rs/wasm-runtime": "npm:~1.2.7"
+  conditions: cpu=wasm32
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-win32-arm64-msvc@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-win32-arm64-msvc@npm:0.20.0"
+  conditions: os=win32 & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-win32-ia32-msvc@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-win32-ia32-msvc@npm:0.20.0"
+  conditions: os=win32 & cpu=ia32
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-win32-x64-msvc@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-win32-x64-msvc@npm:0.20.0"
+  conditions: os=win32 & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown@npm:^0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown@npm:0.20.0"
+  dependencies:
+    "@d0paminedriven/pdfdown-android-arm-eabi": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-android-arm64": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-darwin-arm64": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-darwin-x64": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-freebsd-x64": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-linux-arm-gnueabihf": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-linux-arm64-gnu": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-linux-arm64-musl": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-linux-x64-gnu": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-linux-x64-musl": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-wasm32-wasi": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-win32-arm64-msvc": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-win32-ia32-msvc": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-win32-x64-msvc": "npm:0.20.0"
+  dependenciesMeta:
+    "@d0paminedriven/pdfdown-android-arm-eabi":
+      optional: true
+    "@d0paminedriven/pdfdown-android-arm64":
+      optional: true
+    "@d0paminedriven/pdfdown-darwin-arm64":
+      optional: true
+    "@d0paminedriven/pdfdown-darwin-x64":
+      optional: true
+    "@d0paminedriven/pdfdown-freebsd-x64":
+      optional: true
+    "@d0paminedriven/pdfdown-linux-arm-gnueabihf":
+      optional: true
+    "@d0paminedriven/pdfdown-linux-arm64-gnu":
+      optional: true
+    "@d0paminedriven/pdfdown-linux-arm64-musl":
+      optional: true
+    "@d0paminedriven/pdfdown-linux-x64-gnu":
+      optional: true
+    "@d0paminedriven/pdfdown-linux-x64-musl":
+      optional: true
+    "@d0paminedriven/pdfdown-wasm32-wasi":
+      optional: true
+    "@d0paminedriven/pdfdown-win32-arm64-msvc":
+      optional: true
+    "@d0paminedriven/pdfdown-win32-ia32-msvc":
+      optional: true
+    "@d0paminedriven/pdfdown-win32-x64-msvc":
+      optional: true
+  checksum: 10c0/840dbd5a458686cebbb192f156514426a7442b1e445fcac5ccf8076fcec0ed34b01aa9c2f5635e32b6a779765ea17411b59fac2ac590adb6200533a25059034a
   languageName: node
   linkType: hard
 
@@ -20,7 +318,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@d0paminedriven/pptxdown@workspace:."
   dependencies:
-    "@d0paminedriven/fs": "npm:^11.0.0"
+    "@d0paminedriven/fs": "npm:^12.3.0"
     "@d0paminedriven/type-utils": "npm:^1.3.0"
     "@emnapi/core": "npm:2.0.0-alpha.5"
     "@emnapi/runtime": "npm:2.0.0-alpha.5"
@@ -35,11 +333,11 @@ __metadata:
     dotenv: "npm:^18.0.10"
     emnapi: "npm:2.0.0-alpha.5"
     husky: "npm:^9.1.7"
-    lint-staged: "npm:^17.6.1"
-    npm-run-all2: "npm:^9.0.4"
+    lint-staged: "npm:^17.6.2"
+    npm-run-all2: "npm:^9.1.0"
     oxfmt: "npm:^0.79.0"
     oxlint: "npm:^1.94.0"
-    tinybench: "npm:^6.2.3"
+    tinybench: "npm:^6.2.4"
     tslib: "npm:^2.9.1"
     tsx: "npm:^4.23.15"
     typescript: "npm:^7.0.2"
@@ -1904,17 +2202,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ansi-styles@npm:^7.0.0":
-  version: 7.0.0
-  resolution: "ansi-styles@npm:7.0.0"
-  checksum: 10c0/406cf8984c682d632738964db918d895d84ec4ff39bffd0dddc81c4a4669a77b57adb0b58b26a1cc6ebcff0e30581d5946fc9b6f0394f6d9ac0b42f5ea97d216
-  languageName: node
-  linkType: hard
-
 "argparse@npm:^3.0.3":
   version: 3.0.4
   resolution: "argparse@npm:3.0.4"
   checksum: 10c0/845346e39e677b46f8558cece7c8dad1f7045f8b86af33356d8565b26a16940bf770a14a51d6da40ce76554a141e0e95b514d055d1da17a2f1b42df7d523fa0f
+  languageName: node
+  linkType: hard
+
+"argsclopts@npm:^1.1.1":
+  version: 1.1.1
+  resolution: "argsclopts@npm:1.1.1"
+  checksum: 10c0/3dc60b93a03f18bbb7f14d02ca32960d3408ecfd2de3b6d3239e186b1d81e3c17f28178ed8c93b68165aa7f26206007fd746514db0eb5213353b7c869830a9af
   languageName: node
   linkType: hard
 
@@ -2001,26 +2299,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"dotenv-expand@npm:^12.0.3":
-  version: 12.0.3
-  resolution: "dotenv-expand@npm:12.0.3"
-  dependencies:
-    dotenv: "npm:^16.4.5"
-  checksum: 10c0/0824bdc74fc816a28b0744b7853a23e046602e9616c82121dfdae21ebc13c6e89afeb773e794e97c35d48be2be0a990fbca721ee3869a49c04210a58a3cf296f
-  languageName: node
-  linkType: hard
-
-"dotenv@npm:^16.4.5":
-  version: 16.6.1
-  resolution: "dotenv@npm:16.6.1"
-  checksum: 10c0/15ce56608326ea0d1d9414a5c8ee6dcf0fffc79d2c16422b4ac2268e7e2d76ff5a572d37ffe747c377de12005f14b3cc22361e79fc7f1061cce81f77d2c973dc
-  languageName: node
-  linkType: hard
-
-"dotenv@npm:^17.2.3":
-  version: 17.4.2
-  resolution: "dotenv@npm:17.4.2"
-  checksum: 10c0/164f8e77a646c8446867d5b588d26ea6005c8ea7c5eb41cf926f6113d23f2191355f6e0cfd95ea9bab98394a5b0a3f1e51a8399711b666fe55cc7b0bd745f942
+"dotenv-expand@npm:^1000.0.0":
+  version: 1000.0.0
+  resolution: "dotenv-expand@npm:1000.0.0"
+  checksum: 10c0/c8f897db0276f729445a5b5cbd022f4301a9c7d53f6b5007ba1545cb99378fbd36a16568cb1b390e9b466dddbfd5f298d025431eaa0569bb6f451e31e57e5fe0
   languageName: node
   linkType: hard
 
@@ -2195,7 +2477,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"fflate@npm:^0.8.2":
+"fflate@npm:^0.8.3":
   version: 0.8.3
   resolution: "fflate@npm:0.8.3"
   checksum: 10c0/eab181ca37f5348ae76d4b6f840e0026e30220e33153289ac942222d8b9638237d486507dbcc09878d724095bd354993a2ee48bbee99c8f2c6440d4448719aa7
@@ -2285,9 +2567,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lint-staged@npm:^17.6.1":
-  version: 17.6.1
-  resolution: "lint-staged@npm:17.6.1"
+"lint-staged@npm:^17.6.2":
+  version: 17.6.2
+  resolution: "lint-staged@npm:17.6.2"
   dependencies:
     picomatch: "npm:^4.0.7"
     string-argv: "npm:^0.4.0"
@@ -2298,14 +2580,7 @@ __metadata:
       optional: true
   bin:
     lint-staged: bin/lint-staged.js
-  checksum: 10c0/4c7433079bc174c531ccaab68bc7171f726a65c1961abbc9b26617f6d427bae76c926688124c2c2519c7540150755025207644dba50de0ba3ce65bfb1b05f7e8
-  languageName: node
-  linkType: hard
-
-"memorystream@npm:^0.3.1":
-  version: 0.3.1
-  resolution: "memorystream@npm:0.3.1"
-  checksum: 10c0/4bd164657711d9747ff5edb0508b2944414da3464b7fe21ac5c67cf35bba975c4b446a0124bd0f9a8be54cfc18faf92e92bd77563a20328b1ccf2ff04e9f39b9
+  checksum: 10c0/9a5831c45885ae2a3cf6c6eaf16c8313ee746512523d26a5e9d87a78e4d1a1835350f08623e1d34a8aa01e59ea3750d46d1b0a4d188d4ee1208a07d1977be7b5
   languageName: node
   linkType: hard
 
@@ -2377,13 +2652,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"npm-run-all2@npm:^9.0.4":
-  version: 9.0.4
-  resolution: "npm-run-all2@npm:9.0.4"
+"npm-run-all2@npm:^9.1.0":
+  version: 9.1.0
+  resolution: "npm-run-all2@npm:9.1.0"
   dependencies:
-    ansi-styles: "npm:^7.0.0"
+    argsclopts: "npm:^1.1.1"
     cross-spawn: "npm:^7.0.6"
-    memorystream: "npm:^0.3.1"
     picomatch: "npm:^4.0.2"
     pidtree: "npm:^1.0.0"
     read-package-json-fast: "npm:^6.0.0"
@@ -2394,7 +2668,7 @@ __metadata:
     npm-run-all2: bin/npm-run-all/index.js
     run-p: bin/run-p/index.js
     run-s: bin/run-s/index.js
-  checksum: 10c0/fe10762bb9c4093dd2bf70b4a593ef5d8f1d4c3486e15abd96842b9dd1d9f706ced440387f118a216110404e2987795b5d1e9cdb7e13afdeb7f29601b73a3e07
+  checksum: 10c0/2b9cd42da31d08e4fd7a25aa15ef66f602d670ea63bdf3923f00b8ca77d5929d1ac9848ec9e920de4f8f8d41b40614764a8952e4f99061bb79f960fae153779e
   languageName: node
   linkType: hard
 
@@ -2674,10 +2948,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tinybench@npm:^6.2.3":
-  version: 6.2.3
-  resolution: "tinybench@npm:6.2.3"
-  checksum: 10c0/baf0c2e287e8a38677602243d4169ed217dc740a773479ccb232d48bd0ee72f59ac4370600e12364ce91a111d59dd4c93d5c79c586e412f4cd49c4db6eb6f2e0
+"tinybench@npm:^6.2.4":
+  version: 6.2.4
+  resolution: "tinybench@npm:6.2.4"
+  checksum: 10c0/a5ca5727be05157819bc196e4a53f01b97fac84bff70e2966dc71946b1b90119f3e666a8ac37e3acb2bc9997fd2a031051f9a3309e7655aedd5acd0efcfc7046
   languageName: node
   linkType: hard
 

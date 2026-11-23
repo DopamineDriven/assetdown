@@ -145,14 +145,25 @@ describe("wasm32-wasi build", { skip }, () => {
     }
   );
   it(
-    "should throw from the constructor and reject from openAsync for macro.xlsm",
+    "should throw from the constructor and reject from openAsync for strict.xlsx",
     {},
     async () => {
       const message =
-        "unsupported format: macro-enabled workbook (not supported in this release)";
+        "unsupported format: Strict OOXML workbook (not supported in this release)";
+      const strict = t.getFixtureBuff("strict");
+      assert.throws(() => new XlsxDown(strict), { message });
+      await assert.rejects(XlsxDown.openAsync(strict), { message });
+    }
+  );
+  it(
+    "should read macro.xlsm, a macro-enabled workbook, on this thread and on a worker",
+    {},
+    async () => {
       const macro = t.getFixtureBuff("macro");
-      assert.throws(() => new XlsxDown(macro), { message });
-      await assert.rejects(XlsxDown.openAsync(macro), { message });
+      const meta = new XlsxDown(macro).metadata();
+      assert.equal(meta.hasMacros, true);
+      assert.equal(meta.cellCount, 4);
+      assert.deepEqual((await XlsxDown.openAsync(macro)).metadata(), meta);
     }
   );
   it(

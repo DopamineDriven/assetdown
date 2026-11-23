@@ -1,6 +1,6 @@
 # xlsdown: notes
 
-Status: **planned** (2026-11-22). Nothing is built.
+Status: **built** (2026-11-23), not yet released. `cfbdown`, `xlsdown`, and `xlsdown-node` are written and tested; see [What is built](#5-what-is-built).
 
 Some workbooks are in the format Excel wrote from 1997 to 2003: a compound file with the workbook inside it as one stream of records. `xlsdown` reads them into the model `xlsxdown` already gives, so that everything after the reading is shared. Its companion is [docdown.md](docdown.md), and both stand on the same compound-file reader.
 
@@ -42,6 +42,20 @@ A record no step reads is passed over by its length.
 3. A sheet's cells, with merged ranges, column widths, and row heights.
 4. `xlsxdown`'s model filled from them, so that cells, geometry, pages, and the invoice follow.
 5. `xlsdown-node`, and the route in `mimedown`.
+
+## 5. What is built
+
+- **`cfbdown`** (18 tests): `CompoundFile::open`, a stream by its path (`ObjectPool/_1/Package`, names matched whatever their case), what a storage holds, every stream by its own name (what `rtfdown` asks for), and a storage handed back as a compound file of its own. `compound` writes a file, with the entries of each storage in the order the format looks them up in. The writer is public because every crate's tests build their files with it, and `docdown` needs it to give back an embedded workbook.
+- **`xlsxdown`**: `Cell::styled` and `Stored` are public. They are how a number is typed and shown through its number format, and `xlsdown` calls them, so the two readers cannot drift. `Workbook` has `has_macros` and `is_template`.
+- **`xlsdown`** (24 tests): `xlsdown::open(bytes)` gives an `xlsxdown::Workbook`. Read: sheets with how each is shown, shared strings (across records, with rich text and phonetic notes passed over), fonts, number formats, cell formats, the date system, numbers in each of the three ways a sheet keeps them, text, booleans, errors, formulas by their last value, the sheet's extent, column widths, row heights, hidden rows and columns, merged ranges, print areas, and counts of pictures, charts, links, comments, and pivot tables. A chart's own records inside a sheet are not the sheet's cells.
+- **Formulas**: a cell with a formula of its own has `formula` present and empty; one that follows a shared formula has none and names the cell that holds it. Counts follow from that.
+- **Refused by name**: an encrypted workbook, an Excel 5 or 95 workbook, and an Excel 2, 3, or 4 worksheet.
+- **`xlsdown-node`**: `XlsDown` with the verbs of `XlsxDown`, and `spreadsheetCells` with its async twin. Its specs build `.xls` files in code (`__test__/xls-test.ts`): 17 native, 5 WebAssembly.
+- **`@d0paminedriven/xlsdown-wasm`** (`crates/xlsdown-node/wasm`): the WebAssembly-only package, laid out as `rtfdown-node/wasm` is, with both builds, the worker entry (`XlsWorker`), and its tests: 21, of which 4 run on a page in Chrome. The worker answers `spreadsheetCellsAsync`, which is the one verb the binding has as a function; the rest are methods of `XlsDown`, which does not cross to a worker.
+- **`mimedown`**: `application/vnd.ms-excel` names `xlsdown` as its parser.
+- **Checked against LibreOffice**: the public `.xlsx` fixtures written out as `.xls` in scratch read the same, cell for cell, apart from what LibreOffice itself changed in writing them.
+
+Not read yet, beyond what is parked below: what the workbook says about itself (title, author, and dates are in a property stream of their own), tables, and whether a file is a template (an `.xlt` holds nothing that says so).
 
 ## Parked
 

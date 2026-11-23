@@ -1,0 +1,15 @@
+[package]
+description            = "xls extraction: the cells, formats, and sheet geometry of an Excel 97 to 2003 workbook"
+edition.workspace      = true
+keywords               = ["xls", "excel", "extraction", "spreadsheet"]
+license.workspace      = true
+name                   = "xlsdown"
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.1.0"
+
+[dependencies]
+cfbdown.workspace     = true
+contentdown.workspace = true
+thiserror.workspace   = true
+xlsxdown.workspace    = true

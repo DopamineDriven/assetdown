@@ -2,7 +2,10 @@
 members = [
   "crates/audiodown",
   "crates/audiodown-node",
+  "crates/cfbdown",
   "crates/contentdown",
+  "crates/docdown",
+  "crates/docdown-node",
   "crates/docxdown",
   "crates/docxdown-node",
   "crates/jpegdown",
@@ -23,6 +26,8 @@ members = [
   "crates/tiffdown-node",
   "crates/videodown",
   "crates/videodown-node",
+  "crates/xlsdown",
+  "crates/xlsdown-node",
   "crates/xlsxdown",
   "crates/xlsxdown-node"
 ]
@@ -76,7 +81,10 @@ zip = { version = "9.5.1", default-features = false, features = [
 
 audiodown      = { path = "crates/audiodown" }
 audiodown-node = { path = "crates/audiodown-node" }
+cfbdown        = { path = "crates/cfbdown" }
 contentdown    = { path = "crates/contentdown" }
+docdown        = { path = "crates/docdown" }
+docdown-node   = { path = "crates/docdown-node" }
 docxdown       = { path = "crates/docxdown" }
 docxdown-node  = { path = "crates/docxdown-node" }
 jpegdown       = { path = "crates/jpegdown" }
@@ -97,6 +105,8 @@ tiffdown       = { path = "crates/tiffdown" }
 tiffdown-node  = { path = "crates/tiffdown-node" }
 videodown      = { path = "crates/videodown" }
 videodown-node = { path = "crates/videodown-node" }
+xlsdown        = { path = "crates/xlsdown" }
+xlsdown-node   = { path = "crates/xlsdown-node" }
 xlsxdown       = { path = "crates/xlsxdown" }
 xlsxdown-node  = { path = "crates/xlsxdown-node" }
 

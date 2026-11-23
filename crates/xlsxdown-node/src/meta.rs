@@ -81,6 +81,10 @@ pub struct XlsxMeta {
   pub comment_count: u32,
   /// Whether dates count from 1904, as workbooks from old versions of Excel for Mac do.
   pub date1904: bool,
+  /// The file is macro-enabled. Macros are never read or run.
+  pub has_macros: bool,
+  /// The file is a template.
+  pub is_template: bool,
   pub sheets: Vec<SheetMeta>,
 }
 
@@ -141,6 +145,8 @@ pub fn metadata_of(workbook: &Workbook) -> XlsxMeta {
     link_count: counts.link_count,
     comment_count: counts.comment_count,
     date1904: workbook.date1904,
+    has_macros: workbook.has_macros,
+    is_template: workbook.is_template,
     sheets: counts.sheets.into_iter().map(sheet_meta).collect(),
   }
 }

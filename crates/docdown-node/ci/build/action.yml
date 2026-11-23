@@ -1,0 +1,70 @@
+name: Build docdown-node
+description: Build the addon for one target on this runner and upload it as an artifact.
+
+inputs:
+  target:
+    description: The Rust target triple, as listed in package.json napi.targets.
+    required: true
+  flags:
+    description: Extra `napi build` flags for the target, from ci/matrix.ts.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        targets: ${{ inputs.target }}
+    - name: Cache cargo
+      uses: actions/cache@v5
+      with:
+        # The cargo workspace root is the repository root, so `target/` is there.
+        path: |
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          ~/.napi-rs
+          .cargo-cache
+          target/
+        key: docdown-node-${{ inputs.target }}-cargo-${{ runner.os }}
+    - uses: mlugg/setup-zig@v2
+      if: ${{ contains(inputs.target, 'musl') }}
+      with:
+        version: 0.14.1
+    - name: Install cargo-zigbuild
+      uses: taiki-e/install-action@v2
+      if: ${{ contains(inputs.target, 'musl') }}
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      with:
+        tool: cargo-zigbuild
+    - name: Build
+      shell: bash
+      working-directory: crates/docdown-node
+      env:
+        TARGET: ${{ inputs.target }}
+        FLAGS: ${{ inputs.flags }}
+      # FLAGS is left unquoted on purpose: it is zero or more separate flags.
+      run: yarn napi build --platform --esm --release --target "$TARGET" $FLAGS
+    - name: Upload artifact
+      uses: actions/upload-artifact@v6
+      with:
+        name: bindings-${{ inputs.target }}
+        # `napi artifacts` needs the whole WASI loader set alongside the .wasm. The loader
+        # and its declarations travel too, so tests and the publish step use the files this
+        # run generated, not ones committed earlier.
+        path: |
+          crates/docdown-node/docdown-node.*.node
+          crates/docdown-node/docdown-node.*.wasm
+          crates/docdown-node/index.js
+          crates/docdown-node/index.d.ts
+          crates/docdown-node/browser.js
+          crates/docdown-node/*.wasi*.cjs
+          crates/docdown-node/*.wasi*.d.cts
+          crates/docdown-node/*.wasi*-browser.js
+          crates/docdown-node/*.wasi*-deferred.js
+          crates/docdown-node/*.wasi*-deferred.d.ts
+          crates/docdown-node/wasi-worker*.mjs
+        if-no-files-found: error

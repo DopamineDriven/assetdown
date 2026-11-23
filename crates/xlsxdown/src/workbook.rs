@@ -397,11 +397,16 @@ pub struct Workbook {
   pub props: DocProps,
   /// Names the workbook defines, the built-in ones (`_xlnm.Print_Area` and the like) left out.
   pub defined_names: usize,
+  /// The file is macro-enabled. Macros are never read or run.
+  pub has_macros: bool,
+  /// The file is a template.
+  pub is_template: bool,
 }
 
 impl Workbook {
-  /// Read a workbook from the bytes of an `.xlsx` file. A package that can be read but is not a
-  /// plain workbook is an unsupported format, named for what it is instead.
+  /// Read a workbook from the bytes of an `.xlsx` file, or of a macro-enabled workbook or a
+  /// template (`.xlsm`, `.xltx`, `.xltm`), which hold the same parts. A package that can be read
+  /// but is none of these is an unsupported format, named for what it is instead.
   pub fn open(bytes: Vec<u8>) -> Result<Workbook, SpreadsheetError> {
     let mut package = Package::open(bytes)?;
     let kind = match package.kind() {
@@ -410,12 +415,22 @@ impl Workbook {
       // A zip without a readable package structure is not an Office document at all.
       Err(PackageError::Malformed(_)) => PackageKind::Other,
     };
-    match kind {
-      PackageKind::Workbook => parse_workbook(&mut package),
-      other => Err(SpreadsheetError::UnsupportedFormat(unsupported_detail(
-        other,
-      ))),
-    }
+    let (has_macros, is_template) = match kind {
+      PackageKind::Workbook => (false, false),
+      PackageKind::MacroWorkbook => (true, false),
+      // The package layer has one kind for both templates; the main part's type tells them apart.
+      PackageKind::TemplateWorkbook => (macro_enabled(&mut package)?, true),
+      other => {
+        return Err(SpreadsheetError::UnsupportedFormat(unsupported_detail(
+          other,
+        )));
+      }
+    };
+    Ok(Workbook {
+      has_macros,
+      is_template,
+      ..parse_workbook(&mut package)?
+    })
   }
 
   /// The sheets a caller asked for, in workbook order: those named in `names` whether hidden or
@@ -432,13 +447,25 @@ impl Workbook {
   }
 }
 
+/// Whether the main part is of a macro-enabled content type.
+fn macro_enabled(package: &mut Package) -> Result<bool, SpreadsheetError> {
+  let main = package.officedocument()?;
+  Ok(
+    package
+      .content_type(&main)?
+      .is_some_and(|content_type| content_type.contains("macroEnabled")),
+  )
+}
+
 /// What a package this crate does not open is, in the words a caller reads.
 fn unsupported_detail(kind: PackageKind) -> String {
   match kind {
-    PackageKind::MacroWorkbook | PackageKind::TemplateWorkbook | PackageKind::StrictWorkbook => {
+    PackageKind::StrictWorkbook => {
       format!("{} (not supported in this release)", kind.description())
     }
     PackageKind::Workbook
+    | PackageKind::MacroWorkbook
+    | PackageKind::TemplateWorkbook
     | PackageKind::WordDocument
     | PackageKind::MacroDocument
     | PackageKind::TemplateDocument
@@ -606,6 +633,8 @@ pub(crate) fn read_workbook(
     styles,
     props,
     defined_names,
+    has_macros: false,
+    is_template: false,
   })
 }
 
@@ -1055,90 +1084,179 @@ fn resolve_cell(
     CellValue::Text(_) | CellValue::Error(_) | CellValue::Boolean(_) => text.clone(),
     _ => stored,
   };
-  // Cell type comes before number format: only a number is rendered through its code.
-  let format = format_code(styles, raw.style);
-  let builtin_id = if format.is_none() {
-    unknown_builtin_id(styles, raw.style)
-  } else {
-    None
-  };
-  let mut format_supported = true;
-  let mut currency_symbol = None;
-  // What the value is and what the cell shows are settled separately. The kind of the format
-  // code types the value, whether or not this release can render the code; a code it cannot
-  // render leaves `text` as the stored spelling and the cell marked unsupported.
-  let (value, text) = match (value, &format) {
-    (CellValue::Number(n), Some(code)) => {
-      let parsed = NumberFormat::parse(code);
-      let kind = parsed
-        .as_ref()
-        .map_or_else(|| serial_kind(code), NumberFormat::serial_kind);
-      let rendered = parsed.as_ref().and_then(|p| p.render(n, date1904));
-      format_supported = parsed.is_some();
-      match kind {
-        SerialKind::Number | SerialKind::Duration => {
-          currency_symbol = parsed.as_ref().and_then(NumberFormat::currency_symbol);
-          (CellValue::Number(n), rendered.unwrap_or(text))
-        }
-        SerialKind::Clock => (clock_value(n, date1904), rendered.unwrap_or(text)),
-        SerialKind::Date { with_time } => match iso_date(n, date1904, with_time) {
-          // A code that renders must render this serial too.
-          Some(iso) if rendered.is_some() || parsed.is_none() => {
-            (CellValue::Date(iso), rendered.unwrap_or(text))
-          }
-          _ => {
-            warnings.push(if n == 60.0 && !date1904 {
-              format!(
-                "{reference}: serial 60 is the 1900 leap day Excel never had; kept as a number"
-              )
-            } else {
-              format!(
-                "{reference}: serial {raw_text} is not a date under {code:?}; kept as a number"
-              )
-            });
-            (CellValue::Number(n), text)
-          }
-        },
-      }
-    }
-    (CellValue::Number(n), None) => match builtin_id {
-      Some(id) => {
-        format_supported = false;
-        if !is_east_asian_date_id(id) {
-          (CellValue::Number(n), text)
-        } else if n < 1.0 {
-          (CellValue::Time(iso_time(n)), text)
-        } else {
-          // Which of these ids shows a clock depends on the locale, so the serial decides.
-          match iso_date(n, date1904, n.fract() != 0.0) {
-            Some(iso) => (CellValue::Date(iso), text),
-            None => {
-              warnings.push(format!(
-                "{reference}: serial {raw_text} is not a date under built-in format {id}; kept as a number"
-              ));
-              (CellValue::Number(n), text)
-            }
-          }
-        }
-      }
-      None => (CellValue::Number(n), render_general(n)),
-    },
-    (value, _) => (value, text),
-  };
-  Some(Cell {
-    format_supported,
-    currency_symbol,
+  let stored = Stored {
     value,
     raw: raw_text,
     text,
-    format,
+  };
+  Some(Cell {
     formula,
     shared_master,
     cached,
-    style: raw.style,
-    merge: None,
-    builtin_id,
+    ..Cell::styled(stored, raw.style, styles, date1904, &reference, warnings)
   })
+}
+
+/// A value as a file stores it, before the number format of the cell's style is applied.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Stored {
+  /// Text, a number, a boolean, an error, or blank.
+  pub value: CellValue,
+  /// The value as the file spells it.
+  pub raw: String,
+  /// What the cell shows when no number format changes it.
+  pub text: String,
+}
+
+impl Stored {
+  /// A number, spelled the shortest way that reads back as the same number.
+  pub fn number(n: f64) -> Stored {
+    Stored {
+      value: CellValue::Number(n),
+      raw: n.to_string(),
+      text: n.to_string(),
+    }
+  }
+
+  pub fn text(text: String) -> Stored {
+    Stored {
+      value: CellValue::Text(text.clone()),
+      raw: text.clone(),
+      text,
+    }
+  }
+
+  pub fn boolean(on: bool) -> Stored {
+    let text = if on { "TRUE" } else { "FALSE" }.to_string();
+    Stored {
+      value: CellValue::Boolean(on),
+      raw: text.clone(),
+      text,
+    }
+  }
+
+  /// An error, by the code a sheet shows for it: `#DIV/0!`.
+  pub fn error(code: String) -> Stored {
+    Stored {
+      value: CellValue::Error(code.clone()),
+      raw: code.clone(),
+      text: code,
+    }
+  }
+
+  /// No value: what a formula that has not been calculated leaves.
+  pub fn blank() -> Stored {
+    Stored {
+      value: CellValue::Blank,
+      raw: String::new(),
+      text: String::new(),
+    }
+  }
+}
+
+impl Cell {
+  /// The cell a stored value makes under the style numbered `style`. A number is typed (a
+  /// date, a time, or a number) and shown through the number format the style selects; any
+  /// other value is kept as it is. `reference` names the cell in a warning. The cell is given
+  /// without a formula or a merged range, which are the caller's to set.
+  pub fn styled(
+    stored: Stored,
+    style: usize,
+    styles: &Styles,
+    date1904: bool,
+    reference: &str,
+    warnings: &mut Vec<String>,
+  ) -> Cell {
+    let Stored {
+      value,
+      raw: raw_text,
+      text,
+    } = stored;
+    // Cell type comes before number format: only a number is rendered through its code.
+    let format = format_code(styles, style);
+    let builtin_id = if format.is_none() {
+      unknown_builtin_id(styles, style)
+    } else {
+      None
+    };
+    let mut format_supported = true;
+    let mut currency_symbol = None;
+    // What the value is and what the cell shows are settled separately. The kind of the format
+    // code types the value, whether or not this release can render the code; a code it cannot
+    // render leaves `text` as the stored spelling and the cell marked unsupported.
+    let (value, text) = match (value, &format) {
+      (CellValue::Number(n), Some(code)) => {
+        let parsed = NumberFormat::parse(code);
+        let kind = parsed
+          .as_ref()
+          .map_or_else(|| serial_kind(code), NumberFormat::serial_kind);
+        let rendered = parsed.as_ref().and_then(|p| p.render(n, date1904));
+        format_supported = parsed.is_some();
+        match kind {
+          SerialKind::Number | SerialKind::Duration => {
+            currency_symbol = parsed.as_ref().and_then(NumberFormat::currency_symbol);
+            (CellValue::Number(n), rendered.unwrap_or(text))
+          }
+          SerialKind::Clock => (clock_value(n, date1904), rendered.unwrap_or(text)),
+          SerialKind::Date { with_time } => match iso_date(n, date1904, with_time) {
+            // A code that renders must render this serial too.
+            Some(iso) if rendered.is_some() || parsed.is_none() => {
+              (CellValue::Date(iso), rendered.unwrap_or(text))
+            }
+            _ => {
+              warnings.push(if n == 60.0 && !date1904 {
+                format!(
+                  "{reference}: serial 60 is the 1900 leap day Excel never had; kept as a number"
+                )
+              } else {
+                format!(
+                  "{reference}: serial {raw_text} is not a date under {code:?}; kept as a number"
+                )
+              });
+              (CellValue::Number(n), text)
+            }
+          },
+        }
+      }
+      (CellValue::Number(n), None) => match builtin_id {
+        Some(id) => {
+          format_supported = false;
+          if !is_east_asian_date_id(id) {
+            (CellValue::Number(n), text)
+          } else if n < 1.0 {
+            (CellValue::Time(iso_time(n)), text)
+          } else {
+            // Which of these ids shows a clock depends on the locale, so the serial decides.
+            match iso_date(n, date1904, n.fract() != 0.0) {
+              Some(iso) => (CellValue::Date(iso), text),
+              None => {
+                warnings.push(format!(
+                  "{reference}: serial {raw_text} is not a date under built-in format {id}; kept as a number"
+                ));
+                (CellValue::Number(n), text)
+              }
+            }
+          }
+        }
+        None => (CellValue::Number(n), render_general(n)),
+      },
+      (value, _) => (value, text),
+    };
+    Cell {
+      format_supported,
+      currency_symbol,
+      value,
+      raw: raw_text,
+      text,
+      format,
+      formula: None,
+      shared_master: None,
+      cached: false,
+      style,
+      merge: None,
+      builtin_id,
+    }
+  }
 }
 
 #[cfg(test)]

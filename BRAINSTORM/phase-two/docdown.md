@@ -1,6 +1,6 @@
 # docdown: notes
 
-Status: **planned** (2026-11-22). Nothing is built.
+Status: **built** (2026-11-23), not yet released. `docdown` and `docdown-node` are written and tested; see [What is built](#5-what-is-built).
 
 Some documents are in the format Word wrote from 1997 to 2003: a compound file with the text in one stream and what describes it in another. `docdown` reads them. Its companion is [xlsdown.md](xlsdown.md), and both stand on the same compound-file reader.
 
@@ -46,9 +46,31 @@ Some documents are in the format Word wrote from 1997 to 2003: a compound file w
 5. Headers and footers, embedded files, and pictures.
 6. The invoice, `docdown-node`, and the route in `mimedown`.
 
+## 5. What is built
+
+- **The shared model** (row 4): `rtfdown`'s paragraphs, runs, rows, paper, and running heads, and its page-setting, are `contentdown::document` now, and `rtfdown` and `docdown` both fill it. `rtfdown` gives the same answers as before. A placed paragraph has a third thing its distance down can be measured from: where the text has reached (`DownFrom::Text`), which is what a text box anchored to a paragraph needs.
+- **`docdown`** (28 tests): `Doc::open`, `text`, `blocks`, `paper`, `running`, `layout`, `invoice`, `embedded`, `pictures`, `is_template`, `has_macros`, and `warnings`.
+  - Text through the piece table, each piece one byte to a character or two.
+  - Paragraphs, tabs, line breaks, page breaks, and fields (what a field shows is kept, what it is told is dropped).
+  - Table rows, with the edges the file gives each cell, and more than one paragraph to a cell.
+  - Alignment, indents, and space before and after; bold, italic, size, and font; hidden text left out.
+  - Styles, each starting from the style it is based on, under what a paragraph and a run state themselves.
+  - The first section's paper and margins; the header and footer of odd pages, and of the first page where the section says it has its own.
+  - **Text boxes**, which were parked and are not any more: a look at real documents showed that many keep part of their text in them. A box's paragraphs are placed where its shape is anchored, and a box that no shape leads to is read after the text.
+  - Embedded files under `ObjectPool`: a file the packager left, with its name; a file held whole in a stream; and a workbook or a document of before 2007, given as the compound file it is. The class is what the object calls itself.
+  - Pictures: those set in the text, from the `Data` stream, with the size each is shown at, and those of floating shapes, from the drawing's store. A metafile is inflated. The picture that stands for an embedded object is not among them.
+- **Refused by name**: a Word 6 or 95 document, an encrypted document, and a compound file that holds no Word document.
+- **`docdown-node`**: `docText`, `docLayout`, `docInvoice`, `docEmbedded`, `docPictures`, and `docDocument`, each with an `Async` twin, and class `DocDown`. `docDocument` also says `isTemplate` and `hasMacros`. Its specs build `.doc` files in code (`__test__/doc-test.ts`): 18 native, 4 WebAssembly.
+- **`@d0paminedriven/docdown-wasm`** (`crates/docdown-node/wasm`): the WebAssembly-only package, laid out as `rtfdown-node/wasm` is, with both builds, the worker entry (`DocWorker`, with every promise verb), and its tests: 25, of which 4 run on a page in Chrome.
+- **`mimedown`**: `application/msword` names `docdown` as its parser.
+- **Checked against LibreOffice**: over a set of real documents, the words `docdown` gives were counted against the words of LibreOffice's ODT output, and the counts agreed for every one. (Its plain text export leaves out framed text, so it is not the one to count against.)
+- **New dependency**: `flate2`, which the workspace already had, for the compressed metafiles.
+
+Not read yet, beyond what is parked below: sections after the first (their paper, and a break that does not start a page is set as one that does), tab stops, tables inside tables (their text is kept, in the cell that holds them), paragraphs the file frames at a place of their own (they are in the flow), the text boxes of headers, and text a reviewer deleted with changes tracked (it is read as text).
+
 ## Parked
 
 - Word 6 and Word 95.
 - Footnotes, comments, and tracked changes.
-- Text boxes and drawings.
+- Drawings: shapes are not drawn, and only their text and their pictures are read.
 - Reading a document saved with a password.

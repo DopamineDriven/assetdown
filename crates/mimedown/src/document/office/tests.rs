@@ -238,16 +238,29 @@ mod with_the_parsers {
   }
 
   #[test]
-  fn a_macro_enabled_workbook_is_named_as_one_and_says_its_parser_turned_it_away() {
+  fn a_macro_enabled_workbook_is_named_as_one_and_read_like_any_other() {
     let bytes = fixture("xlsxdown/tests/fixtures/macro.xlsm");
     let found = specs(&bytes);
-    assert_eq!(found.media_type, MediaType::Xlsm);
+    assert_eq!(
+      (found.media_type, found.warnings.len()),
+      (MediaType::Xlsm, 0)
+    );
+    let facts = document(found);
+    assert!(detail(&facts).macro_enabled);
+    assert_eq!(facts.page_count, Some(1));
+    assert_eq!(facts.text_preview.as_deref(), Some("Total"));
+  }
+
+  #[test]
+  fn a_strict_workbook_is_named_and_says_its_parser_turned_it_away() {
+    let bytes = fixture("xlsxdown/tests/fixtures/strict.xlsx");
+    let found = specs(&bytes);
+    assert_eq!(found.media_type, MediaType::Xlsx);
     assert_eq!(found.warnings.len(), 1);
     assert!(
       found.warnings[0].starts_with("the workbook could not be read"),
       "{:?}",
       found.warnings
     );
-    assert!(detail(&document(found)).macro_enabled);
   }
 }

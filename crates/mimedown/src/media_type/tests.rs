@@ -171,6 +171,8 @@ fn a_type_names_the_package_that_reads_it_in_full() {
     (MediaType::Tiff, Parser::Tiffdown),
     (MediaType::Jpeg, Parser::Jpegdown),
     (MediaType::Rtf, Parser::Rtfdown),
+    (MediaType::Xls, Parser::Xlsdown),
+    (MediaType::Doc, Parser::Docdown),
   ];
   for (media_type, parser) in expected {
     assert_eq!(media_type.parser(), Some(parser), "{media_type}");
@@ -186,6 +188,8 @@ fn a_type_names_the_package_that_reads_it_in_full() {
   assert_eq!(Parser::Tiffdown.as_str(), "tiffdown");
   assert_eq!(Parser::Jpegdown.as_str(), "jpegdown");
   assert_eq!(Parser::Rtfdown.as_str(), "rtfdown");
+  assert_eq!(Parser::Xlsdown.as_str(), "xlsdown");
+  assert_eq!(Parser::Docdown.as_str(), "docdown");
 }
 
 #[test]

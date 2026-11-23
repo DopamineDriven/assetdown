@@ -44,13 +44,14 @@ describe("XlsxDown constructor", () => {
     assert.equal(doc instanceof XlsxDown, true);
   });
   it(
-    "should throw unsupported format for macro.xlsm, a macro-enabled workbook",
+    "should read macro.xlsm, a macro-enabled workbook, like any other",
     {},
     () => {
-      assert.throws(() => new XlsxDown(t.getFixtureBuff("macro")), {
-        message:
-          "unsupported format: macro-enabled workbook (not supported in this release)"
-      });
+      const macro = new XlsxDown(t.getFixtureBuff("macro"));
+      const cells = t.first(macro.spreadsheetCells());
+      assert.equal(t.cell(cells, "A1").text, "Total");
+      assert.equal(t.cell(cells, "B1").text, "427.5");
+      assert.equal(macro.metadata().cellCount, 4);
     }
   );
   it(
@@ -103,15 +104,19 @@ describe("XlsxDown.openAsync", () => {
     }
   );
   it(
-    "should reject with the constructor's message for macro.xlsm",
+    "should reject with the constructor's message for strict.xlsx",
     {},
     async () => {
-      await assert.rejects(XlsxDown.openAsync(t.getFixtureBuff("macro")), {
+      await assert.rejects(XlsxDown.openAsync(t.getFixtureBuff("strict")), {
         message:
-          "unsupported format: macro-enabled workbook (not supported in this release)"
+          "unsupported format: Strict OOXML workbook (not supported in this release)"
       });
     }
   );
+  it("should resolve to an XlsxDown for macro.xlsm", {}, async () => {
+    const macro = await XlsxDown.openAsync(t.getFixtureBuff("macro"));
+    assert.equal(macro.metadata().hasMacros, true);
+  });
   it("should reject with malformed workbook for ole.bin", {}, async () => {
     await assert.rejects(XlsxDown.openAsync(t.getFixtureBuff("ole")), {
       message: /^malformed workbook: not a readable zip package/
@@ -492,14 +497,24 @@ describe("spreadsheetCellsAsync and the free functions", () => {
     }
   );
   it(
-    "should throw from the free function and reject from the async one for macro.xlsm",
+    "should throw from the free function and reject from the async one for strict.xlsx",
     {},
     async () => {
       const message =
-        "unsupported format: macro-enabled workbook (not supported in this release)";
+        "unsupported format: Strict OOXML workbook (not supported in this release)";
+      const strict = t.getFixtureBuff("strict");
+      assert.throws(() => spreadsheetCells(strict), { message });
+      await assert.rejects(spreadsheetCellsAsync(strict), { message });
+    }
+  );
+  it(
+    "should return the same cells for macro.xlsm from the free function and its async twin",
+    {},
+    async () => {
       const macro = t.getFixtureBuff("macro");
-      assert.throws(() => spreadsheetCells(macro), { message });
-      await assert.rejects(spreadsheetCellsAsync(macro), { message });
+      const cells = spreadsheetCells(macro);
+      assert.equal(t.first(cells).cells.length, 4);
+      assert.deepEqual(await spreadsheetCellsAsync(macro), cells);
     }
   );
   it(
@@ -804,6 +819,17 @@ describe("metadata", () => {
     assert.equal(meta.created, undefined);
     assert.equal(meta.application, undefined);
   });
+  it(
+    "should say whether the file is macro-enabled, and whether it is a template",
+    {},
+    () => {
+      assert.equal(meta.hasMacros, false);
+      assert.equal(meta.isTemplate, false);
+      const macro = new XlsxDown(t.getFixtureBuff("macro")).metadata();
+      assert.equal(macro.hasMacros, true);
+      assert.equal(macro.isTemplate, false);
+    }
+  );
   it("should say which date system the workbook counts in", {}, () => {
     assert.equal(meta.date1904, false);
     assert.equal(

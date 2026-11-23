@@ -392,3 +392,19 @@ The rest of each binding's folder is the scaffold `rtfdown-node` has: `build.rs`
 - The rest of `tiffdown`'s codings (Deflate, PackBits, Group 3, JPEG, tiles): `flate2`, `hayro-ccitt`, and `image` are already in its manifest.
 - A working resolution for small pictures in `ocrdown`: `image` resizes.
 - The change to how `pdfdown` reads a page's text: no manifest is touched. It does need `pdfdown` and `mimedown` released for it to reach the packages.
+
+### Where the manifests stand, as of 2026-11-23
+
+`cfbdown`, `xlsdown`, `xlsdown-node`, `docdown`, and `docdown-node` are built on the manifests above. You added `cfbdown.workspace = true` to `crates/rtfdown/Cargo.toml`, and `rtfdown` uses the shared reader now. One line I added myself, as you said I may:
+
+#### `crates/docdown/Cargo.toml`
+
+```toml
+flate2.workspace = true
+```
+
+A metafile in a Word document is kept compressed, and this inflates it. `flate2` was already a dependency of the workspace.
+
+#### `crates/xlsdown-node/wasm/package.json` and `crates/docdown-node/wasm/package.json`
+
+New, made on 2026-11-23 when you asked for the WebAssembly folders to be configured. Each is `rtfdown-node/wasm/package.json` with the names changed (`@d0paminedriven/xlsdown-wasm`, `@d0paminedriven/docdown-wasm`, binaries `xlsdown-node-wasm` and `docdown-node-wasm`), at version 0.1.0 to match its base package, with its own description and keywords. The `build:wasm-package` scripts and `test:wasm` that both bindings inherited from `rtfdown-node` now have a folder to work on, so nothing in either binding's own `package.json` needed to change.

@@ -54,7 +54,7 @@
     "test:wasi": "NAPI_RS_FORCE_WASI=error yarn tsx --test \"__test__/wasi.spec.ts\""
   },
   "devDependencies": {
-    "@d0paminedriven/fs": "^12.1.0",
+    "@d0paminedriven/fs": "^12.3.0",
     "@d0paminedriven/type-utils": "^1.3.0",
     "@emnapi/core": "2.0.0-alpha.5",
     "@emnapi/runtime": "2.0.0-alpha.5",
@@ -69,8 +69,8 @@
     "dotenv": "^18.0.10",
     "emnapi": "2.0.0-alpha.5",
     "husky": "^9.1.7",
-    "lint-staged": "^17.6.1",
-    "npm-run-all2": "^9.0.4",
+    "lint-staged": "^17.6.2",
+    "npm-run-all2": "^9.1.0",
     "oxfmt": "^0.79.0",
     "oxlint": "^1.94.0",
     "tslib": "^2.9.1",

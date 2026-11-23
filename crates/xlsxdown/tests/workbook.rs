@@ -293,20 +293,28 @@ fn packages_that_are_not_plain_workbooks_are_unsupported_and_say_what_they_are()
     other => panic!("{name}: {other:?}"),
   };
   assert_eq!(
-    detail("macro.xlsm"),
-    "macro-enabled workbook (not supported in this release)"
-  );
-  assert_eq!(
     detail("strict.xlsx"),
     "Strict OOXML workbook (not supported in this release)"
   );
   assert_eq!(detail("not-a-workbook.docx"), "Word document package");
   assert_eq!(
-    Workbook::open(fixture("macro.xlsm"))
+    Workbook::open(fixture("strict.xlsx"))
       .unwrap_err()
       .to_string(),
-    "unsupported format: macro-enabled workbook (not supported in this release)"
+    "unsupported format: Strict OOXML workbook (not supported in this release)"
   );
+}
+
+#[test]
+fn a_macro_enabled_workbook_is_read_like_any_other_and_says_what_it_is() {
+  let workbook = open("macro.xlsm");
+  assert!(workbook.has_macros && !workbook.is_template);
+  assert_eq!(workbook.metadata().cell_count, 4);
+  assert_eq!(
+    at(&workbook.sheets[0], "B1").value,
+    CellValue::Number(427.5)
+  );
+  assert!(!open("minimal.xlsx").has_macros);
 }
 
 #[test]

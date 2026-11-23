@@ -1,0 +1,11 @@
+[package]
+description            = "Compound file reading: the streams and storages of the container legacy Office files are kept in"
+edition.workspace      = true
+keywords               = ["cfb", "ole", "compound-file", "extraction"]
+license.workspace      = true
+name                   = "cfbdown"
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.1.0"
+
+[dependencies]

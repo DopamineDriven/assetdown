@@ -1,0 +1,21 @@
+[package]
+description            = "Node bindings for docdown: doc extraction, text, tables, pictures, and embedded files"
+edition.workspace      = true
+license.workspace      = true
+name                   = "docdown-node"
+publish                = false
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+contentdown.workspace = true
+docdown.workspace     = true
+napi.workspace        = true
+napi-derive.workspace = true
+
+[build-dependencies]
+napi-build.workspace = true

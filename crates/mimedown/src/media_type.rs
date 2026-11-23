@@ -49,6 +49,8 @@ pub enum Parser {
   Tiffdown,
   Jpegdown,
   Rtfdown,
+  Xlsdown,
+  Docdown,
 }
 
 impl Parser {
@@ -63,6 +65,8 @@ impl Parser {
       Parser::Tiffdown => "tiffdown",
       Parser::Jpegdown => "jpegdown",
       Parser::Rtfdown => "rtfdown",
+      Parser::Xlsdown => "xlsdown",
+      Parser::Docdown => "docdown",
     }
   }
 }
@@ -179,8 +183,8 @@ media_types! {
   Pptm => "application/vnd.ms-powerpoint.presentation.macroenabled.12", [], ["pptm"], Pptxdown;
   Potx => "application/vnd.openxmlformats-officedocument.presentationml.template", [], ["potx"], Pptxdown;
   Ppsx => "application/vnd.openxmlformats-officedocument.presentationml.slideshow", [], ["ppsx"], Pptxdown;
-  Doc => "application/msword", [], ["doc"];
-  Xls => "application/vnd.ms-excel", [], ["xls"];
+  Doc => "application/msword", [], ["doc"], Docdown;
+  Xls => "application/vnd.ms-excel", [], ["xls"], Xlsdown;
   Ppt => "application/vnd.ms-powerpoint", [], ["ppt"];
   Vsd => "application/vnd.visio", [], ["vsd"];
   Odt => "application/vnd.oasis.opendocument.text", [], ["odt"];

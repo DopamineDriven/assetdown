@@ -1,0 +1,78 @@
+name: Publish docdown-node's WebAssembly package
+description: >-
+  Take the WebAssembly package this run built and tested, and publish it when the commit
+  is a release. Any other commit stops once the package is listed: nothing is sent to
+  npm, not even as a dry run, which npm refuses for a version that is already published.
+  The package is one folder, wasm/, with its own manifest: there are no per-platform
+  packages to assemble.
+
+inputs:
+  release-name:
+    description: >-
+      What a release commit's subject starts with. A commit whose subject is
+      exactly `<release-name>@<wasm/package.json version>` is a release. The workflow
+      passes the base package's name, so one commit releases both packages and a
+      version that differs between the two manifests stops this one with an error.
+    required: true
+  allow-release:
+    description: Whether this run may publish at all. Anything but `true` publishes nothing.
+    default: "false"
+  npm-token:
+    description: The npm token. Only a real publish needs it.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Download the package this run built
+      uses: actions/download-artifact@v7
+      with:
+        name: wasm-package
+        path: crates/docdown-node/wasm
+    - name: List what would be published
+      shell: bash
+      working-directory: crates/docdown-node/wasm
+      run: |
+        ls -la
+        npm pack --dry-run
+    - name: Decide whether this is a release
+      id: release
+      shell: bash
+      working-directory: crates/docdown-node
+      env:
+        RELEASE_NAME: ${{ inputs.release-name }}
+        ALLOW_RELEASE: ${{ inputs.allow-release }}
+      run: |
+        version="$(node -p "require('./wasm/package.json').version")"
+        subject="$(git log -1 --pretty=%s)"
+        mode=skip
+        if [ "$ALLOW_RELEASE" = "true" ]; then
+          if [ "$subject" = "$RELEASE_NAME@$version" ]; then
+            mode=release
+          elif printf '%s' "$subject" | grep -q "^$RELEASE_NAME@[0-9]"; then
+            echo "::error::The commit is \"$subject\" but wasm/package.json is at $version; nothing was published."
+            exit 1
+          fi
+        fi
+        # A version with a prerelease part goes out under `next`, not `latest`.
+        tag=latest
+        case "$version" in *-*) tag=next ;; esac
+        echo "mode=$mode" >> "$GITHUB_OUTPUT"
+        echo "tag=$tag" >> "$GITHUB_OUTPUT"
+        echo "$RELEASE_NAME-wasm $version: $mode (dist-tag $tag), from commit \"$subject\""
+    - name: Publish
+      if: ${{ steps.release.outputs.mode == 'release' }}
+      shell: bash
+      working-directory: crates/docdown-node/wasm
+      env:
+        NPM_TOKEN: ${{ inputs.npm-token }}
+        npm_config_tag: ${{ steps.release.outputs.tag }}
+        npm_config_access: public
+      run: |
+        if [ -z "$NPM_TOKEN" ]; then
+          echo "::error::This is a release commit but no npm token was provided."
+          exit 1
+        fi
+        echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
+        npm config set provenance true
+        npm publish --ignore-scripts

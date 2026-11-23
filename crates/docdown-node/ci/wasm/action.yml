@@ -1,0 +1,79 @@
+name: Build and test docdown-node's WebAssembly package
+description: >-
+  Build both WebAssembly builds of this crate into wasm/, the package that holds them and
+  no native addon, then type-check and test it as a caller would import it. One run of
+  this may keep what it built for the publish step.
+
+inputs:
+  upload:
+    description: >-
+      Whether to keep the built package for the publish step. Only one job of a run
+      should: the artifact has one name.
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        # With threads, for Node and for a page that is cross-origin isolated; and
+        # without, for a plain page and for a worker runtime.
+        targets: wasm32-wasip1-threads,wasm32-wasip1
+    - name: Cache cargo
+      uses: actions/cache@v5
+      with:
+        # The cargo workspace root is the repository root, so `target/` is there.
+        path: |
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          ~/.napi-rs
+          .cargo-cache
+          target/
+        key: docdown-node-wasm-package-cargo-${{ runner.os }}
+    - name: Build
+      shell: bash
+      working-directory: crates/docdown-node
+      # The build without threads goes last: the scripts say why.
+      run: yarn build:wasm-package
+    - name: List package files
+      shell: bash
+      working-directory: crates/docdown-node
+      run: ls -la wasm
+    - name: Typecheck the tests
+      shell: bash
+      working-directory: crates/docdown-node
+      # The tests import the package by its own name, so this also checks that its map of
+      # entries finds the declarations, and that they name a WebAssembly build exactly.
+      run: yarn tsc --noEmit -p wasm/__test__
+    - name: Test
+      shell: bash
+      working-directory: crates/docdown-node
+      run: yarn test:wasm
+    - name: List what would be published
+      shell: bash
+      working-directory: crates/docdown-node/wasm
+      run: npm pack --dry-run
+    - name: Upload artifact
+      if: ${{ inputs.upload == 'true' }}
+      uses: actions/upload-artifact@v6
+      with:
+        name: wasm-package
+        # Everything the build writes that the package ships. The manifest, the tests, and
+        # the declaration for the compiled module are in the repository already.
+        path: |
+          crates/docdown-node/wasm/*.wasm
+          !crates/docdown-node/wasm/*.debug.wasm
+          crates/docdown-node/wasm/*.wasi.cjs
+          crates/docdown-node/wasm/*.wasip1.cjs
+          crates/docdown-node/wasm/*.d.cts
+          crates/docdown-node/wasm/*-browser.js
+          crates/docdown-node/wasm/*-deferred.js
+          crates/docdown-node/wasm/*-deferred.d.ts
+          crates/docdown-node/wasm/wasi-worker*.mjs
+          crates/docdown-node/wasm/dist/*.js
+          crates/docdown-node/wasm/dist/*.d.ts
+          crates/docdown-node/wasm/dist/*.wasm
+        if-no-files-found: error

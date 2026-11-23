@@ -270,14 +270,14 @@ fn a_paragraph_placed_on_the_page_keeps_the_place_the_file_gives_it() {
         y: 144.0,
         width: Some(216.0),
         from_page_side: true,
-        from_page_top: true
+        down_from: DownFrom::PageTop
       }),
       Some(Placing {
         x: 10.0,
         y: 20.0,
         width: None,
         from_page_side: false,
-        from_page_top: false
+        down_from: DownFrom::TopMargin
       }),
       None,
     ]

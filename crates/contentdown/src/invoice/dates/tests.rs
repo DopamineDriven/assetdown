@@ -65,3 +65,26 @@ fn the_order_is_inferred_from_unambiguous_dates() {
   assert_eq!(infer_order(&["03/04/2024"], Order::Mdy), Order::Mdy);
   assert_eq!(infer_order(&["06/23/2018"], Order::Dmy), Order::Mdy);
 }
+
+#[test]
+fn a_day_its_month_does_not_have_is_not_a_date() {
+  assert_eq!(
+    iso("4/30/2011", Order::Mdy),
+    Some(("2011-04-30".into(), true))
+  );
+  assert_eq!(iso("4/31/2011", Order::Mdy), None);
+  assert_eq!(iso("31/04/2011", Order::Dmy), None);
+  assert_eq!(iso("31 April 2011", Order::Mdy), None);
+  assert_eq!(iso("31APR2011", Order::Mdy), None);
+  // February has a twenty-ninth day in a leap year, and 1900 was not one.
+  assert_eq!(
+    iso("02/29/2024", Order::Mdy),
+    Some(("2024-02-29".into(), true))
+  );
+  assert_eq!(iso("02/29/2023", Order::Mdy), None);
+  assert_eq!(
+    iso("29FEB2000", Order::Mdy),
+    Some(("2000-02-29".into(), true))
+  );
+  assert_eq!(iso("29FEB1900", Order::Mdy), None);
+}

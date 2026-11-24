@@ -43,8 +43,20 @@ fn year_of(text: &str) -> Option<i32> {
   })
 }
 
+/// How many days a month of a year has; nought for a month there is not.
+fn days_in(y: i32, m: u32) -> u32 {
+  match m {
+    1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+    4 | 6 | 9 | 11 => 30,
+    2 if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) => 29,
+    2 => 28,
+    _ => 0,
+  }
+}
+
+/// Whether a year, month, and day are a day there was: a thirty-first of April is not one.
 fn valid(y: i32, m: u32, d: u32) -> bool {
-  (1900..=2099).contains(&y) && (1..=12).contains(&m) && (1..=31).contains(&d)
+  (1900..=2099).contains(&y) && (1..=days_in(y, m)).contains(&d)
 }
 
 fn iso(y: i32, m: u32, d: u32) -> String {

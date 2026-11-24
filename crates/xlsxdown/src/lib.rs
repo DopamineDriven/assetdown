@@ -8,10 +8,12 @@
 //! depends on Node.
 
 mod address;
+mod audit;
 mod error;
 mod format;
 mod formula;
 pub mod geometry;
+mod invoice;
 pub mod layout;
 mod meta;
 mod source;
@@ -20,6 +22,7 @@ mod testing;
 mod workbook;
 
 pub use address::{CellRange, MAX_COLS, MAX_ROWS, cell_ref, column_letters, parse_cell_ref};
+pub use audit::{Audit, AuditLine, CellAt};
 pub use error::SpreadsheetError;
 pub use geometry::{
   CellBox, SheetColumn, SheetGeometry, SheetRow, column_width_points, sheet_geometry,

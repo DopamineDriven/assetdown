@@ -263,7 +263,12 @@ impl XlsDown {
     })
   }
 
-  /// Invoice fields read from the workbook's visible sheets, each laid out as a page.
+  /// Invoice fields read from the workbook's visible sheets, each laid out as a page. Where
+  /// the workbook's formulas give a total (the formula nothing else reads that reaches the
+  /// most cells), it is `fields.invoiceTotal`, and the lines it adds up are `fields.items`,
+  /// each with its description, its quantity and unit price where one cell is multiplied by
+  /// another, and where its cells are on the page. A warning says when the labels on the
+  /// page gave another total, and when the lines do not come to the total.
   #[napi]
   pub fn invoice(&self, opts: Option<InvoiceOptions>) -> InvoiceResult {
     self.inner.invoice(opts.map(Into::into).as_ref()).into()

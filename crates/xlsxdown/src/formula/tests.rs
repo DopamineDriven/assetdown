@@ -158,3 +158,93 @@ fn a_reference_that_leaves_the_grid_is_a_ref_error() {
   assert_eq!(shift_formula("SUM(A:B)", 0, -1), "SUM(#REF!:A)");
   assert_eq!(shift_formula("XFD1048576", 0, 0), "XFD1048576");
 }
+
+/// What a formula refers to, each as its sheet (none for the formula's own) and its range.
+fn referred(formula: &str) -> Vec<(Option<String>, String)> {
+  references(formula)
+    .into_iter()
+    .map(|reference| {
+      // One cell is spelled as one, and not as a range from itself to itself.
+      let range = reference.range;
+      let spelled = match (range.r0, range.c0) == (range.r1, range.c1) {
+        true => crate::address::cell_ref(range.r0, range.c0),
+        false => range.a1(),
+      };
+      (reference.sheet, spelled)
+    })
+    .collect()
+}
+
+fn here(ranges: &[&str]) -> Vec<(Option<String>, String)> {
+  ranges
+    .iter()
+    .map(|range| (None, range.to_string()))
+    .collect()
+}
+
+#[test]
+fn the_cells_and_ranges_a_formula_refers_to_are_found_whatever_parts_of_them_stay_put() {
+  assert_eq!(referred("A1+B2"), here(&["A1", "B2"]));
+  assert_eq!(
+    referred("SUM($B$2:B9)*C$1-$D4"),
+    here(&["B2:B9", "C1", "D4"])
+  );
+  // The corners of a range in either order.
+  assert_eq!(referred("SUM(B9:A2)"), here(&["A2:B9"]));
+  // Whole columns and whole rows reach to the edge of the grid.
+  assert_eq!(referred("SUM(B:C)"), here(&["B1:C1048576"]));
+  assert_eq!(referred("SUM($2:$3)"), here(&["A2:XFD3"]));
+}
+
+#[test]
+fn what_only_looks_like_a_reference_is_not_one() {
+  // Text, a function whose name ends in digits, a number with an exponent, a name the
+  // workbook defines, an error, and the columns of a table.
+  assert_eq!(referred("IF(A1=\"B2\",C3,\"D4:D9\")"), here(&["A1", "C3"]));
+  assert_eq!(
+    referred("LOG10(A1)+ATAN2(B1,C1)"),
+    here(&["A1", "B1", "C1"])
+  );
+  assert_eq!(referred("1E5+2.5E-3*A1"), here(&["A1"]));
+  assert_eq!(referred("Rate*Q4_Total+TAXES2024"), here(&[]));
+  // Three letters and a row are a cell on a grid this wide, whatever they spell.
+  assert_eq!(referred("TAX2024"), here(&["TAX2024"]));
+  assert_eq!(referred("A1+#REF!+Sheet2!#REF!"), here(&["A1"]));
+  assert_eq!(referred("SUM(Table1[Amount])+A1"), here(&["A1"]));
+  assert_eq!(referred(""), here(&[]));
+}
+
+#[test]
+fn a_reference_to_another_sheet_says_which() {
+  let on = |sheet: &str, range: &str| (Some(sheet.to_string()), range.to_string());
+  assert_eq!(
+    referred("Labor!D9+'Parts & Freight'!$D$7+D3"),
+    vec![
+      on("Labor", "D9"),
+      on("Parts & Freight", "D7"),
+      (None, "D3".to_string())
+    ]
+  );
+  assert_eq!(referred("SUM('It''s'!A1:A3)"), vec![on("It's", "A1:A3")]);
+  // A sheet's name covers the whole range after it, and not the reference that follows.
+  assert_eq!(
+    referred("SUM(Q4!A1:B2,C3)"),
+    vec![on("Q4", "A1:B2"), (None, "C3".to_string())]
+  );
+  // A sheet of another workbook, and a run of sheets, are not this workbook's cells to follow.
+  assert_eq!(
+    referred("[1]Costs!A1+'[Book.xls]Costs'!B2+A3"),
+    here(&["A3"])
+  );
+  assert_eq!(referred("SUM(Jan:Mar!B2)+'Jan:Mar'!B3+B4"), here(&["B4"]));
+}
+
+#[test]
+fn a_reference_says_where_in_the_formula_it_stands() {
+  let found = references("-Labor!D9 * ($C$1)");
+  let spans: Vec<&str> = found
+    .iter()
+    .map(|reference| &"-Labor!D9 * ($C$1)"[reference.start..reference.end])
+    .collect();
+  assert_eq!(spans, ["Labor!D9", "$C$1"]);
+}

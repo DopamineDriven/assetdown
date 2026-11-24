@@ -305,6 +305,34 @@ fn role_name(role: PageRole) -> &'static str {
   }
 }
 
+/// How sure each key field that was read is: the invoice's number, date, vendor, total, and
+/// amount due.
+fn key_confidences(fields: &InvoiceFields) -> Vec<f64> {
+  [
+    fields.invoice_id.as_ref().map(|f| f.confidence),
+    fields.invoice_date.as_ref().map(|f| f.confidence),
+    fields.vendor_name.as_ref().map(|f| f.confidence),
+    fields.invoice_total.as_ref().map(|f| f.confidence),
+    fields.amount_due.as_ref().map(|f| f.confidence),
+  ]
+  .into_iter()
+  .flatten()
+  .collect()
+}
+
+/// How sure a document's reading is, from nought to one: the mean of its key fields'
+/// confidences, a tenth more when its amounts were found to add up (`reconciled`), and never
+/// quite certain. Nought when no key field was read. A reader that changes a key field after
+/// the pages were read (a workbook's total, taken from its formulas) asks again with this.
+pub fn document_confidence(fields: &InvoiceFields, reconciled: bool) -> f64 {
+  let key = key_confidences(fields);
+  if key.is_empty() {
+    return 0.0;
+  }
+  let bonus = if reconciled { 0.1 } else { 0.0 };
+  (key.iter().sum::<f64>() / key.len() as f64 + bonus).min(0.99)
+}
+
 /// Header fields from pages.
 pub fn extract_from_pages(pages: &[PageLayout], opts: Option<&InvoiceOptions>) -> InvoiceResult {
   let source = source_of(pages);
@@ -493,25 +521,10 @@ pub fn extract_from_pages(pages: &[PageLayout], opts: Option<&InvoiceOptions>) -
       .unwrap_or_default();
     credit_signals.push(format!("negative total: {text}"));
   }
-  let key: Vec<f64> = [
-    fields.invoice_id.as_ref().map(|f| f.confidence),
-    fields.invoice_date.as_ref().map(|f| f.confidence),
-    fields.vendor_name.as_ref().map(|f| f.confidence),
-    fields.invoice_total.as_ref().map(|f| f.confidence),
-    fields.amount_due.as_ref().map(|f| f.confidence),
-  ]
-  .into_iter()
-  .flatten()
-  .collect();
-  let confidence = if key.is_empty() {
-    0.0
-  } else {
-    (key.iter().sum::<f64>() / key.len() as f64 + if totals.reconciled { 0.1 } else { 0.0 })
-      .min(0.99)
-  };
+  let confidence = document_confidence(&fields, totals.reconciled);
   let document_type = if !credit_signals.is_empty() {
     InvoiceDocumentType::CreditNote
-  } else if key.is_empty() {
+  } else if key_confidences(&fields).is_empty() {
     InvoiceDocumentType::Unknown
   } else {
     InvoiceDocumentType::Invoice

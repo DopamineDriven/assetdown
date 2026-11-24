@@ -1,11 +1,9 @@
-//! A sheet laid out as a page of positioned words, and invoice extraction over those pages.
+//! A sheet laid out as a page of positioned words.
 //!
 //! `geometry` already places every cell in points. This module breaks each cell's text into
 //! words inside its rectangle and hands them to `contentdown`'s line builder, which gives a sheet
-//! the same shape a PDF page has. The invoice extractor reads that shape, so a workbook invoice
-//! goes through it unchanged.
+//! the same shape a PDF page has. The invoice extractor reads that shape (see `invoice`).
 
-use contentdown::invoice::{InvoiceOptions, InvoiceResult, extract_from_pages};
 use contentdown::{FontMeta, PageLayout, TextSource, Word, words_to_lines_indexed};
 
 use crate::address::cell_ref;
@@ -41,16 +39,6 @@ impl Workbook {
       .enumerate()
       .map(|(i, sheet)| sheet_layout(sheet, &self.styles, i as u32 + 1, hidden_cells))
       .collect()
-  }
-
-  /// Invoice fields read from the workbook's visible sheets, each laid out as a page.
-  pub fn invoice(&self, options: Option<&InvoiceOptions>) -> InvoiceResult {
-    let pages: Vec<PageLayout> = self
-      .layout(None, false, false)
-      .into_iter()
-      .map(|layout| layout.page)
-      .collect();
-    extract_from_pages(&pages, options)
   }
 }
 

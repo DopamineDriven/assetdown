@@ -99,7 +99,11 @@ fn builtin_ids_render_or_are_unsupported_and_a_files_own_code_wins() {
     !unknown.format_supported,
     "built-in 27 has no en-US code this release knows"
   );
-  assert_eq!(unknown.text, "42247", "the text stays the stored spelling");
+  assert_eq!(
+    unknown.text, "2015-08-31",
+    "a date this release cannot spell is shown plainly"
+  );
+  assert_eq!(unknown.raw, "42247", "and what is stored is kept");
   assert_eq!(
     unknown.value,
     CellValue::Date("2015-08-31".to_string()),
@@ -225,17 +229,26 @@ fn a_code_this_release_cannot_render_still_types_its_dates() {
   assert_eq!(value(5), CellValue::Time("06:00:00".to_string()));
   assert_eq!(value(6), CellValue::Time("12:00:00".to_string()));
   assert_eq!(value(7), CellValue::Number(60.0), "the day that never was");
-  // None of these codes is rendered: the text is the stored spelling and the cell says so.
-  for (col, stored) in [
-    (0, "45161.5"),
-    (1, "45161"),
+  // None of these codes is rendered, and each cell says so. A date or a time is then shown
+  // plainly, as the day and the clock it is; a number is shown as it is stored.
+  for (col, shown) in [
+    (0, "2023-08-23 12:00:00"),
     (2, "1.25"),
-    (3, "45161.75"),
+    (3, "2023-08-23 18:00:00"),
     (4, "45161"),
+    (6, "12:00:00"),
   ] {
     let cell = &sheet.cells[&(0, col)];
-    assert_eq!(cell.text, stored);
+    assert_eq!(cell.text, shown, "column {col}");
     assert!(!cell.format_supported, "column {col}");
+  }
+  // What is stored is kept beside what is shown.
+  assert_eq!(sheet.cells[&(0, 0)].raw, "45161.5");
+  // A code marked only as English, or as the reader's own time, is rendered.
+  for (col, shown) in [(1, "August 23, 2023"), (5, "6:00:00 AM")] {
+    let cell = &sheet.cells[&(0, col)];
+    assert_eq!(cell.text, shown, "column {col}");
+    assert!(cell.format_supported, "column {col}");
   }
   assert!(
     sheet

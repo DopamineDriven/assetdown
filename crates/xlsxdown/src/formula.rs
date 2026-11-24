@@ -8,7 +8,7 @@
 //! that merely looks like one: text in quotes, sheet names, function names such as `LOG10`,
 //! defined names, numbers such as `1E5`, and the brackets of a table reference.
 
-use crate::address::{MAX_COLS, MAX_ROWS, column_index, column_letters, row_index};
+use crate::address::{CellRange, MAX_COLS, MAX_ROWS, column_index, column_letters, row_index};
 
 /// What a reference that moves off the grid becomes, as it does in Excel.
 const OFF_GRID: &str = "#REF!";
@@ -305,6 +305,199 @@ fn copy_number(chars: &[char], at: usize, out: &mut String) -> usize {
   }
   out.extend(chars.get(at..end).unwrap_or_default());
   end
+}
+
+/// A cell or a range a formula refers to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Reference {
+  /// The sheet it is on, as the formula names it. None for the formula's own sheet.
+  pub sheet: Option<String>,
+  pub range: CellRange,
+  /// Where the reference stands in the formula, its sheet's name included: the byte it starts
+  /// at, and the one after its last.
+  pub start: usize,
+  pub end: usize,
+}
+
+/// Which sheet the reference that comes next is on.
+enum On {
+  /// The formula's own.
+  Here,
+  Sheet(String),
+  /// Another workbook's sheet, or a run of sheets: not cells of this workbook to follow.
+  Elsewhere,
+}
+
+/// A sheet's name as it stands between quotation marks, with each doubled mark single. A
+/// name with a workbook in brackets, or a colon between two sheets, is not one sheet of this
+/// workbook.
+fn quoted_sheet(quoted: &str) -> On {
+  let inner = quoted
+    .strip_prefix('\'')
+    .and_then(|rest| rest.strip_suffix('\''))
+    .unwrap_or(quoted)
+    .replace("''", "'");
+  match inner.contains(['[', ']', ':']) {
+    true => On::Elsewhere,
+    false => On::Sheet(inner),
+  }
+}
+
+/// A cell at `at`, with or without `$` before its column and its row: the cell, and where it
+/// ends. None when what stands there is part of a longer name or the name of a function.
+fn cell_at(chars: &[char], at: usize) -> Option<((u32, u32), usize)> {
+  let (col, after) = column_at(chars, at)?;
+  let (row, end) = row_at(chars, after)?;
+  reference_ends(chars, end).then_some(((row.index, col.index), end))
+}
+
+/// Every cell and range `formula` refers to on this workbook's sheets, in the order they
+/// stand in it. Text in quotation marks, names, the names of functions, numbers, errors, and
+/// the columns of a table are passed over, as they are when a formula is moved.
+pub(crate) fn references(formula: &str) -> Vec<Reference> {
+  let chars: Vec<char> = formula.chars().collect();
+  // Where each character starts in the text, and where the text ends.
+  let mut offsets: Vec<usize> = formula.char_indices().map(|(at, _)| at).collect();
+  offsets.push(formula.len());
+  let mut found = Vec::new();
+  let mut scratch = String::new();
+  // The sheet named before a `!`, with where its name starts, until a reference takes it.
+  let mut on = On::Here;
+  let mut named_from: Option<usize> = None;
+  // A workbook in brackets was just passed: the sheet named next is that workbook's.
+  let mut after_workbook = false;
+  let mut at = 0;
+  while let Some(&c) = chars.get(at) {
+    let range = match c {
+      '"' => {
+        at = copy_quoted(&chars, at, &mut scratch);
+        None
+      }
+      '\'' => {
+        scratch.clear();
+        let end = copy_quoted(&chars, at, &mut scratch);
+        if chars.get(end) == Some(&'!') {
+          on = quoted_sheet(&scratch);
+          named_from = Some(at);
+          at = end + 1;
+          continue;
+        }
+        at = end;
+        None
+      }
+      '[' => {
+        at = copy_bracketed(&chars, at, &mut scratch);
+        after_workbook = true;
+        continue;
+      }
+      '#' => {
+        at = copy_error(&chars, at, &mut scratch);
+        None
+      }
+      '$' | '0'..='9' if let Some(rows) = row_range_at(&chars, at) => {
+        let start = at;
+        at = rows.end;
+        Some((
+          start,
+          CellRange {
+            r0: rows.first.index.min(rows.last.index),
+            c0: 0,
+            r1: rows.first.index.max(rows.last.index),
+            c1: MAX_COLS - 1,
+          },
+        ))
+      }
+      '0'..='9' => {
+        at = copy_number(&chars, at, &mut scratch);
+        None
+      }
+      '.' if chars.get(at + 1).is_some_and(char::is_ascii_digit) => {
+        at = copy_number(&chars, at, &mut scratch);
+        None
+      }
+      _ if c == '$' || starts_name(c) => {
+        let start = at;
+        if let Some((first, end)) = cell_at(&chars, at) {
+          // A colon and another cell make the two the corners of a range.
+          let second = (chars.get(end) == Some(&':'))
+            .then(|| cell_at(&chars, end + 1))
+            .flatten();
+          let (last, end) = second.unwrap_or((first, end));
+          at = end;
+          Some((
+            start,
+            CellRange {
+              r0: first.0.min(last.0),
+              c0: first.1.min(last.1),
+              r1: first.0.max(last.0),
+              c1: first.1.max(last.1),
+            },
+          ))
+        } else if let Some(columns) = column_range_at(&chars, at) {
+          at = columns.end;
+          Some((
+            start,
+            CellRange {
+              r0: 0,
+              c0: columns.first.index.min(columns.last.index),
+              r1: MAX_ROWS - 1,
+              c1: columns.first.index.max(columns.last.index),
+            },
+          ))
+        } else {
+          // A name. Before a `!` it is a sheet's; before a colon and another name and then a
+          // `!`, it is the first of a run of sheets.
+          let mut end = at;
+          while chars
+            .get(end)
+            .is_some_and(|&c| continues_name(c) || (c == '$' && end == at))
+          {
+            end += 1;
+          }
+          let end = end.max(at + 1);
+          match chars.get(end) {
+            Some('!') => {
+              let name: String = chars[at..end].iter().collect();
+              // A sheet named after another and a colon ends a run of sheets.
+              let ends_run = at > 0 && chars.get(at - 1) == Some(&':');
+              on = match after_workbook || ends_run {
+                true => On::Elsewhere,
+                false => On::Sheet(name),
+              };
+              named_from = Some(at);
+              after_workbook = false;
+              at = end + 1;
+              continue;
+            }
+            _ => at = end,
+          }
+          None
+        }
+      }
+      _ => {
+        at += 1;
+        continue;
+      }
+    };
+    // Whatever came after a sheet's name has taken it, reference or not.
+    let sheet = std::mem::replace(&mut on, On::Here);
+    let from = named_from.take();
+    after_workbook = false;
+    if let Some((start, range)) = range {
+      let sheet = match sheet {
+        On::Here => None,
+        On::Sheet(name) => Some(name),
+        On::Elsewhere => continue,
+      };
+      found.push(Reference {
+        sheet,
+        range,
+        start: offsets[from.unwrap_or(start)],
+        end: offsets[at],
+      });
+    }
+  }
+  found
 }
 
 #[cfg(test)]

@@ -120,7 +120,9 @@ macro_rules! sheet_cell {
     ///
     /// `text` is the display text and `raw` the stored spelling (the serial for dates and
     /// times). `format` is the cell's number-format code; `formatSupported` says whether `text`
-    /// was rendered from it, and when false `text` is the stored spelling.
+    /// was rendered from it. When false, `text` is the stored spelling for a number, and for a
+    /// Date or a Time the day and the clock written plainly (`2015-08-31`,
+    /// `2015-08-31 12:00:00`, `12:00:00`).
     ///
     /// `formula` is the cell's formula without the leading `=`. On a cell that follows a shared
     /// formula it is the master's formula with its relative references moved to this cell, and

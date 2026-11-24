@@ -110,7 +110,7 @@ This entry takes a `WebAssembly.Module` and reads no file, which is what a runti
 | `new XlsDown(bytes)`, `XlsDown.openAsync(bytes)` | A workbook parsed once, to ask more than one thing of                                                                                                                                           |
 | `.spreadsheetCells()`, `.spreadsheetGrid()`      | The cells, as a list or keyed by row and column                                                                                                                                                 |
 | `.layout()`                                      | Each sheet set on a page of positioned words                                                                                                                                                    |
-| `.invoice()`                                     | Invoice fields read from those pages, each with where it was found                                                                                                                              |
+| `.invoice()`                                     | Invoice fields read from those pages, with the total and the line items taken from the formulas, each with where it was found                                                                   |
 | `.metadata()`                                    | Counts of what the workbook holds, sheet by sheet and in total                                                                                                                                  |
 
 Every method of `XlsDown` has an `Async` twin.

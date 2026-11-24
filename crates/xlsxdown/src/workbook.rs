@@ -3,8 +3,10 @@
 //! Parts are found through relationships, never by conventional name. Cells keep their stored
 //! spelling (`raw`), their typed value, the formula stored on them or the shared master they
 //! follow, and whether a result was cached. Numeric `text` is the format module's rendering of
-//! the value under the cell's format code; a code this release does not render leaves `text` as
-//! the stored spelling and marks the cell unsupported.
+//! the value under the cell's format code. A code this release does not render marks the cell
+//! unsupported and leaves `text` as the stored spelling, except for a date or a time, which is
+//! then shown plainly (`2015-08-31`, `2015-08-31 12:00:00`, `12:00:00`): a reader of the text
+//! can use the day, and cannot use the count of days it is stored as.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -1154,6 +1156,16 @@ impl Stored {
   }
 }
 
+/// A date or a time as it is shown when its format code is not rendered: the day, and the
+/// clock after a space where it has one. `None` for any other value.
+fn plainly(value: &CellValue) -> Option<String> {
+  match value {
+    CellValue::Date(iso) => Some(iso.replace('T', " ")),
+    CellValue::Time(clock) => Some(clock.clone()),
+    _ => None,
+  }
+}
+
 impl Cell {
   /// The cell a stored value makes under the style numbered `style`. A number is typed (a
   /// date, a time, or a number) and shown through the number format the style selects; any
@@ -1183,7 +1195,8 @@ impl Cell {
     let mut currency_symbol = None;
     // What the value is and what the cell shows are settled separately. The kind of the format
     // code types the value, whether or not this release can render the code; a code it cannot
-    // render leaves `text` as the stored spelling and the cell marked unsupported.
+    // render marks the cell unsupported, and leaves `text` as the stored spelling for a number
+    // and as the day and the clock, written plainly, for a date or a time.
     let (value, text) = match (value, &format) {
       (CellValue::Number(n), Some(code)) => {
         let parsed = NumberFormat::parse(code);
@@ -1197,11 +1210,17 @@ impl Cell {
             currency_symbol = parsed.as_ref().and_then(NumberFormat::currency_symbol);
             (CellValue::Number(n), rendered.unwrap_or(text))
           }
-          SerialKind::Clock => (clock_value(n, date1904), rendered.unwrap_or(text)),
+          SerialKind::Clock => {
+            let value = clock_value(n, date1904);
+            let text = rendered.or_else(|| plainly(&value)).unwrap_or(text);
+            (value, text)
+          }
           SerialKind::Date { with_time } => match iso_date(n, date1904, with_time) {
             // A code that renders must render this serial too.
             Some(iso) if rendered.is_some() || parsed.is_none() => {
-              (CellValue::Date(iso), rendered.unwrap_or(text))
+              let value = CellValue::Date(iso);
+              let text = rendered.or_else(|| plainly(&value)).unwrap_or(text);
+              (value, text)
             }
             _ => {
               warnings.push(if n == 60.0 && !date1904 {
@@ -1224,11 +1243,17 @@ impl Cell {
           if !is_east_asian_date_id(id) {
             (CellValue::Number(n), text)
           } else if n < 1.0 {
-            (CellValue::Time(iso_time(n)), text)
+            let value = CellValue::Time(iso_time(n));
+            let text = plainly(&value).unwrap_or(text);
+            (value, text)
           } else {
             // Which of these ids shows a clock depends on the locale, so the serial decides.
             match iso_date(n, date1904, n.fract() != 0.0) {
-              Some(iso) => (CellValue::Date(iso), text),
+              Some(iso) => {
+                let value = CellValue::Date(iso);
+                let text = plainly(&value).unwrap_or(text);
+                (value, text)
+              }
               None => {
                 warnings.push(format!(
                   "{reference}: serial {raw_text} is not a date under built-in format {id}; kept as a number"

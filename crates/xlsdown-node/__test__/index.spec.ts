@@ -130,6 +130,41 @@ describe("spreadsheetGrid, layout, and invoice", () => {
     assert.equal(typeof invoice, "object");
     assert.deepEqual(await doc.invoiceAsync(), invoice);
   });
+  it(
+    "should take a bill's total from its formulas and list the lines the total adds up",
+    {},
+    async () => {
+      const billed = new XlsDown(t.billed);
+      const cells = t.first(billed.spreadsheetCells());
+      assert.equal(t.cell(cells, "D1").formula, "B1*C1");
+      assert.equal(t.cell(cells, "D3").formula, "SUM(D1:D2)");
+
+      const invoice = billed.invoice();
+      assert.equal(invoice.documentType, "Invoice");
+      assert.equal(invoice.fields.invoiceTotal?.value, 44.5);
+      assert.equal(invoice.fields.invoiceTotal?.text, "44.50");
+      assert.deepEqual(
+        invoice.fields.items.map((item) => [
+          item.description?.value,
+          item.quantity?.value,
+          item.unitPrice?.value,
+          item.amount?.value
+        ]),
+        [
+          ["Bolt", 2, 10, 20],
+          ["Labor", undefined, undefined, 24.5]
+        ]
+      );
+      // Each item says where on its sheet's page it is, and the two do not overlap.
+      const [bolt, labor] = invoice.fields.items.map((item) => item.span);
+      assert.ok(bolt && labor, "an item has no span");
+      assert.equal(bolt.page, 1);
+      assert.equal(labor.page, 1);
+      assert.ok(labor.y1 <= bolt.y0, "the second row is not under the first");
+      assert.deepEqual(invoice.warnings, []);
+      assert.deepEqual(await billed.invoiceAsync(), invoice);
+    }
+  );
 });
 
 describe("metadata", () => {

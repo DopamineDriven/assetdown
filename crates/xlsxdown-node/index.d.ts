@@ -42,7 +42,14 @@ export declare class XlsxDown {
   layout(opts?: SpreadsheetOptions | undefined | null): Array<SheetPage>
   /** `layout` on a worker thread. */
   layoutAsync(opts?: SpreadsheetOptions | undefined | null): Promise<Array<SheetPage>>
-  /** Invoice fields read from the workbook's visible sheets, each laid out as a page. */
+  /**
+   * Invoice fields read from the workbook's visible sheets, each laid out as a page. Where
+   * the workbook's formulas give a total (the formula nothing else reads that reaches the
+   * most cells), it is `fields.invoiceTotal`, and the lines it adds up are `fields.items`,
+   * each with its description, its quantity and unit price where one cell is multiplied by
+   * another, and where its cells are on the page. A warning says when the labels on the
+   * page gave another total, and when the lines do not come to the total.
+   */
   invoice(opts?: InvoiceOptions | undefined | null): InvoiceResult
   /** `invoice` on a worker thread. */
   invoiceAsync(opts?: InvoiceOptions | undefined | null): Promise<InvoiceResult>
@@ -281,7 +288,9 @@ export interface PaymentDetail {
  *
  * `text` is the display text and `raw` the stored spelling (the serial for dates and
  * times). `format` is the cell's number-format code; `formatSupported` says whether `text`
- * was rendered from it, and when false `text` is the stored spelling.
+ * was rendered from it. When false, `text` is the stored spelling for a number, and for a
+ * Date or a Time the day and the clock written plainly (`2015-08-31`,
+ * `2015-08-31 12:00:00`, `12:00:00`).
  *
  * `formula` is the cell's formula without the leading `=`. On a cell that follows a shared
  * formula it is the master's formula with its relative references moved to this cell, and

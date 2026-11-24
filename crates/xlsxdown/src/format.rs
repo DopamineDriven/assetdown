@@ -6,7 +6,10 @@
 //! (dropped), currency and accounting codes with negative sections, the date and time tokens
 //! `y m d h s AM/PM` (where `m` is minutes next to `h` or `s`), the text section `@`. Unsupported,
 //! returning `None` from `parse`: elapsed durations, scientific notation, fractions (a bare slash
-//! among digit placeholders), conditions, locale directives, era and Buddhist-year tokens.
+//! among digit placeholders), conditions, era and Buddhist-year tokens, another calendar or set
+//! of digits, and the name of a month, a day, or a half of the day in a language other than
+//! English. A code marked only with its language (`[$-409]`, `[$-en-GB]`) renders where the
+//! language changes nothing: any English, or a code that names none of those.
 
 #[derive(Debug, Clone, PartialEq)]
 enum DateToken {
@@ -151,9 +154,54 @@ fn split_sections(code: &str) -> Vec<String> {
   sections
 }
 
+/// The language a code says it is written in, as far as it changes what is rendered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Language {
+  /// English, wherever it is spoken, and the two marks that stand for the long date and the
+  /// time of whoever opens the file, beside which the code is what any other reader shows.
+  English,
+  Other,
+}
+
+/// The reader's own long date, and the reader's own time.
+const SYSTEM_LONG_DATE: u32 = 0xF800;
+const SYSTEM_TIME: u32 = 0xF400;
+/// English in the ten bits of a language id that name the language without the country.
+const ENGLISH: u32 = 0x09;
+
+/// The language of a bare `[$-…]` mark: a language id in hex (`409`), or a tag (`en-US`).
+/// `None` for a mark that also asks for another calendar or set of digits (the hex digits
+/// past the fourth), and for what is neither.
+fn language(mark: &str) -> Option<Language> {
+  if !mark.is_empty() && mark.chars().all(|c| c.is_ascii_hexdigit()) {
+    let id = u32::from_str_radix(mark, 16).ok()?;
+    return match id {
+      SYSTEM_LONG_DATE | SYSTEM_TIME => Some(Language::English),
+      0..=0xFFFF if id & 0x3FF == ENGLISH => Some(Language::English),
+      0..=0xFFFF => Some(Language::Other),
+      _ => None,
+    };
+  }
+  // A tag is a language of two or three letters, then at least a country or a script.
+  let (spoken, rest) = mark.split_once('-')?;
+  let letters = |part: &str| !part.is_empty() && part.chars().all(|c| c.is_ascii_alphanumeric());
+  if !(2..=3).contains(&spoken.len())
+    || !spoken.chars().all(|c| c.is_ascii_alphabetic())
+    || !rest.split('-').all(letters)
+  {
+    return None;
+  }
+  Some(if spoken.eq_ignore_ascii_case("en") {
+    Language::English
+  } else {
+    Language::Other
+  })
+}
+
 fn parse_section(text: &str) -> Option<Section> {
   let chars: Vec<char> = text.chars().collect();
   let mut tokens = Vec::new();
+  let mut written_in = None;
   let mut i = 0;
   while i < chars.len() {
     let c = chars[i];
@@ -182,12 +230,13 @@ fn parse_section(text: &str) -> Option<Section> {
         let lower = inner.to_ascii_lowercase();
         if let Some(rest) = inner.strip_prefix('$') {
           // `[$€]` and `[$€-407]` are a currency literal, the latter with a locale id we ignore;
-          // `[$-409]` is a bare locale directive that changes month and day names: unsupported.
+          // `[$-409]` says only which language the code is in.
           let symbol = rest.split('-').next().unwrap_or("");
           if symbol.is_empty() {
-            return None;
+            written_in = Some(language(rest.strip_prefix('-')?)?);
+          } else {
+            tokens.push(Token::Literal(symbol.to_string()));
           }
-          tokens.push(Token::Literal(symbol.to_string()));
         } else if COLORS.contains(&lower.as_str()) || lower.starts_with("color") {
           // color tags carry no text
         } else {
@@ -314,6 +363,22 @@ fn parse_section(text: &str) -> Option<Section> {
     }
   }
 
+  // The names of months, days, and the halves of the day are written here in English only.
+  let names = tokens.iter().any(|t| {
+    matches!(
+      t,
+      Token::Date(
+        DateToken::MonthAbbr
+          | DateToken::MonthName
+          | DateToken::DayAbbr
+          | DateToken::DayName
+          | DateToken::AmPm
+      )
+    )
+  });
+  if names && written_in == Some(Language::Other) {
+    return None;
+  }
   let has_number = tokens.iter().any(|t| matches!(t, Token::Digit(_)));
   let is_date = tokens.iter().any(|t| matches!(t, Token::Date(_)));
   let has_time = tokens.iter().any(|t| {

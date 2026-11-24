@@ -917,3 +917,59 @@ fn the_tables_of_a_sheet_are_counted() {
   );
   assert_eq!(workbook.metadata().table_count, 2);
 }
+
+#[test]
+fn a_workbook_read_as_an_invoice_takes_its_total_and_its_items_from_its_formulas() {
+  let cell = |row: u8, col: u8| [0x44, row, 0, col, 0xC0];
+  let product = [&cell(0, 1)[..], &cell(0, 2), &[0x05]].concat();
+  // D1:D2, then the mark that the range is summed.
+  let sum = [0x25, 0, 0, 1, 0, 3, 0xC0, 3, 0xC0, 0x19, 0x10, 0, 0];
+  let book = Book::new()
+    .global(xf(0, 0, 0, 0))
+    .global(xf(0, 4, 0, 0))
+    .sheet(
+      "Invoice",
+      &[
+        label(0, 0, 0, "Bolt"),
+        number(0, 1, 0, 2.0),
+        number(0, 2, 1, 10.0),
+        formula(0, 3, 1, 20.0f64.to_le_bytes(), &product),
+        label(1, 0, 0, "Labor"),
+        number(1, 3, 1, 24.5),
+        label(2, 0, 0, "In all"),
+        formula(2, 3, 1, 44.5f64.to_le_bytes(), &sum),
+      ],
+    );
+  let workbook = opened(book);
+  let formulas: Vec<Option<&str>> = [(0, 3), (2, 3)]
+    .iter()
+    .map(|at| workbook.sheets[0].cells[at].formula.as_deref())
+    .collect();
+  assert_eq!(formulas, [Some("B1*C1"), Some("SUM(D1:D2)")]);
+
+  let invoice = workbook.invoice(None);
+  let total = invoice.fields.invoice_total.as_ref().unwrap();
+  assert_eq!((total.value, total.text.as_str()), (44.5, "44.50"));
+  // Each item as its description, how many, the price of each, and its amount.
+  let items: Vec<_> = invoice
+    .fields
+    .items
+    .iter()
+    .map(|item| {
+      (
+        item.description.as_ref().map(|field| field.value.as_str()),
+        item.quantity.as_ref().map(|field| field.value),
+        item.unit_price.as_ref().map(|field| field.value),
+        item.amount.as_ref().map(|field| field.value),
+      )
+    })
+    .collect();
+  assert_eq!(
+    items,
+    [
+      (Some("Bolt"), Some(2.0), Some(10.0), Some(20.0)),
+      (Some("Labor"), None, None, Some(24.5)),
+    ]
+  );
+  assert!(invoice.warnings.is_empty(), "{:?}", invoice.warnings);
+}

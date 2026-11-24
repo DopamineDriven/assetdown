@@ -45,7 +45,7 @@ workbook.invoice().fields.invoiceId?.value; // the invoice's number, where it ha
 | `spreadsheetCells(opts?)` | The cells of the selected sheets, each typed, with its display text, its number format, and its box in the sheet                                                                                                                                                           |
 | `spreadsheetGrid(opts?)`  | The same cells keyed by row and column                                                                                                                                                                                                                                     |
 | `layout(opts?)`           | Each sheet set on a page of positioned words                                                                                                                                                                                                                               |
-| `invoice(opts?)`          | Invoice fields read from those pages, each with where it was found                                                                                                                                                                                                         |
+| `invoice(opts?)`          | Invoice fields read from those pages, with the total and the line items taken from the formulas, each with where it was found                                                                                                                                              |
 | `metadata()`              | What the workbook says about itself (title, author, who saved it last, when it was created and saved, the application and its version, company), and counts of what it holds, sheet by sheet and in total, with whether it holds macros and which date system it counts in |
 
 `spreadsheetCells(buffer, opts?)` and `spreadsheetCellsAsync(buffer, opts?)` are the first of these as functions, for a workbook that is read once.
@@ -58,7 +58,27 @@ A cell is a union on `type`: `Text`, `Number`, `Date`, `Time`, `Boolean`, `Error
 
 A number under a date format is a `Date`, with an ISO date as its value and the serial in `raw`. The workbook's date system (1900 or 1904) is honored.
 
+A format code that is not rendered leaves `formatSupported` false. The cell's `text` is then the stored spelling for a number, and for a date or a time the day and the clock written plainly (`2015-08-31 12:00:00`). A code marked only with its language (`[$-409]mmmm d, yyyy`) is rendered where the language changes nothing: any English, or a code that names no month, day, or half of the day.
+
 **Formulas.** A formula cell gives the value Excel last left beside it, and the formula's text in `formula`, without the `=` it opens with: `SUM(B2:B9)*Rate`, `'Unit prices'!A1`. That is what lets a total be checked against the cells it adds up. A cell that shares a formula with others has it written for itself, with the references moved to it, and `sharedFormula` names the cell the formula is kept for. A formula that fills a range together is on each cell of the range. The spaces a formula was typed with are not kept.
+
+## Invoices
+
+`invoice()` reads the pages by their labels, as an invoice in a PDF is read, and then asks the formulas, which a page does not have.
+
+**The total.** Of the formulas that no other formula reads, the one that reaches the most cells is the workbook's total, and it becomes `fields.invoiceTotal`. Where the labels on the page gave another amount, the formulas have it and a warning says both. A total of nought (a form not filled in yet) changes nothing.
+
+**The items.** The total's formula is followed down. A formula that only adds cells up is a subtotal, and what it adds is looked at in turn; anything else (a number typed in, a quantity times a price, a tax worked out from a subtotal) is a line, and each line is one of `fields.items`. An item has its `amount`, a `description` from the text of its row (or failing that the heading over its column), and a `quantity` and `unitPrice` where its amount is one cell times another and one of the two is shown as money. What the total takes away is an item below nought. Every field says where its cell is on the page.
+
+So the items come to the total, and a warning says when they do not. A total that is worked out some other way than by adding cells up has no items, and a warning says so.
+
+```ts
+const { fields, warnings } = workbook.invoice();
+fields.invoiceTotal?.value; // 66
+fields.items.map((item) => [item.description?.value, item.amount?.value]);
+// [["Bolt", 20], ["Seal", 15.5], ["Labor", 24.5], ["Tax", 6]]
+warnings; // [] when the items come to the total and the labels agree
+```
 
 ## Errors
 

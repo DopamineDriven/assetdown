@@ -6,7 +6,7 @@ license.workspace      = true
 name                   = "xlsxdown"
 repository.workspace   = true
 rust-version.workspace = true
-version                = "0.5.0"
+version                = "0.6.0"
 [dependencies]
 contentdown.workspace = true
 ooxmldown.workspace   = true

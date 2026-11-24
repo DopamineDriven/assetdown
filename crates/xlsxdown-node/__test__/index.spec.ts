@@ -664,6 +664,28 @@ describe("invoice", () => {
     assert.equal(invoice.fields.invoiceTotal?.value, 427.5);
     assert.equal(invoice.embeddedXml, undefined);
   });
+  it(
+    "should take the total from the form's formulas and list the one line it is",
+    {},
+    () => {
+      // The form's total is its hours times its rate, so that is its one item: so many, at
+      // so much, with each field where its cell is on the page.
+      const [item, ...rest] = invoice.fields.items;
+      assert.ok(item, "the form's total gave no item");
+      assert.deepEqual(rest, []);
+      assert.equal(item.quantity?.value, 3);
+      assert.equal(item.quantity?.text, "3.0");
+      assert.equal(item.unitPrice?.value, 142.5);
+      assert.equal(item.unitPrice?.text, "142.50/hr");
+      assert.equal(item.amount?.value, 427.5);
+      assert.equal(item.description?.value, "Total");
+      assert.deepEqual(item.amount?.span, invoice.fields.invoiceTotal?.span);
+      assert.equal(item.span?.page, 1);
+      // The labels read the same total, which is as sure as a field gets.
+      assert.equal(invoice.fields.invoiceTotal?.confidence, 0.99);
+      assert.deepEqual(invoice.warnings, []);
+    }
+  );
   it("should give the same result with empty options", {}, () => {
     assert.deepEqual(doc.invoice({}), invoice);
   });

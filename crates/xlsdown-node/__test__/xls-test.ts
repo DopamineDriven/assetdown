@@ -97,12 +97,59 @@ export class XlsTest extends WorkupService {
   }
 
   /**
-   * A formula cell left with the number `value`. Its formula is the second cell of the second
-   * column, times two: the cell as two bytes of row and two of column, with the bits that
-   * say both move, then a whole number, and then the sign that joins them.
+   * The second cell of the second column, times two: the cell as two bytes of row and two of
+   * column, with the bits that say both move, then a whole number, and then the sign that
+   * joins them.
    */
-  public formula(row: number, col: number, xf: number, value: number) {
-    const tokens = Buffer.from([0x44, 1, 0, 0x01, 0xc0, 0x1e, 2, 0, 0x05]);
+  private get doubled() {
+    return Buffer.from([0x44, 1, 0, 0x01, 0xc0, 0x1e, 2, 0, 0x05]);
+  }
+
+  /** One cell times another, each given as its row and column from nought. */
+  public product(
+    first: readonly [number, number],
+    second: readonly [number, number]
+  ) {
+    const cell = ([row, col]: readonly [number, number]) => [
+      0x44,
+      row,
+      0,
+      col,
+      0xc0
+    ];
+    return Buffer.from([...cell(first), ...cell(second), 0x05]);
+  }
+
+  /** The sum of the rows `from` to `to` of one column: the range, then the mark that sums it. */
+  public sum(col: number, from: number, to: number) {
+    return Buffer.from([
+      0x25,
+      from,
+      0,
+      to,
+      0,
+      col,
+      0xc0,
+      col,
+      0xc0,
+      0x19,
+      0x10,
+      0,
+      0
+    ]);
+  }
+
+  /**
+   * A formula cell left with the number `value`. Its formula is `tokens`, or failing them the
+   * second cell of the second column, times two.
+   */
+  public formula(
+    row: number,
+    col: number,
+    xf: number,
+    value: number,
+    tokens = this.doubled
+  ) {
     return this.cellRecord(
       0x0006,
       row,
@@ -393,6 +440,32 @@ export class XlsTest extends WorkupService {
           ]
         },
         { name: "Notes", hidden: true, records: [this.shared(0, 0, 0, 1)] }
+      ]
+    );
+  }
+
+  /**
+   * A workbook that bills two things and adds them up: two bolts at ten each, worked out by a
+   * formula, labor typed in, and under them a formula that sums the two. Nothing on the sheet
+   * is labeled as a total, so only the formulas say which amount is one.
+   */
+  public get billed() {
+    return this.file(
+      [this.sharedStrings(["Bolt", "Labor", "In all"]), this.xf(0), this.xf(4)],
+      [
+        {
+          name: "Bill",
+          records: [
+            this.shared(0, 0, 0, 0),
+            this.number(0, 1, 0, 2),
+            this.number(0, 2, 1, 10),
+            this.formula(0, 3, 1, 20, this.product([0, 1], [0, 2])),
+            this.shared(1, 0, 0, 1),
+            this.number(1, 3, 1, 24.5),
+            this.shared(2, 0, 0, 2),
+            this.formula(2, 3, 1, 44.5, this.sum(3, 0, 1))
+          ]
+        }
       ]
     );
   }

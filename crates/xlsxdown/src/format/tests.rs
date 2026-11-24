@@ -45,8 +45,8 @@ fn renders_the_corpus_codes_and_the_standard_ones() {
     "a quoted slash is a literal"
   );
   assert!(
-    NumberFormat::parse("[$-409]mmmm d, yyyy").is_none(),
-    "locale directives are unsupported"
+    NumberFormat::parse("[$-407]mmmm d, yyyy").is_none(),
+    "a month named in another language is unsupported"
   );
   assert!(NumberFormat::parse("mm/dd/yy").unwrap().is_date());
   assert!(
@@ -134,9 +134,10 @@ fn currency_symbols_and_time_only_codes() {
       .as_deref(),
     Some("$")
   );
-  assert!(
-    NumberFormat::parse("[$-409]mmmm d, yyyy").is_none(),
-    "a bare locale id is still unsupported"
+  assert_eq!(
+    f("[$-409]mmmm d, yyyy").currency_symbol(),
+    None,
+    "a bare locale id names no currency"
   );
   // Time-only codes carry a clock and no date.
   assert!(f("h:mm").is_date());
@@ -395,4 +396,51 @@ fn the_two_ways_of_reading_a_code_agree_wherever_both_can_read_it() {
     let parsed = NumberFormat::parse(code).unwrap_or_else(|| panic!("{code:?} should parse"));
     assert_eq!(parsed.serial_kind(), serial_kind(code), "{code:?}");
   }
+}
+
+#[test]
+fn a_code_that_only_says_which_language_it_is_in_renders_where_the_language_changes_nothing() {
+  let r = |code: &str, v: f64| NumberFormat::parse(code).unwrap().render(v, false).unwrap();
+  // English, wherever it is spoken: the names of months and days are the ones written here.
+  assert_eq!(r("[$-409]mmmm d, yyyy", 42247.0), "August 31, 2015");
+  assert_eq!(r("[$-409]mmmm\\-yy;@", 42247.0), "August-15");
+  assert_eq!(r("[$-409]d\\-mmm\\-yy;@", 42247.0), "31-Aug-15");
+  assert_eq!(r("[$-809]dd/mm/yyyy", 42247.0), "31/08/2015");
+  assert_eq!(
+    r("[$-C09]dddd, d mmmm yyyy", 42247.0),
+    "Monday, 31 August 2015"
+  );
+  assert_eq!(r("[$-409]h:mm AM/PM", 0.75), "6:00 PM");
+  assert_eq!(r("[$-en-US]mmmm d, yyyy", 42247.0), "August 31, 2015");
+  assert_eq!(r("[$-en-GB]d mmmm yyyy", 42247.0), "31 August 2015");
+  // The long date and the time of whoever opens the file: the code beside the mark is what
+  // any reader but Excel shows.
+  assert_eq!(
+    r("[$-F800]dddd\\,\\ mmmm\\ dd\\,\\ yyyy", 42247.0),
+    "Monday, August 31, 2015"
+  );
+  assert_eq!(r("[$-F400]h:mm:ss\\ AM/PM", 0.25), "6:00:00 AM");
+  // Another language changes nothing where the code names no month, day, or half of the day.
+  assert_eq!(r("[$-407]dd.mm.yyyy", 42247.0), "31.08.2015");
+  assert_eq!(r("[$-40C]dd/mm/yyyy hh:mm", 42247.5), "31/08/2015 12:00");
+  assert_eq!(r("[$-fr-FR]dd/mm/yyyy", 42247.0), "31/08/2015");
+  // Where it does name one, the name would be in that language, which is not written here.
+  for code in [
+    "[$-407]d. mmmm yyyy",
+    "[$-40C]dddd d mmmm yyyy",
+    "[$-407]d. mmm yy",
+    "[$-411]h:mm AM/PM",
+    "[$-de-DE]d. mmmm yyyy",
+  ] {
+    assert!(NumberFormat::parse(code).is_none(), "{code:?}");
+  }
+  // Another calendar or another set of digits is not this release's to write.
+  assert!(NumberFormat::parse("[$-1070409]d/m/yyyy").is_none());
+  assert!(NumberFormat::parse("[$-D00041E]d/m/yyyy").is_none());
+  // And what is not a language at all is refused.
+  for code in ["[$-]d/m/yyyy", "[$-xyz]d/m/yyyy", "[$]d/m/yyyy"] {
+    assert!(NumberFormat::parse(code).is_none(), "{code:?}");
+  }
+  // A number under such a mark is still a number.
+  assert_eq!(r("[$-409]#,##0.00", 1234.5), "1,234.50");
 }

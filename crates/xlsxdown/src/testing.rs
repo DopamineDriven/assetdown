@@ -1,13 +1,16 @@
 //! Workbooks made from fragments of XML held in memory, for the tests of what is read from more
 //! than one part.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use ooxmldown::{DocProps, PackageError, Relationship, rels_path};
 
+use crate::address::parse_cell_ref;
 use crate::error::SpreadsheetError;
 use crate::source::Source;
-use crate::workbook::{Workbook, read_workbook};
+use crate::workbook::{
+  Cell, Horizontal, Sheet, Stored, Styles, Vertical, Workbook, Xf, read_workbook,
+};
 
 const MAIN: &str = "xl/workbook.xml";
 const NAMESPACES: &str = r#"xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
@@ -231,4 +234,117 @@ impl Source for Parts {
       .cloned()
       .ok_or_else(|| PackageError::Malformed(format!("part {part} has no relationships")))
   }
+}
+
+// Workbooks made of cells, for the tests of what is read from a workbook already in memory.
+
+/// What a cell of a workbook under construction holds. Money is a number shown with two
+/// places, as an amount is.
+pub(crate) enum Holds<'a> {
+  Text(&'a str),
+  Number(f64),
+  Money(f64),
+  /// A formula and the value it was left with.
+  Formula(&'a str, f64),
+  MoneyFormula(&'a str, f64),
+}
+use Holds::{Formula, Money, MoneyFormula, Number, Text};
+
+fn styles() -> Styles {
+  let xf = |num_fmt_id: u32| Xf {
+    num_fmt_id,
+    font_id: 0,
+    horizontal: Horizontal::General,
+    vertical: Vertical::Bottom,
+    wrap: false,
+    indent: 0,
+  };
+  Styles {
+    // The second shows a number with two places.
+    xfs: vec![xf(0), xf(4)],
+    ..Styles::default()
+  }
+}
+
+pub(crate) fn sheet(name: &str, hidden: bool, cells: &[(&str, Holds<'_>)]) -> Sheet {
+  let styles = styles();
+  let mut warnings = Vec::new();
+  let placed = cells.iter().map(|(reference, holds)| {
+    let (stored, style, formula) = match holds {
+      Text(text) => (Stored::text(text.to_string()), 0, None),
+      Number(n) => (Stored::number(*n), 0, None),
+      Money(n) => (Stored::number(*n), 1, None),
+      Formula(text, n) => (Stored::number(*n), 0, Some(text.to_string())),
+      MoneyFormula(text, n) => (Stored::number(*n), 1, Some(text.to_string())),
+    };
+    let cell = Cell {
+      formula,
+      cached: true,
+      ..Cell::styled(stored, style, &styles, false, reference, &mut warnings)
+    };
+    (parse_cell_ref(reference).unwrap(), cell)
+  });
+  Sheet {
+    name: name.to_string(),
+    index: 0,
+    hidden,
+    dimension: None,
+    print_area: None,
+    cols: Vec::new(),
+    rows: BTreeMap::new(),
+    default_row_height: 15.0,
+    default_col_width: None,
+    cells: placed.collect(),
+    merges: Vec::new(),
+    drawings: 0,
+    links: 0,
+    tables: 0,
+    comments: 0,
+    pictures: 0,
+    charts: 0,
+    pivot_tables: 0,
+    warnings: Vec::new(),
+  }
+}
+
+pub(crate) fn workbook(sheets: Vec<Sheet>) -> Workbook {
+  Workbook {
+    sheets,
+    date1904: false,
+    styles: styles(),
+    props: DocProps::default(),
+    defined_names: 0,
+    has_macros: false,
+    is_template: false,
+  }
+}
+
+pub(crate) fn one(cells: &[(&str, Holds<'_>)]) -> Workbook {
+  workbook(vec![sheet("Invoice", false, cells)])
+}
+
+/// Three things bought, a subtotal of them, tax on the subtotal, and the total of the two.
+pub(crate) fn an_invoice() -> Workbook {
+  one(&[
+    ("A1", Text("Item")),
+    ("B1", Text("Qty")),
+    ("C1", Text("Price")),
+    ("D1", Text("Amount")),
+    ("A2", Text("Bolt")),
+    ("B2", Number(2.0)),
+    ("C2", Money(10.0)),
+    ("D2", MoneyFormula("B2*C2", 20.0)),
+    ("A3", Text("Seal")),
+    ("B3", Number(1.0)),
+    ("C3", Money(15.5)),
+    ("D3", MoneyFormula("B3*C3", 15.5)),
+    ("A4", Text("Labor")),
+    ("D4", Money(24.5)),
+    ("C5", Text("Subtotal")),
+    ("D5", MoneyFormula("SUM(D2:D4)", 60.0)),
+    ("C6", Text("Tax")),
+    ("D6", MoneyFormula("D5*0.1", 6.0)),
+    ("C7", Text("Total")),
+    ("D7", MoneyFormula("D5+D6", 66.0)),
+  ])
 }

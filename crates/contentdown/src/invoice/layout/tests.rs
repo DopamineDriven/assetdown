@@ -349,3 +349,33 @@ fn the_header_fields_come_off_the_acme_page() {
   assert_eq!(r.currency_source, Some(CurrencySource::Unknown));
   assert!(!r.warnings.iter().any(|w| w.contains("not implemented")));
 }
+
+#[test]
+fn a_document_is_as_sure_as_its_key_fields_and_surer_when_its_totals_reconcile() {
+  use crate::invoice::types::MoneyField;
+  let money = |confidence: f64| MoneyField {
+    value: 1.0,
+    text: "1.00".to_string(),
+    confidence,
+    span: None,
+    currency_code: None,
+    currency_symbol: None,
+  };
+  let fields = InvoiceFields {
+    invoice_total: Some(money(0.8)),
+    amount_due: Some(money(0.6)),
+    // Not a key field: it does not count.
+    sub_total: Some(money(0.1)),
+    ..InvoiceFields::default()
+  };
+  assert!((document_confidence(&fields, false) - 0.7).abs() < 1e-12);
+  assert!((document_confidence(&fields, true) - 0.8).abs() < 1e-12);
+  // No key field read: nothing to be sure of, reconciled or not.
+  assert_eq!(document_confidence(&InvoiceFields::default(), true), 0.0);
+  // Never quite certain.
+  let sure = InvoiceFields {
+    invoice_total: Some(money(0.99)),
+    ..InvoiceFields::default()
+  };
+  assert_eq!(document_confidence(&sure, true), 0.99);
+}

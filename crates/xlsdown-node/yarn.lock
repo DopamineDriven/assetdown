@@ -5,85 +5,85 @@ __metadata:
   version: 10
   cacheKey: 10c0
 
-"@d0paminedriven/fs@npm:^12.3.0":
-  version: 12.3.0
-  resolution: "@d0paminedriven/fs@npm:12.3.0"
+"@d0paminedriven/fs@npm:^12.5.0":
+  version: 12.5.0
+  resolution: "@d0paminedriven/fs@npm:12.5.0"
   dependencies:
-    "@d0paminedriven/mimedown": "npm:^0.4.0"
+    "@d0paminedriven/mimedown": "npm:^0.6.0"
     "@d0paminedriven/pdfdown": "npm:^0.20.0"
     dotenv: "npm:^18.0.10"
     dotenv-expand: "npm:^1000.0.0"
     fflate: "npm:^0.8.3"
-  checksum: 10c0/c6f6705482398db545e604bbcd52304cf13a8ac68c213773c1fb68ffd064ea9ff422dd66bbdba3e5ac1d9ad7a007699ba7231c3660193a28f0fff9827bbb8ef9
+  checksum: 10c0/ed931c1d33e3d27191a1f71682420daa2c9f76ad3e15ee0046f801b360585ccdac4e025e0153a29bdc9af8e1030a069bbf1ce5d05c37534fe97166d920bc2e37
   languageName: node
   linkType: hard
 
-"@d0paminedriven/mimedown-android-arm64@npm:0.4.0":
-  version: 0.4.0
-  resolution: "@d0paminedriven/mimedown-android-arm64@npm:0.4.0"
+"@d0paminedriven/mimedown-android-arm64@npm:0.6.0":
+  version: 0.6.0
+  resolution: "@d0paminedriven/mimedown-android-arm64@npm:0.6.0"
   conditions: os=android & cpu=arm64
   languageName: node
   linkType: hard
 
-"@d0paminedriven/mimedown-darwin-arm64@npm:0.4.0":
-  version: 0.4.0
-  resolution: "@d0paminedriven/mimedown-darwin-arm64@npm:0.4.0"
+"@d0paminedriven/mimedown-darwin-arm64@npm:0.6.0":
+  version: 0.6.0
+  resolution: "@d0paminedriven/mimedown-darwin-arm64@npm:0.6.0"
   conditions: os=darwin & cpu=arm64
   languageName: node
   linkType: hard
 
-"@d0paminedriven/mimedown-darwin-x64@npm:0.4.0":
-  version: 0.4.0
-  resolution: "@d0paminedriven/mimedown-darwin-x64@npm:0.4.0"
+"@d0paminedriven/mimedown-darwin-x64@npm:0.6.0":
+  version: 0.6.0
+  resolution: "@d0paminedriven/mimedown-darwin-x64@npm:0.6.0"
   conditions: os=darwin & cpu=x64
   languageName: node
   linkType: hard
 
-"@d0paminedriven/mimedown-freebsd-x64@npm:0.4.0":
-  version: 0.4.0
-  resolution: "@d0paminedriven/mimedown-freebsd-x64@npm:0.4.0"
+"@d0paminedriven/mimedown-freebsd-x64@npm:0.6.0":
+  version: 0.6.0
+  resolution: "@d0paminedriven/mimedown-freebsd-x64@npm:0.6.0"
   conditions: os=freebsd & cpu=x64
   languageName: node
   linkType: hard
 
-"@d0paminedriven/mimedown-linux-arm-gnueabihf@npm:0.4.0":
-  version: 0.4.0
-  resolution: "@d0paminedriven/mimedown-linux-arm-gnueabihf@npm:0.4.0"
+"@d0paminedriven/mimedown-linux-arm-gnueabihf@npm:0.6.0":
+  version: 0.6.0
+  resolution: "@d0paminedriven/mimedown-linux-arm-gnueabihf@npm:0.6.0"
   conditions: os=linux & cpu=arm
   languageName: node
   linkType: hard
 
-"@d0paminedriven/mimedown-linux-arm64-gnu@npm:0.4.0":
-  version: 0.4.0
-  resolution: "@d0paminedriven/mimedown-linux-arm64-gnu@npm:0.4.0"
+"@d0paminedriven/mimedown-linux-arm64-gnu@npm:0.6.0":
+  version: 0.6.0
+  resolution: "@d0paminedriven/mimedown-linux-arm64-gnu@npm:0.6.0"
   conditions: os=linux & cpu=arm64 & libc=glibc
   languageName: node
   linkType: hard
 
-"@d0paminedriven/mimedown-linux-arm64-musl@npm:0.4.0":
-  version: 0.4.0
-  resolution: "@d0paminedriven/mimedown-linux-arm64-musl@npm:0.4.0"
+"@d0paminedriven/mimedown-linux-arm64-musl@npm:0.6.0":
+  version: 0.6.0
+  resolution: "@d0paminedriven/mimedown-linux-arm64-musl@npm:0.6.0"
   conditions: os=linux & cpu=arm64 & libc=musl
   languageName: node
   linkType: hard
 
-"@d0paminedriven/mimedown-linux-x64-gnu@npm:0.4.0":
-  version: 0.4.0
-  resolution: "@d0paminedriven/mimedown-linux-x64-gnu@npm:0.4.0"
+"@d0paminedriven/mimedown-linux-x64-gnu@npm:0.6.0":
+  version: 0.6.0
+  resolution: "@d0paminedriven/mimedown-linux-x64-gnu@npm:0.6.0"
   conditions: os=linux & cpu=x64 & libc=glibc
   languageName: node
   linkType: hard
 
-"@d0paminedriven/mimedown-linux-x64-musl@npm:0.4.0":
-  version: 0.4.0
-  resolution: "@d0paminedriven/mimedown-linux-x64-musl@npm:0.4.0"
+"@d0paminedriven/mimedown-linux-x64-musl@npm:0.6.0":
+  version: 0.6.0
+  resolution: "@d0paminedriven/mimedown-linux-x64-musl@npm:0.6.0"
   conditions: os=linux & cpu=x64 & libc=musl
   languageName: node
   linkType: hard
 
-"@d0paminedriven/mimedown-wasm32-wasi@npm:0.4.0":
-  version: 0.4.0
-  resolution: "@d0paminedriven/mimedown-wasm32-wasi@npm:0.4.0"
+"@d0paminedriven/mimedown-wasm32-wasi@npm:0.6.0":
+  version: 0.6.0
+  resolution: "@d0paminedriven/mimedown-wasm32-wasi@npm:0.6.0"
   dependencies:
     "@emnapi/core": "npm:2.0.0-alpha.5"
     "@emnapi/runtime": "npm:2.0.0-alpha.5"
@@ -92,44 +92,44 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@d0paminedriven/mimedown-win32-arm64-msvc@npm:0.4.0":
-  version: 0.4.0
-  resolution: "@d0paminedriven/mimedown-win32-arm64-msvc@npm:0.4.0"
+"@d0paminedriven/mimedown-win32-arm64-msvc@npm:0.6.0":
+  version: 0.6.0
+  resolution: "@d0paminedriven/mimedown-win32-arm64-msvc@npm:0.6.0"
   conditions: os=win32 & cpu=arm64
   languageName: node
   linkType: hard
 
-"@d0paminedriven/mimedown-win32-ia32-msvc@npm:0.4.0":
-  version: 0.4.0
-  resolution: "@d0paminedriven/mimedown-win32-ia32-msvc@npm:0.4.0"
+"@d0paminedriven/mimedown-win32-ia32-msvc@npm:0.6.0":
+  version: 0.6.0
+  resolution: "@d0paminedriven/mimedown-win32-ia32-msvc@npm:0.6.0"
   conditions: os=win32 & cpu=ia32
   languageName: node
   linkType: hard
 
-"@d0paminedriven/mimedown-win32-x64-msvc@npm:0.4.0":
-  version: 0.4.0
-  resolution: "@d0paminedriven/mimedown-win32-x64-msvc@npm:0.4.0"
+"@d0paminedriven/mimedown-win32-x64-msvc@npm:0.6.0":
+  version: 0.6.0
+  resolution: "@d0paminedriven/mimedown-win32-x64-msvc@npm:0.6.0"
   conditions: os=win32 & cpu=x64
   languageName: node
   linkType: hard
 
-"@d0paminedriven/mimedown@npm:^0.4.0":
-  version: 0.4.0
-  resolution: "@d0paminedriven/mimedown@npm:0.4.0"
+"@d0paminedriven/mimedown@npm:^0.6.0":
+  version: 0.6.0
+  resolution: "@d0paminedriven/mimedown@npm:0.6.0"
   dependencies:
-    "@d0paminedriven/mimedown-android-arm64": "npm:0.4.0"
-    "@d0paminedriven/mimedown-darwin-arm64": "npm:0.4.0"
-    "@d0paminedriven/mimedown-darwin-x64": "npm:0.4.0"
-    "@d0paminedriven/mimedown-freebsd-x64": "npm:0.4.0"
-    "@d0paminedriven/mimedown-linux-arm-gnueabihf": "npm:0.4.0"
-    "@d0paminedriven/mimedown-linux-arm64-gnu": "npm:0.4.0"
-    "@d0paminedriven/mimedown-linux-arm64-musl": "npm:0.4.0"
-    "@d0paminedriven/mimedown-linux-x64-gnu": "npm:0.4.0"
-    "@d0paminedriven/mimedown-linux-x64-musl": "npm:0.4.0"
-    "@d0paminedriven/mimedown-wasm32-wasi": "npm:0.4.0"
-    "@d0paminedriven/mimedown-win32-arm64-msvc": "npm:0.4.0"
-    "@d0paminedriven/mimedown-win32-ia32-msvc": "npm:0.4.0"
-    "@d0paminedriven/mimedown-win32-x64-msvc": "npm:0.4.0"
+    "@d0paminedriven/mimedown-android-arm64": "npm:0.6.0"
+    "@d0paminedriven/mimedown-darwin-arm64": "npm:0.6.0"
+    "@d0paminedriven/mimedown-darwin-x64": "npm:0.6.0"
+    "@d0paminedriven/mimedown-freebsd-x64": "npm:0.6.0"
+    "@d0paminedriven/mimedown-linux-arm-gnueabihf": "npm:0.6.0"
+    "@d0paminedriven/mimedown-linux-arm64-gnu": "npm:0.6.0"
+    "@d0paminedriven/mimedown-linux-arm64-musl": "npm:0.6.0"
+    "@d0paminedriven/mimedown-linux-x64-gnu": "npm:0.6.0"
+    "@d0paminedriven/mimedown-linux-x64-musl": "npm:0.6.0"
+    "@d0paminedriven/mimedown-wasm32-wasi": "npm:0.6.0"
+    "@d0paminedriven/mimedown-win32-arm64-msvc": "npm:0.6.0"
+    "@d0paminedriven/mimedown-win32-ia32-msvc": "npm:0.6.0"
+    "@d0paminedriven/mimedown-win32-x64-msvc": "npm:0.6.0"
   dependenciesMeta:
     "@d0paminedriven/mimedown-android-arm64":
       optional: true
@@ -157,7 +157,7 @@ __metadata:
       optional: true
     "@d0paminedriven/mimedown-win32-x64-msvc":
       optional: true
-  checksum: 10c0/be85619e8e1246e754f5322fb922ee38c4320ff7cb1f64198227118be0ce18b236f4c7409cfc78af63a598fd8deb90990f49dbaea7c0ed76e0408dee347530c6
+  checksum: 10c0/3f3f7443cacce42753bc743d0c9afdd3d61b93fb7631cb3f6aa7aee6b729ffec42262905f25f24993de6cb022e04263755a321a75bc62f55954598c6c685f5c8
   languageName: node
   linkType: hard
 
@@ -325,7 +325,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@d0paminedriven/xlsdown@workspace:."
   dependencies:
-    "@d0paminedriven/fs": "npm:^12.3.0"
+    "@d0paminedriven/fs": "npm:^12.5.0"
     "@d0paminedriven/type-utils": "npm:^1.3.0"
     "@emnapi/core": "npm:2.0.0-alpha.5"
     "@emnapi/runtime": "npm:2.0.0-alpha.5"

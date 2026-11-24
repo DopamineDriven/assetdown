@@ -444,3 +444,39 @@ fn a_code_that_only_says_which_language_it_is_in_renders_where_the_language_chan
   // A number under such a mark is still a number.
   assert_eq!(r("[$-409]#,##0.00", 1234.5), "1,234.50");
 }
+
+#[test]
+fn a_language_mark_that_also_names_the_everyday_calendar_and_digits_renders_like_one_that_does_not()
+{
+  let r = |code: &str, v: f64| NumberFormat::parse(code).unwrap().render(v, false).unwrap();
+  // The digits before the language say which calendar and which digits: 1 is the calendar
+  // the code is written in anyway, and so is 2; 1 again, further left, is the plain digits.
+  assert_eq!(r("[$-10409]m/d/yyyy", 42247.0), "8/31/2015");
+  assert_eq!(
+    r("[$-10409]m/d/yyyy\\ h:mm\\ AM/PM", 42247.5),
+    "8/31/2015 12:00 PM"
+  );
+  assert_eq!(
+    r("[$-10409]m/d/yyyy\\ h:mm:ss\\ AM/PM", 42247.75),
+    "8/31/2015 6:00:00 PM"
+  );
+  assert_eq!(r("[$-10409]#,##0;\\(#,##0\\)", 2468.4), "2,468");
+  assert_eq!(r("[$-10409]#,##0;\\(#,##0\\)", -2468.4), "(2,468)");
+  assert_eq!(r("[$-10409]#,##0.0", 6.2744), "6.3");
+  assert_eq!(r("[$-20409]mmmm d, yyyy", 42247.0), "August 31, 2015");
+  assert_eq!(r("[$-1010409]d-mmm-yy", 42247.0), "31-Aug-15");
+  assert_eq!(r("[$-10407]dd.mm.yyyy", 42247.0), "31.08.2015");
+  // Another calendar counts the years another way, and other digits are other characters.
+  for code in [
+    "[$-30411]m/d/yyyy",
+    "[$-60401]m/d/yyyy",
+    "[$-70409]m/d/yyyy",
+    "[$-1070409]d/m/yyyy",
+    "[$-2010409]m/d/yyyy",
+    "[$-D00041E]d/m/yyyy",
+  ] {
+    assert!(NumberFormat::parse(code).is_none(), "{code:?}");
+  }
+  // A month named in another language is still not written here, whatever the calendar.
+  assert!(NumberFormat::parse("[$-10407]d. mmmm yyyy").is_none());
+}

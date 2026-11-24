@@ -226,12 +226,6 @@ pub(crate) fn read(stream: &[u8]) -> Result<Globals, SpreadsheetError> {
   while let Some(record) = records.next() {
     match record.id {
       EOF => break,
-      // The record that says how the workbook is encrypted.
-      0x002F => {
-        return Err(SpreadsheetError::UnsupportedFormat(
-          "an encrypted workbook".to_string(),
-        ));
-      }
       0x0022 => globals.date1904 = record.u16_at(0) == Some(1),
       0x0031 => fonts.extend(font(record)),
       0x041E => {

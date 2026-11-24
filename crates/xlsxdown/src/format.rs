@@ -170,17 +170,22 @@ const SYSTEM_TIME: u32 = 0xF400;
 const ENGLISH: u32 = 0x09;
 
 /// The language of a bare `[$-…]` mark: a language id in hex (`409`), or a tag (`en-US`).
-/// `None` for a mark that also asks for another calendar or set of digits (the hex digits
-/// past the fourth), and for what is neither.
+/// The hex digits past the fourth say which calendar the dates are in and which digits the
+/// numbers are written with: the everyday calendar (none stated, 1, or 2) and the plain
+/// digits (none stated, or 1) change nothing; any other is not this release's to write.
+/// `None` for those, and for what is neither an id nor a tag.
 fn language(mark: &str) -> Option<Language> {
   if !mark.is_empty() && mark.chars().all(|c| c.is_ascii_hexdigit()) {
     let id = u32::from_str_radix(mark, 16).ok()?;
-    return match id {
-      SYSTEM_LONG_DATE | SYSTEM_TIME => Some(Language::English),
-      0..=0xFFFF if id & 0x3FF == ENGLISH => Some(Language::English),
-      0..=0xFFFF => Some(Language::Other),
-      _ => None,
-    };
+    let (digits, calendar, spoken) = (id >> 24, (id >> 16) & 0xFF, id & 0xFFFF);
+    if digits > 1 || calendar > 2 {
+      return None;
+    }
+    return Some(match spoken {
+      SYSTEM_LONG_DATE | SYSTEM_TIME => Language::English,
+      _ if spoken & 0x3FF == ENGLISH => Language::English,
+      _ => Language::Other,
+    });
   }
   // A tag is a language of two or three letters, then at least a country or a script.
   let (spoken, rest) = mark.split_once('-')?;

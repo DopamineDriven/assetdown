@@ -1,6 +1,6 @@
 {
   "name": "@d0paminedriven/xlsxdown",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Rust powered xlsx extraction for Node",
   "keywords": [
     "Excel",
@@ -33,6 +33,10 @@
     "build": "yarn build:base",
     "build:base": "napi build --platform --esm --release",
     "build:wasm": "yarn build:wasm32",
+    "build:wasm-package": "yarn build:wasm-package:threads && yarn build:wasm-package:threadless && yarn build:wasm-package:worker",
+    "build:wasm-package:worker": "cd wasm && ../node_modules/.bin/tsdown",
+    "build:wasm-package:threadless": "napi build --platform --no-js --esm --release --target wasm32-wasip1 --package-json-path wasm/package.json --output-dir wasm",
+    "build:wasm-package:threads": "napi build --platform --no-js --esm --release --target wasm32-wasip1-threads --package-json-path wasm/package.json --output-dir wasm",
     "build:wasm32": "napi build --platform --esm --release --target wasm32-wasip1-threads",
     "format": "run-p format:oxfmt format:rs format:toml",
     "format:oxfmt": "oxfmt",
@@ -43,7 +47,8 @@
     "version": "napi version",
     "prepare": "husky",
     "test": "yarn tsx --test \"__test__/**/*.spec.ts\"",
-    "test:wasi": "NAPI_RS_FORCE_WASI=error yarn tsx --test \"__test__/wasi.spec.ts\""
+    "test:wasi": "NAPI_RS_FORCE_WASI=error yarn tsx --test \"__test__/wasi.spec.ts\"",
+    "test:wasm": "yarn tsx --test \"wasm/__test__/**/*.spec.ts\""
   },
   "devDependencies": {
     "@d0paminedriven/fs": "^12.5.0",
@@ -65,7 +70,10 @@
     "npm-run-all2": "^9.1.0",
     "oxfmt": "^0.80.0",
     "oxlint": "^1.95.0",
+    "playwright-core": "^1.65.1",
+    "rolldown-plugin-wasm": "^0.3.2",
     "tinybench": "^6.2.5",
+    "tsdown": "^0.23.7",
     "tslib": "^2.9.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"

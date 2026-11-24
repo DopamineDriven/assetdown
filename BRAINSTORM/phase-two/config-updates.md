@@ -408,3 +408,36 @@ A metafile in a Word document is kept compressed, and this inflates it. `flate2`
 #### `crates/xlsdown-node/wasm/package.json` and `crates/docdown-node/wasm/package.json`
 
 New, made on 2026-11-23 when you asked for the WebAssembly folders to be configured. Each is `rtfdown-node/wasm/package.json` with the names changed (`@d0paminedriven/xlsdown-wasm`, `@d0paminedriven/docdown-wasm`, binaries `xlsdown-node-wasm` and `docdown-node-wasm`), at version 0.1.0 to match its base package, with its own description and keywords. The `build:wasm-package` scripts and `test:wasm` that both bindings inherited from `rtfdown-node` now have a folder to work on, so nothing in either binding's own `package.json` needed to change.
+
+### What changed on 2026-11-24
+
+Both changes were asked for, and are made, not proposed.
+
+#### Locked `.xls` workbooks: two hashing crates
+
+`Cargo.toml` (the root), under `[workspace.dependencies]`:
+
+```toml
+md-5 = "0.11.0"
+sha1 = "0.11.0"
+```
+
+`crates/xlsdown/Cargo.toml`:
+
+```toml
+md-5.workspace = true
+sha1.workspace = true
+```
+
+Excel makes the key of a locked workbook from its password with MD5 (Excel 97 and 2000) or SHA-1 (Excel 2002 and 2003). `md-5` was already in the lock file, through `lopdf`; `sha1` is new to it, and is the same family at the same version. The cipher itself, RC4, is twenty lines in `crates/xlsdown/src/crypt.rs`.
+
+#### `@d0paminedriven/xlsxdown-wasm`: the WebAssembly-only package for `.xlsx`
+
+`crates/xlsxdown-node/wasm/` is new, laid out as `crates/xlsdown-node/wasm/` is.
+
+- `wasm/package.json` is a new manifest: the xls one with the names changed (`@d0paminedriven/xlsxdown-wasm`, binary `xlsxdown-node-wasm`), at 0.6.0 to match its base package. The two must be at the same version when the base is released, which `version.sh` now sees to: `xlsxdown` moves four files, as `rtfdown`, `xlsdown`, and `docdown` do.
+- `crates/xlsxdown-node/package.json` gained what the xls binding's already had: the scripts `build:wasm-package` (with its three parts) and `test:wasm`, and the dev dependencies `playwright-core`, `rolldown-plugin-wasm`, and `tsdown`, at the versions `xlsdown-node` uses. `yarn.lock` moved with them.
+- `crates/xlsxdown-node/.gitignore` and `.oxfmtrc.json` gained the five lines each that keep the package's generated scripts out of git and out of the formatter. Both files are now the same as the xls binding's.
+- `crates/xlsxdown-node/ci/wasm` and `ci/publish-wasm` are the xls binding's with the names changed, and `.github/workflows/xlsxdown-node.yml` has the `wasm` and `publish-wasm` jobs, with `wasm` among what `publish` waits on. The base package's release commit, `xlsxdown@<version>`, publishes both.
+- The worker (`XlsxWorker`) answers `spreadsheetCellsAsync`, the one verb the binding has as a function, as `XlsWorker` does.
+- Its tests read the public fixtures, and one workbook no fixture is: `crates/xlsxdown-node/__test__/xlsx-test.ts` writes an `.xlsx` in code (a zip kept without compression), which is where the 40,000 cells come from for the test that a page stays free while the worker reads.

@@ -66,9 +66,9 @@ A format code that is not rendered leaves `formatSupported` false. The cell's `t
 
 `invoice()` reads the pages by their labels, as an invoice in a PDF is read, and then asks the formulas, which a page does not have.
 
-**The total.** Of the formulas that no other formula reads, the one that reaches the most cells is the workbook's total, and it becomes `fields.invoiceTotal`. Where the labels on the page gave another amount, the formulas have it and a warning says both. A total of nought (a form not filled in yet) changes nothing.
+**The total.** The formulas are first asked for one that comes to the amount the labels on the page gave: where one does, the two agree, and that formula is the total. Failing one, the total is, of the formulas that no other formula reads, one shown as money before one that is not, and then the one that reaches the most cells. It becomes `fields.invoiceTotal`, and where the labels gave another amount, a warning says both. Two things leave the labels' reading as it was: a formula total of nought (a form not filled in yet), and a formula total shown as a plain number (hours added up, a count) beside a labeled amount shown as money.
 
-**The items.** The total's formula is followed down. A formula that only adds cells up is a subtotal, and what it adds is looked at in turn; anything else (a number typed in, a quantity times a price, a tax worked out from a subtotal) is a line, and each line is one of `fields.items`. An item has its `amount`, a `description` from the text of its row (or failing that the heading over its column), and a `quantity` and `unitPrice` where its amount is one cell times another and one of the two is shown as money. What the total takes away is an item below nought. Every field says where its cell is on the page.
+**The items.** The total's formula is followed down. A formula that comes to a sum of cells is a subtotal, and what it adds is looked at in turn; anything else (a number typed in, a quantity times a price, a tax worked out from a subtotal) is a line, and each line is one of `fields.items`. A sum is still a sum when it is rounded, written out as text (`TEXT(SUM(B2:B9),"0.00")`), or kept blank until there is something to show (`IF(SUM(B2:B9)>0,SUM(B2:B9),"")`). An item has its `amount`, a `description` from the text of its row (or failing that the heading over its column), and a `quantity` and `unitPrice` where its amount is one cell times another: the price is the one shown as money, or failing that the quantity is the one that is itself a sum (hours added up, at a rate). What the total takes away is an item below nought. Every field says where its cell is on the page, and an amount is given as its cell shows it (1250.38 for a cell that holds 1250.3756 and shows two places).
 
 So the items come to the total, and a warning says when they do not. A total that is worked out some other way than by adding cells up has no items, and a warning says so.
 
@@ -84,13 +84,19 @@ warnings; // [] when the items come to the total and the labels agree
 
 A workbook that cannot be read throws, and rejects from the `Async` twins, with one of three kinds of message:
 
-- `unsupported format: …` for a workbook saved with a password, a workbook of Excel 5 or 95, a worksheet of Excel 2, 3, or 4, and a compound file that holds no workbook;
+- `unsupported format: …` for a workbook saved with a password of its owner's choosing (`an encrypted workbook`), a workbook of Excel 5 or 95, a worksheet of Excel 2, 3, or 4, and a compound file that holds no workbook;
 - `limit exceeded: …` for a workbook with more cells or merged ranges than one file may hold; and
 - `malformed workbook: …` for anything else, such as bytes that are not a compound file.
 
+## Locked workbooks
+
+Excel encrypts a workbook with a password of its own, `VelvetSweatshop`, whenever it must encrypt one and has been given none: when a workbook's structure is protected, or it is saved to be opened read-only. Such a file opens in Excel without a question, and it is read here without one too, like any other workbook. Both kinds of RC4 lock are opened: the one of Excel 97 and 2000, and the "CryptoAPI" one of Excel 2002 and 2003.
+
+A workbook locked with a password of its owner's choosing is refused, as `unsupported format: an encrypted workbook`. So is one hidden the older way, by XOR.
+
 ## Not read yet
 
-Charts, pivot tables, and pictures (they are counted), and the formula of a table of what-ifs (its text is empty). A workbook saved with a password is refused.
+Charts, pivot tables, and pictures (they are counted), and the formula of a table of what-ifs (its text is empty). A workbook locked with a password of its owner's choosing is refused; there is no option to give one.
 
 ## Supported platforms
 

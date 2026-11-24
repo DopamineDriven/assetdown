@@ -247,8 +247,10 @@ pub(crate) enum Holds<'a> {
   /// A formula and the value it was left with.
   Formula(&'a str, f64),
   MoneyFormula(&'a str, f64),
+  /// A formula that was left with text.
+  TextFormula(&'a str, &'a str),
 }
-use Holds::{Formula, Money, MoneyFormula, Number, Text};
+use Holds::{Formula, Money, MoneyFormula, Number, Text, TextFormula};
 
 fn styles() -> Styles {
   let xf = |num_fmt_id: u32| Xf {
@@ -276,6 +278,7 @@ pub(crate) fn sheet(name: &str, hidden: bool, cells: &[(&str, Holds<'_>)]) -> Sh
       Money(n) => (Stored::number(*n), 1, None),
       Formula(text, n) => (Stored::number(*n), 0, Some(text.to_string())),
       MoneyFormula(text, n) => (Stored::number(*n), 1, Some(text.to_string())),
+      TextFormula(text, shown) => (Stored::text(shown.to_string()), 0, Some(text.to_string())),
     };
     let cell = Cell {
       formula,

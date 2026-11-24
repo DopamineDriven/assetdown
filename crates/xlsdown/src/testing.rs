@@ -1,5 +1,10 @@
 //! Workbooks for the tests, built a record at a time.
 
+use md5::{Digest, Md5};
+use sha1::Sha1;
+
+use crate::crypt::Key;
+
 /// One record: its number, the length of its data, and the data.
 pub(crate) fn record(id: u16, data: &[u8]) -> Vec<u8> {
   let mut out = id.to_le_bytes().to_vec();
@@ -288,12 +293,103 @@ pub(crate) struct SheetSpec {
   records: Vec<u8>,
 }
 
+/// How a workbook under construction is locked: by RC4 under a key made by MD5, or under a
+/// key of so many bits made by SHA-1.
+#[derive(Clone, Copy)]
+pub(crate) enum Locking {
+  Rc4,
+  CryptoApi { key_bits: u32 },
+}
+
+/// The record that states a lock a password opens, and what the password makes under it.
+fn lock_stated(password: &str, how: Locking) -> (Vec<u8>, Key) {
+  let nth = |at: usize| u8::try_from(at).unwrap();
+  let salt: [u8; 16] = std::array::from_fn(|at| 0x40 + nth(at));
+  let verifier: [u8; 16] = std::array::from_fn(|at| 0xA0 ^ (nth(at) * 7));
+  let (key, hash) = match how {
+    Locking::Rc4 => (Key::rc4(password, &salt), Md5::digest(verifier).to_vec()),
+    Locking::CryptoApi { key_bits } => (
+      Key::crypto_api(password, &salt, usize::try_from(key_bits / 8).unwrap()),
+      Sha1::digest(verifier).to_vec(),
+    ),
+  };
+  // The verifier and its hash are kept encrypted, one after the other, under the key of
+  // the first stretch.
+  let over = key.stream_of(0);
+  let kept: Vec<u8> = verifier
+    .iter()
+    .chain(&hash)
+    .zip(over)
+    .map(|(byte, over)| byte ^ over)
+    .collect();
+  let stated = match how {
+    Locking::Rc4 => joined(&[&[1u8, 0, 1, 0, 1, 0][..], &salt, &kept]),
+    Locking::CryptoApi { key_bits } => {
+      let provider: Vec<u8> = "Provider\0"
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect();
+      // Flags, nothing more, the cipher, the hash, the size of the key, the kind of
+      // provider, two words kept back, and the provider's name.
+      let header = joined(&[
+        &4u32.to_le_bytes()[..],
+        &0u32.to_le_bytes(),
+        &0x6801u32.to_le_bytes(),
+        &0x8004u32.to_le_bytes(),
+        &key_bits.to_le_bytes(),
+        &1u32.to_le_bytes(),
+        &[0u8; 8],
+        &provider,
+      ]);
+      joined(&[
+        &[1u8, 0, 2, 0, 2, 0][..],
+        &4u32.to_le_bytes(),
+        &u32::try_from(header.len()).unwrap().to_le_bytes(),
+        &header,
+        &16u32.to_le_bytes(),
+        &salt,
+        &kept[..16],
+        &20u32.to_le_bytes(),
+        &kept[16..],
+      ])
+    }
+  };
+  (record(0x002F, &stated), key)
+}
+
+/// Encrypt a workbook's records as the format says to, written apart from the reader's way
+/// of undoing it: every byte of every record's data after the record that states the lock,
+/// under the key of the stretch of 1024 bytes of the stream the byte is in. Left as they
+/// are: the four bytes that head each record, seven records whole, and the four bytes of
+/// the record that lists a sheet that say where the sheet's records start.
+fn encrypt(stream: &mut [u8], key: &Key) {
+  let mut at = 0;
+  let mut locked = false;
+  while at + 4 <= stream.len() {
+    let id = u16::from_le_bytes([stream[at], stream[at + 1]]);
+    let length = usize::from(u16::from_le_bytes([stream[at + 2], stream[at + 3]]));
+    let end = (at + 4 + length).min(stream.len());
+    let never = [0x0809, 0x002F, 0x00E1, 0x0194, 0x0195, 0x0196, 0x0138].contains(&id);
+    if locked && !never {
+      let from = if id == 0x0085 { at + 8 } else { at + 4 };
+      for place in from..end {
+        let over = key.stream_of(u32::try_from(place / 1024).unwrap());
+        stream[place] ^= over[place % 1024];
+      }
+    }
+    locked |= id == 0x002F;
+    at = end;
+  }
+}
+
 /// A workbook under construction: the records of the workbook itself, and its sheets.
 #[derive(Default)]
 pub(crate) struct Book {
   globals: Vec<u8>,
   sheets: Vec<SheetSpec>,
   version: Option<u16>,
+  /// The password the workbook is locked with, and how.
+  lock: Option<(String, Locking)>,
 }
 
 impl Book {
@@ -327,6 +423,12 @@ impl Book {
     self
   }
 
+  /// Lock the workbook with a password.
+  pub fn locked(mut self, password: &str, how: Locking) -> Self {
+    self.lock = Some((password.to_string(), how));
+    self
+  }
+
   /// The record that lists a sheet: where its records start, how it is shown, and its name.
   fn bound(sheet: &SheetSpec, at: usize) -> Vec<u8> {
     let kind = match sheet.kind {
@@ -351,8 +453,15 @@ impl Book {
       .iter()
       .map(|sheet| Book::bound(sheet, 0).len())
       .sum();
-    let mut at = bof(GLOBALS).len() + self.globals.len() + listed + eof().len();
+    // The record that states a lock comes straight after the one that opens the records.
+    let lock = self
+      .lock
+      .as_ref()
+      .map(|(password, how)| lock_stated(password, *how));
+    let stated = lock.as_ref().map_or(&[][..], |(stated, _)| stated);
+    let mut at = bof(GLOBALS).len() + stated.len() + self.globals.len() + listed + eof().len();
     let mut out = bof_of(version, GLOBALS);
+    out.extend(stated);
     out.extend(&self.globals);
     let mut bodies = Vec::new();
     for sheet in &self.sheets {
@@ -363,6 +472,9 @@ impl Book {
     }
     out.extend(eof());
     out.extend(bodies.concat());
+    if let Some((_, key)) = &lock {
+      encrypt(&mut out, key);
+    }
     out
   }
 

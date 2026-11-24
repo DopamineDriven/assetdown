@@ -51,6 +51,7 @@ image = { version = "0.25.10", default-features = false, features = [
   "webp"
 ] }
 lopdf = "0.47.0"
+md-5 = "0.11.0"
 mp4parse = "0.17.0"
 napi = { version = "3.16.2", features = ["napi10"] }
 napi-build = "2.6.0"
@@ -64,6 +65,7 @@ rayon = "1.12.0"
 roxmltree = "0.21.2"
 rust_h264 = "=0.6.1"
 rust_h265 = "=0.4.1"
+sha1 = "0.11.0"
 symphonia = { version = "0.6.1", default-features = false, features = [
   "pcm",
   "adpcm",

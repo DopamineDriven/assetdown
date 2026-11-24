@@ -1,16 +1,24 @@
 //! A workbook's total, and the lines it adds up, found by following its formulas.
 //!
 //! A sheet's labels say what its maker called things; its formulas say what is added to
-//! what. The total is the formula that no other formula reads and that reaches the most
-//! cells. From it the formulas are followed down: one that only adds cells up is a subtotal,
-//! and what it adds is looked at in turn; anything else (a number typed in, a quantity times
-//! a price, a charge worked out from a subtotal) is a line. So the lines come to the total,
-//! or the workbook says that they do not.
+//! what. The total is a formula that no other formula reads: one shown as money before one
+//! that is not, and of those the one that reaches the most cells. From it the formulas are
+//! followed down: one that comes to a sum of cells is a subtotal, and what it adds is looked
+//! at in turn; anything else (a number typed in, a quantity times a price, a charge worked
+//! out from a subtotal) is a line. So the lines come to the total, or the workbook says that
+//! they do not.
+//!
+//! What a formula comes to is read from its text by `parse`, which sees a sum through what
+//! is done to show it: a rounding, a writing of it as text, a joining of it to a word, and a
+//! question that keeps it blank until there is something to show. A total written out as
+//! text is one of the formulas, worth the sum of the cells it adds up.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::formula::{Reference, references};
 use crate::workbook::{Cell, CellValue, Sheet, Workbook};
+
+mod parse;
 
 /// A workbook whose formulas read more cells than this between them is not followed. No
 /// real workbook comes near it; one made to exhaust a reader does.
@@ -53,7 +61,11 @@ pub struct AuditLine {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Audit {
   pub total: CellAt,
+  /// What the total comes to: the number its cell holds, or, for a cell that holds its sum
+  /// written out as text, the sum of the cells it adds up.
   pub value: f64,
+  /// Whether the total's cell is shown as money: with a currency's sign, or with two places.
+  pub shown_as_money: bool,
   /// In the order the total reads them. The total itself, when it is one cell times
   /// another. None when the total is worked out some other way than by adding cells up.
   pub lines: Vec<AuditLine>,
@@ -76,13 +88,16 @@ impl Steps {
 
 /// A formula, as the cells it reads.
 struct Formula {
-  /// The numbers it reads, in the order it reads them, each with whether it is added (1) or
-  /// taken away (-1).
-  reads: Vec<(CellAt, f64)>,
-  /// The formula only adds cells up.
-  sums: bool,
-  /// The formula is one cell times another.
+  /// Every number it reads, whatever it does with it, in the order it reads them.
+  reads: Vec<CellAt>,
+  /// The cells it adds up, each added (1) or taken away (-1), when what it comes to is their
+  /// sum. A cell a question in the formula asks about is read, and is not among these.
+  adds: Option<Vec<(CellAt, f64)>>,
+  /// The two cells it multiplies, when what it comes to is one cell times another.
   product: Option<(CellAt, CellAt)>,
+  /// What it comes to: the number its cell holds, or, for a cell that holds its sum written
+  /// out as text, the sum of the cells it adds up.
+  value: f64,
 }
 
 fn number(cell: &Cell) -> Option<f64> {
@@ -92,56 +107,32 @@ fn number(cell: &Cell) -> Option<f64> {
   }
 }
 
-/// Whether a cell is shown as money: with a currency's sign, or with two places.
+/// Whether text reads as an amount of money: it ends in two places of decimals, or it
+/// carries a currency's sign beside its digits.
+pub(crate) fn reads_as_money(text: &str) -> bool {
+  let text = text.trim().trim_end_matches(')');
+  let digits = |part: &str| part.len() == 2 && part.chars().all(|c| c.is_ascii_digit());
+  let two_places = text
+    .rsplit_once(['.', ','])
+    .is_some_and(|(whole, places)| digits(places) && whole.ends_with(|c: char| c.is_ascii_digit()));
+  let signed = text.chars().any(|c| c.is_ascii_digit())
+    && text.chars().any(|c| "$\u{20ac}\u{a3}\u{a5}".contains(c));
+  two_places || signed
+}
+
+/// Whether a cell is shown as money: with a currency's sign, or with two places. A cell
+/// that holds text is, when the text reads as an amount.
 fn money(cell: &Cell) -> bool {
-  cell.currency_symbol.is_some()
-    || cell
-      .format
-      .as_deref()
-      .is_some_and(|code| code.contains(".00") && !code.contains('%'))
-}
-
-/// Whether the reference that starts at `start` is taken away: a minus stands before it,
-/// with at most spaces and opening brackets between.
-fn taken_away(formula: &str, start: usize) -> bool {
-  formula[..start]
-    .chars()
-    .rev()
-    .find(|c| !c.is_whitespace() && *c != '(')
-    == Some('-')
-}
-
-/// A formula with its references taken out, in upper case, and without its spaces: what it
-/// does to the cells it reads.
-fn workings(formula: &str, found: &[Reference]) -> String {
-  let mut rest = String::new();
-  let mut at = 0;
-  for reference in found {
-    rest.push_str(&formula[at..reference.start]);
-    at = reference.end;
+  match &cell.value {
+    CellValue::Text(text) => reads_as_money(text),
+    _ => {
+      cell.currency_symbol.is_some()
+        || cell
+          .format
+          .as_deref()
+          .is_some_and(|code| code.contains(".00") && !code.contains('%'))
+    }
   }
-  rest.push_str(&formula[at..]);
-  rest
-    .chars()
-    .filter(|c| !c.is_whitespace())
-    .flat_map(char::to_uppercase)
-    .collect()
-}
-
-/// Whether a formula's workings only add cells up: sums, pluses, and minuses, with or
-/// without a rounding of the whole, or the kind of subtotal that is a sum.
-fn only_adds(workings: &str) -> bool {
-  let rounded = workings.strip_prefix("ROUND(").and_then(|inner| {
-    let (inner, places) = inner.strip_suffix(')')?.rsplit_once(',')?;
-    places.chars().all(|c| c.is_ascii_digit()).then_some(inner)
-  });
-  rounded
-    .unwrap_or(workings)
-    .replace("SUBTOTAL(109,", "(")
-    .replace("SUBTOTAL(9,", "(")
-    .replace("SUM", "")
-    .chars()
-    .all(|c| "+-(),".contains(c))
 }
 
 /// The formulas of a workbook, by the cells they read.
@@ -160,6 +151,22 @@ impl<'a> Graph<'a> {
       .get(at.sheet)?
       .cells
       .get(&(at.row, at.col))
+  }
+
+  /// What a cell comes to: what its formula comes to, or the number it holds.
+  fn value(&self, at: CellAt) -> Option<f64> {
+    match self.formulas.get(&at) {
+      Some(formula) => Some(formula.value),
+      None => self.cell(at).and_then(number),
+    }
+  }
+
+  /// Whether a cell's formula comes to a sum of cells.
+  fn sums(&self, at: CellAt) -> bool {
+    self
+      .formulas
+      .get(&at)
+      .is_some_and(|formula| formula.adds.is_some())
   }
 
   /// None when the formulas read more cells than any real workbook's do.
@@ -216,7 +223,13 @@ impl<'a> Graph<'a> {
     for (sheet, cells) in workbook.sheets.iter().enumerate() {
       for ((row, col), cell) in &cells.cells {
         let text = match cell.formula.as_deref() {
-          Some(text) if !text.is_empty() && number(cell).is_some() => text,
+          Some(text) if !text.is_empty() => text,
+          _ => continue,
+        };
+        // A formula left with a number, or with text that holds one: a sum written out.
+        let written_out = match &cell.value {
+          CellValue::Number(_) => false,
+          CellValue::Text(shown) if shown.chars().any(|c| c.is_ascii_digit()) => true,
           _ => continue,
         };
         let at = CellAt {
@@ -225,50 +238,71 @@ impl<'a> Graph<'a> {
           col: *col,
         };
         let found = references(text);
-        let mut reads: Vec<(CellAt, f64)> = Vec::new();
+        // The numbers each reference holds.
+        let held: Vec<Vec<CellAt>> = found
+          .iter()
+          .map(|reference| {
+            let on = match &reference.sheet {
+              None => Some(sheet),
+              Some(name) => named.get(&name.to_lowercase()).copied(),
+            };
+            on.map_or_else(Vec::new, |on| numbers_in(on, reference))
+          })
+          .collect();
+        let shape = parse::shape(text, &found);
+        let adds = shape.adds.and_then(|added| {
+          let mut seen = HashSet::new();
+          let cells: Vec<(CellAt, f64)> = added
+            .into_iter()
+            .flat_map(|(index, sign)| held[index].iter().map(move |cell| (*cell, sign)))
+            .filter(|(cell, _)| *cell != at && seen.insert(*cell))
+            .collect();
+          (!cells.is_empty()).then_some(cells)
+        });
+        let value = match (number(cell), &adds) {
+          (Some(value), _) => value,
+          (None, Some(added)) if written_out => added
+            .iter()
+            .filter_map(|(cell, sign)| {
+              Some(
+                sign
+                  * number(
+                    workbook.sheets[cell.sheet]
+                      .cells
+                      .get(&(cell.row, cell.col))?,
+                  )?,
+              )
+            })
+            .sum(),
+          // Text that is worked out some other way than by adding cells up is not followed.
+          _ => continue,
+        };
+        // The cell a reference is when it is one cell with a number in it.
+        let single = |index: usize| match held[index][..] {
+          [one] => Some(one),
+          _ => None,
+        };
+        let product = shape
+          .product
+          .and_then(|(first, second)| Some((single(first)?, single(second)?)));
         let mut seen = HashSet::new();
-        // The cell each reference is when it is one cell with a number in it.
-        let mut single: Vec<Option<CellAt>> = Vec::with_capacity(found.len());
-        for reference in &found {
-          let on = match &reference.sheet {
-            None => Some(sheet),
-            Some(name) => named.get(&name.to_lowercase()).copied(),
-          };
-          let numbers = on.map_or_else(Vec::new, |on| numbers_in(on, reference));
-          let range = reference.range;
-          single.push(match numbers[..] {
-            [one] if (range.r0, range.c0) == (range.r1, range.c1) => Some(one),
-            _ => None,
-          });
-          let sign = if taken_away(text, reference.start) {
-            -1.0
-          } else {
-            1.0
-          };
-          for number in numbers {
-            if number != at && seen.insert(number) {
-              reads.push((number, sign));
-            }
-          }
-        }
+        let reads: Vec<CellAt> = held
+          .into_iter()
+          .flatten()
+          .filter(|cell| *cell != at && seen.insert(*cell))
+          .collect();
         reads_in_all += reads.len();
         if reads_in_all > MAX_READS {
           return None;
         }
-        let workings = workings(text, &found);
-        let product = match single[..] {
-          [Some(first), Some(second)] if workings.replace(['(', ')'], "") == "*" => {
-            Some((first, second))
-          }
-          _ => None,
-        };
-        read.extend(reads.iter().map(|(cell, _)| *cell));
+        read.extend(reads.iter().copied());
         formulas.insert(
           at,
           Formula {
-            sums: !reads.is_empty() && only_adds(&workings),
             reads,
+            adds,
             product,
+            value,
           },
         );
       }
@@ -289,7 +323,7 @@ impl<'a> Graph<'a> {
         continue;
       };
       steps.take(formula.reads.len())?;
-      for (read, _) in &formula.reads {
+      for read in &formula.reads {
         if reached.insert(*read) {
           open.push(*read);
         }
@@ -298,20 +332,24 @@ impl<'a> Graph<'a> {
     Ok(reached.len())
   }
 
-  /// The total: of the formulas nothing reads, on the sheets that are shown, the one that
-  /// reaches the most cells. Of those that reach as many, one shown as money; of those, the
-  /// lowest on its sheet.
-  fn total(&self, steps: &mut Steps) -> Result<Option<CellAt>, Spent> {
+  /// The total: of the formulas nothing reads, on the sheets that are shown, one that comes
+  /// to `asked` where an amount is asked for (what the labels on the page gave) and some
+  /// formula comes to it. Failing that, one shown as money before one that is not. Of those
+  /// alike so far, the one that reaches the most cells; of those, the lowest on its sheet.
+  fn total(&self, asked: Option<f64>, steps: &mut Steps) -> Result<Option<CellAt>, Spent> {
     let mut best = None;
     for (at, formula) in &self.formulas {
       if formula.reads.is_empty() || self.read.contains(at) || self.workbook.sheets[at.sheet].hidden
       {
         continue;
       }
+      // The labels give an amount without its sign.
+      let as_asked = asked.is_some_and(|asked| comes_to(formula.value.abs(), asked.abs(), 1));
       let shown_as_money = self.cell(*at).is_some_and(money);
       let rank = (
-        self.reach(*at, steps)?,
+        as_asked,
         shown_as_money,
+        self.reach(*at, steps)?,
         at.row,
         at.col,
         std::cmp::Reverse(at.sheet),
@@ -362,12 +400,13 @@ impl<'a> Graph<'a> {
 
   /// A cell as a line, when it holds a number that is not nought.
   fn line(&self, at: CellAt, sign: f64) -> Option<AuditLine> {
-    let amount = sign * self.cell(at).and_then(number)?;
+    let amount = sign * self.value(at)?;
     if amount == 0.0 {
       return None;
     }
-    // Of the two cells a line multiplies, the price is the one shown as money. With
-    // neither shown so, or both, which is which is not known.
+    // Of the two cells a line multiplies, the price is the one shown as money. Where the
+    // formats do not say (neither is shown so, or both are), the one that is a sum of cells
+    // is how many: hours added up, at a rate. Failing both, which is which is not known.
     let (quantity, unit_price) = self
       .formulas
       .get(&at)
@@ -377,7 +416,11 @@ impl<'a> Graph<'a> {
         match (shown(first), shown(second)) {
           (false, true) => Some((first, second)),
           (true, false) => Some((second, first)),
-          _ => None,
+          _ => match (self.sums(first), self.sums(second)) {
+            (true, false) => Some((first, second)),
+            (false, true) => Some((second, first)),
+            _ => None,
+          },
         }
       })
       .unzip();
@@ -411,9 +454,10 @@ impl<'a> Graph<'a> {
       }
       match self.formulas.get(&cell) {
         // The last of what it reads goes in first, so that the first comes out first.
-        Some(formula) if formula.sums => open.extend(
-          formula
-            .reads
+        Some(Formula {
+          adds: Some(added), ..
+        }) => open.extend(
+          added
             .iter()
             .rev()
             .map(|(read, its_sign)| (*read, sign * its_sign)),
@@ -440,8 +484,7 @@ impl<'a> Graph<'a> {
     else {
       return Ok(None);
     };
-    let sums = |cell: CellAt| self.formulas.get(&cell).is_some_and(|formula| formula.sums);
-    if !sums(first) && !sums(second) {
+    if !self.sums(first) && !self.sums(second) {
       return Ok(None);
     }
     // Every formula is looked at for one that comes to the same.
@@ -449,14 +492,10 @@ impl<'a> Graph<'a> {
     let mut others: Vec<CellAt> = self
       .formulas
       .iter()
-      .filter(|(at, formula)| formula.sums && !seen.contains(at))
-      .map(|(at, _)| *at)
-      .filter(|at| {
-        self
-          .cell(*at)
-          .and_then(number)
-          .is_some_and(|value| comes_to(value, line.amount, 1))
+      .filter(|(at, formula)| {
+        formula.adds.is_some() && !seen.contains(at) && comes_to(formula.value, line.amount, 1)
       })
+      .map(|(at, _)| *at)
       .collect();
     others.sort_unstable();
     for other in others {
@@ -479,11 +518,15 @@ fn comes_to(sum: f64, whole: f64, count: usize) -> bool {
 }
 
 /// The total of a workbook's formulas and its lines; `Ok(None)` when no formula is a total.
-fn followed(graph: &Graph<'_>, steps: &mut Steps) -> Result<Option<Audit>, Spent> {
-  let Some(total) = graph.total(steps)? else {
+fn followed(
+  graph: &Graph<'_>,
+  asked: Option<f64>,
+  steps: &mut Steps,
+) -> Result<Option<Audit>, Spent> {
+  let Some(total) = graph.total(asked, steps)? else {
     return Ok(None);
   };
-  let Some(value) = graph.cell(total).and_then(number) else {
+  let Some(value) = graph.value(total) else {
     return Ok(None);
   };
   let mut seen = HashSet::new();
@@ -491,7 +534,7 @@ fn followed(graph: &Graph<'_>, steps: &mut Steps) -> Result<Option<Audit>, Spent
   // another (so many, at so much) is the one line itself. Any other is not followed: it is
   // all there is.
   let found = match graph.formulas.get(&total) {
-    Some(formula) if formula.sums || formula.product.is_some() => {
+    Some(formula) if formula.adds.is_some() || formula.product.is_some() => {
       graph.lines(total, 1.0, &mut seen, steps)?
     }
     _ => Vec::new(),
@@ -510,6 +553,7 @@ fn followed(graph: &Graph<'_>, steps: &mut Steps) -> Result<Option<Audit>, Spent
   Ok(Some(Audit {
     total,
     value,
+    shown_as_money: graph.cell(total).is_some_and(money),
     adds_up: !lines.is_empty() && comes_to(sum, value, lines.len()),
     lines,
   }))
@@ -521,13 +565,20 @@ impl Workbook {
   /// follow: one whose formulas read more cells than any real workbook's do, or whose
   /// following takes more looks than any real workbook's does.
   pub fn audit(&self) -> Option<Audit> {
-    self.audit_within(MAX_STEPS)
+    self.audit_toward(None)
   }
 
-  /// [`Workbook::audit`], allowed `steps` looks at cells once the formulas are read.
-  fn audit_within(&self, steps: usize) -> Option<Audit> {
+  /// [`Workbook::audit`], told an amount to look for: what the labels on the page gave as
+  /// the total, say. Where one of the formulas that nothing reads comes to that amount, it
+  /// is the total, before any that reaches further. The amount's sign is not asked.
+  pub fn audit_toward(&self, asked: Option<f64>) -> Option<Audit> {
+    self.audited(asked, MAX_STEPS)
+  }
+
+  /// The audit, allowed `steps` looks at cells once the formulas are read.
+  fn audited(&self, asked: Option<f64>, steps: usize) -> Option<Audit> {
     let graph = Graph::of(self)?;
-    followed(&graph, &mut Steps(steps)).ok().flatten()
+    followed(&graph, asked, &mut Steps(steps)).ok().flatten()
   }
 }
 

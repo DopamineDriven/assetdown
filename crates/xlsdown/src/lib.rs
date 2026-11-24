@@ -14,7 +14,12 @@
 //! out from the tokens the file keeps it as. A cell that shares a formula with others has it
 //! written for itself, and names the cell the formula is kept for. Nothing here depends on
 //! Node.
+//!
+//! A workbook Excel locked with its own password, which Excel opens without asking, is
+//! unlocked and read like any other (`crypt`). One locked with a password of its owner's
+//! choosing is an unsupported format.
 
+mod crypt;
 mod formula;
 mod globals;
 mod record;
@@ -66,7 +71,9 @@ fn props_of(summary: Summary) -> DocProps {
 }
 
 /// Read a workbook from the bytes of an `.xls` file. A file of an older Excel, and one saved
-/// with a password, is an unsupported format, named for what it is.
+/// with a password of its owner's choosing, is an unsupported format, named for what it is.
+/// One that Excel locked with its own password, as it does a workbook whose structure is
+/// protected, is unlocked and read.
 pub fn open(bytes: &[u8]) -> Result<Workbook, SpreadsheetError> {
   let file = match CompoundFile::open(bytes) {
     Ok(file) => file,
@@ -92,6 +99,10 @@ pub fn open(bytes: &[u8]) -> Result<Workbook, SpreadsheetError> {
     } else {
       SpreadsheetError::UnsupportedFormat("a compound file that holds no workbook".to_string())
     });
+  };
+  let stream = match crypt::unlocked(&stream, crypt::DEFAULT_PASSWORD)? {
+    Some(plain) => plain,
+    None => stream,
   };
   let globals = globals::read(&stream)?;
   let context = Context {

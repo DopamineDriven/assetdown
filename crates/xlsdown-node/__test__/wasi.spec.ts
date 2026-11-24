@@ -77,6 +77,22 @@ describe("wasm32-wasi build", { skip }, () => {
       const message = "unsupported format: an encrypted workbook";
       assert.throws(() => new XlsDown(t.locked), { message });
       await assert.rejects(XlsDown.openAsync(t.locked), { message });
+      assert.throws(() => new XlsDown(t.lockedByItsOwner), { message });
+    }
+  );
+  it(
+    "should read a workbook Excel locked with its own password like any other",
+    {},
+    async () => {
+      const every = { hiddenSheets: true };
+      const open = new XlsDown(t.ledger).spreadsheetCells(every);
+      assert.equal(open.length, 3);
+      assert.deepEqual(
+        new XlsDown(t.lockedByExcel).spreadsheetCells(every),
+        open
+      );
+      const later = await XlsDown.openAsync(t.lockedByExcel);
+      assert.deepEqual(await later.spreadsheetCellsAsync(every), open);
     }
   );
 });

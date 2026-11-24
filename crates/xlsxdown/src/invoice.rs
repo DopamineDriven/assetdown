@@ -5,6 +5,12 @@
 //! formulas. So the total is then taken from them (see `audit`), and the lines it adds up
 //! become the invoice's items. The labels say what a sheet's maker called things; the
 //! formulas say what is added to what.
+//!
+//! The two are set against each other. The formulas are asked first for a total that comes
+//! to what the labels gave: where one does, the two agree. Where none does, the formulas
+//! have it, with two exceptions that leave the labels' reading as it was: a formula total of
+//! nought, and one shown as a plain number (hours added up, a count) against a labeled
+//! amount shown as money.
 
 use std::collections::HashMap;
 
@@ -15,7 +21,7 @@ use contentdown::invoice::{
 };
 
 use crate::address::cell_ref;
-use crate::audit::{Audit, AuditLine, CellAt};
+use crate::audit::{Audit, AuditLine, CellAt, reads_as_money};
 use crate::workbook::{Cell, CellValue, Workbook};
 
 /// How sure a total taken from the formulas is: as sure as a field gets when the labels on
@@ -38,6 +44,31 @@ fn in_full(value: f64) -> f64 {
 /// Whether two amounts are the same to the cent.
 fn same(a: f64, b: f64) -> bool {
   (a - b).abs() <= 0.005 + 1e-9
+}
+
+/// An amount as its cell shows it, where the cell shows cents or finer: the number the text
+/// spells, when that is the amount rounded to the places shown (1,250.38 for a cell that
+/// holds 1250.3756). None where the cell shows fewer than two places, and where what it shows
+/// is not the amount rounded (a percentage, a number scaled to thousands).
+fn as_shown(value: f64, text: &str) -> Option<f64> {
+  let last = text.rfind(|c: char| c.is_ascii_digit())?;
+  let number = &text[..=last];
+  let (whole, places) = number.rsplit_once(['.', ','])?;
+  if places.len() < 2 || !places.bytes().all(|b| b.is_ascii_digit()) {
+    return None;
+  }
+  // A comma before three digits groups thousands; before two it stands for the point.
+  if number[whole.len()..].starts_with(',') && places.len() != 2 {
+    return None;
+  }
+  let digits: String = whole
+    .chars()
+    .filter(char::is_ascii_digit)
+    .chain(places.chars())
+    .collect();
+  let scale = 10f64.powi(i32::try_from(places.len()).ok()?);
+  let shown = digits.parse::<f64>().ok()? / scale;
+  ((shown - value.abs()).abs() <= 0.5 / scale + 1e-9).then(|| shown.copysign(value))
 }
 
 /// Where the cells of the visible sheets were laid out: for each sheet, by its place among
@@ -132,7 +163,7 @@ impl<'a> Fields<'a> {
   fn money(&self, at: CellAt, value: f64, confidence: f64) -> Option<MoneyField> {
     let cell = self.cell(at)?;
     Some(MoneyField {
-      value: in_full(value),
+      value: as_shown(value, &cell.text).unwrap_or_else(|| in_full(value)),
       text: cell.text.clone(),
       confidence,
       span: self.places.span(at.sheet, [at]),
@@ -192,9 +223,10 @@ impl<'a> Fields<'a> {
 }
 
 /// Write what the formulas say into what the labels gave. A total of nought says nothing (a
-/// form not filled in yet), so it changes nothing.
+/// form not filled in yet, or charges and credits that cancel), so it changes nothing; and
+/// nought is anything under half a cent, which is what adding in binary leaves of it.
 fn audited(workbook: &Workbook, places: Places, audit: &Audit, result: &mut InvoiceResult) {
-  if audit.value == 0.0 {
+  if same(audit.value, 0.0) {
     return;
   }
   let fields = Fields {
@@ -210,6 +242,20 @@ fn audited(workbook: &Workbook, places: Places, audit: &Audit, result: &mut Invo
     (false, true) => ADDS_UP,
     (false, false) => ALONE,
   };
+  // A total the formulas show as a plain number (hours added up, a count) does not set aside
+  // an amount the page labels as the total and shows as money.
+  if let Some(read) = by_labels
+    && !agreed
+    && !audit.shown_as_money
+    && (read.currency_symbol.is_some() || reads_as_money(&read.text))
+  {
+    result.warnings.push(format!(
+      "the formulas add up to a total ({}) that is not shown as money, so the amount the labels gave, {}, was kept",
+      fields.named(audit.total),
+      read.text
+    ));
+    return;
+  }
   let Some(total) = fields.money(audit.total, amount, confidence) else {
     return;
   };
@@ -258,9 +304,11 @@ fn audited(workbook: &Workbook, places: Places, audit: &Audit, result: &mut Invo
 impl Workbook {
   /// Invoice fields read from the workbook's visible sheets, each laid out as a page, with
   /// the total and the items taken from the workbook's formulas where they give a total (see
-  /// [`Workbook::audit`]): the total is the formula that reaches the most cells, and the
-  /// items are the lines it adds up. Where the labels on the page gave another total, a
-  /// warning says both; where the lines do not come to the total, a warning says what they
+  /// [`Workbook::audit_toward`]): the total is the formula that comes to what the labels
+  /// gave, or failing one the formula that nothing reads which is shown as money and reaches
+  /// the most cells, and the items are the lines it adds up. An amount is given as its cell
+  /// shows it, where the cell shows cents. Where the labels on the page gave another total,
+  /// a warning says both; where the lines do not come to the total, a warning says what they
   /// come to.
   pub fn invoice(&self, options: Option<&InvoiceOptions>) -> InvoiceResult {
     let (pages, cells): (Vec<PageLayout>, Vec<Vec<String>>) = self
@@ -269,7 +317,10 @@ impl Workbook {
       .map(|layout| (layout.page, layout.cells))
       .unzip();
     let mut result = extract_from_pages(&pages, options);
-    if let Some(audit) = self.audit() {
+    // The labels' total is what the formulas are asked about first: where one of them comes
+    // to it, the two agree, and that formula is the total.
+    let labeled = result.fields.invoice_total.as_ref().map(|read| read.value);
+    if let Some(audit) = self.audit_toward(labeled) {
       audited(self, Places::of(self, &pages, &cells), &audit, &mut result);
     }
     result

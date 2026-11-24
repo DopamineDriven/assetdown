@@ -973,3 +973,60 @@ fn a_workbook_read_as_an_invoice_takes_its_total_and_its_items_from_its_formulas
   );
   assert!(invoice.warnings.is_empty(), "{:?}", invoice.warnings);
 }
+
+/// A workbook of two sheets whose records run to several stretches of 1024 bytes: text the
+/// cells share, numbers shown as money, a formula, a sheet that is hidden, and a name.
+fn a_long_book() -> Book {
+  let texts: Vec<String> = (0..80)
+    .map(|row| format!("Line {row} of the bill"))
+    .collect();
+  let texts: Vec<&str> = texts.iter().map(String::as_str).collect();
+  let mut rows = Vec::new();
+  for row in 0..80u16 {
+    rows.push(label_sst(row, 0, 0, u32::from(row)));
+    rows.push(number(row, 1, 1, f64::from(row) * 1.25));
+  }
+  // The sum of the amounts: the range, then the mark that it is summed.
+  rows.push(formula(
+    80,
+    1,
+    1,
+    3950.0f64.to_le_bytes(),
+    &[0x25, 0, 0, 79, 0, 1, 0xC0, 1, 0xC0, 0x19, 0x10, 0, 0],
+  ));
+  Book::new()
+    .global(sst(&texts))
+    .global(xf(0, 0, 0, 0))
+    .global(xf(0, 4, 0, 0))
+    .sheet("Bill", &rows)
+    .sheet_of("Kept back", 1, 0x0010, &[label(0, 0, 0, "not shown")])
+}
+
+#[test]
+fn a_workbook_locked_with_the_password_excel_itself_uses_is_read_like_any_other() {
+  let open_book = opened(a_long_book());
+  assert!(a_long_book().stream().len() > 3 * 1024);
+  assert_eq!(open_book.sheets[0].cells.len(), 161);
+  for how in [
+    Locking::Rc4,
+    Locking::CryptoApi { key_bits: 40 },
+    Locking::CryptoApi { key_bits: 128 },
+  ] {
+    let locked = a_long_book().locked("VelvetSweatshop", how);
+    // Locked, the records are not what they were.
+    assert_ne!(locked.stream()[200..], a_long_book().stream()[200..]);
+    assert_eq!(opened(locked), open_book);
+  }
+}
+
+#[test]
+fn a_workbook_locked_with_a_password_of_its_owner_s_choosing_is_refused_and_named() {
+  for how in [
+    Locking::Rc4,
+    Locking::CryptoApi { key_bits: 40 },
+    Locking::CryptoApi { key_bits: 128 },
+  ] {
+    let locked = a_long_book().locked("known to its owner", how);
+    assert_eq!(unsupported(&locked.file()), "an encrypted workbook");
+  }
+}

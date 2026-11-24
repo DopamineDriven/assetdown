@@ -1,6 +1,6 @@
 use super::*;
 use crate::address::parse_cell_ref;
-use crate::testing::Holds::{Formula, Money, MoneyFormula, Number, Text};
+use crate::testing::Holds::{Formula, Money, MoneyFormula, Number, Text, TextFormula};
 use crate::testing::{Holds, an_invoice, one, sheet, workbook};
 
 fn at(sheet: usize, reference: &str) -> CellAt {
@@ -416,8 +416,8 @@ fn a_workbook_made_to_be_slow_to_follow_is_given_up_on() {
     Some((at(0, "B200"), 1.0))
   );
   // Allowed fewer looks than it takes, it is not.
-  assert_eq!(book.audit_within(30_000), None);
-  assert!(book.audit_within(60_000).is_some());
+  assert_eq!(book.audited(None, 30_000), None);
+  assert!(book.audited(None, 60_000).is_some());
 }
 
 #[test]
@@ -440,4 +440,212 @@ fn a_total_that_is_one_cell_times_another_is_itself_the_one_line() {
     (Some(at(0, "B2")), Some(at(0, "B1")))
   );
   assert!(audit.adds_up);
+}
+
+#[test]
+fn a_sum_kept_blank_until_it_has_something_to_show_is_followed_like_any_other() {
+  let audit = one(&[
+    ("A1", Text("Gasket")),
+    ("B1", Number(2.0)),
+    ("C1", Money(12.5)),
+    ("D1", MoneyFormula("IF(B1=\"\",\"\",B1*C1)", 25.0)),
+    ("A2", Text("Carriage")),
+    ("D2", Money(4.0)),
+    // A row not filled in: its amount shows nothing.
+    ("D3", TextFormula("IF(B3=\"\",\"\",B3*C3)", "")),
+    ("A4", Text("Parts")),
+    ("D4", MoneyFormula("IF(SUM(D1:D3)>0,SUM(D1:D3),\"\")", 29.0)),
+    ("A5", Text("Tax")),
+    ("D5", Money(2.9)),
+    ("A6", Text("In all")),
+    (
+      "D6",
+      MoneyFormula("IF(SUM(D4:D5)>0,ROUND(SUM(D4,D5),2),\"\")", 31.9),
+    ),
+  ])
+  .audit()
+  .unwrap();
+  assert_eq!((audit.total, audit.value), (at(0, "D6"), 31.9));
+  assert_eq!(
+    lines(&audit),
+    [
+      ("D1".to_string(), 25.0, Some("Gasket")),
+      ("D2".to_string(), 4.0, Some("Carriage")),
+      ("D5".to_string(), 2.9, Some("Tax")),
+    ]
+  );
+  assert!(audit.adds_up);
+  // The amount that is two cells multiplied, behind its guard, says which is which.
+  assert_eq!(
+    (audit.lines[0].quantity, audit.lines[0].unit_price),
+    (Some(at(0, "B1")), Some(at(0, "C1")))
+  );
+}
+
+#[test]
+fn what_a_guard_asks_about_is_not_a_line_of_what_it_guards() {
+  // The count of jobs decides whether the total shows. It is not part of the total.
+  let audit = one(&[
+    ("A1", Text("Jobs")),
+    ("B1", Number(3.0)),
+    ("A2", Text("Parts")),
+    ("B2", Money(40.0)),
+    ("A3", Text("Labor")),
+    ("B3", Money(20.0)),
+    ("A4", Text("In all")),
+    ("B4", MoneyFormula("IF(B1>0,SUM(B2:B3),0)", 60.0)),
+  ])
+  .audit()
+  .unwrap();
+  assert_eq!(
+    lines(&audit),
+    [
+      ("B2".to_string(), 40.0, Some("Parts")),
+      ("B3".to_string(), 20.0, Some("Labor")),
+    ]
+  );
+  assert!(audit.adds_up);
+}
+
+#[test]
+fn a_total_written_out_as_text_is_the_sum_of_the_cells_it_adds_up() {
+  let audit = one(&[
+    ("A1", Text("Currency")),
+    ("B1", Text("USD")),
+    ("A2", Text("Parts")),
+    ("B2", Money(1200.0)),
+    ("A3", Text("Carriage")),
+    ("B3", Money(86.5)),
+    ("A4", Text("In all")),
+    (
+      "B4",
+      TextFormula(
+        "IF(B1=\"\",TEXT(SUM(B2:B3),\"#,##0.00\"),B1&\" \"&TEXT(SUM(B2:B3),\"#,##0.00\"))",
+        "USD 1,286.50",
+      ),
+    ),
+    // The same written out for a part of it, which nothing reads either.
+    (
+      "D2",
+      TextFormula("TEXT(SUM(B2:B2),\"#,##0.00\")", "1,200.00"),
+    ),
+    // Text that is worked out but holds no amount is not a total.
+    ("D4", TextFormula("TEXT(SUM(B2:B3),\"\")", "")),
+  ])
+  .audit()
+  .unwrap();
+  assert_eq!((audit.total, audit.value), (at(0, "B4"), 1286.5));
+  assert_eq!(
+    lines(&audit),
+    [
+      ("B2".to_string(), 1200.0, Some("Parts")),
+      ("B3".to_string(), 86.5, Some("Carriage")),
+    ]
+  );
+  assert!(audit.adds_up);
+}
+
+#[test]
+fn a_minus_before_a_sum_takes_away_every_cell_the_sum_adds_up() {
+  let audit = one(&[
+    ("A1", Text("Work")),
+    ("B1", Money(100.0)),
+    ("A2", Text("Deposit")),
+    ("B2", Money(30.0)),
+    ("A3", Text("Discount")),
+    ("B3", Money(5.0)),
+    ("A4", Text("To pay")),
+    ("B4", MoneyFormula("B1-SUM(B2:B3)", 65.0)),
+  ])
+  .audit()
+  .unwrap();
+  assert_eq!(
+    lines(&audit),
+    [
+      ("B1".to_string(), 100.0, Some("Work")),
+      ("B2".to_string(), -30.0, Some("Deposit")),
+      ("B3".to_string(), -5.0, Some("Discount")),
+    ]
+  );
+  assert!(audit.adds_up);
+}
+
+#[test]
+fn a_total_shown_as_money_is_the_total_before_a_plain_one_that_reaches_further() {
+  // Five days of hours, added up, and two amounts, added up. Nothing reads either sum.
+  let book = one(&[
+    ("A1", Number(7.5)),
+    ("A2", Number(7.5)),
+    ("A3", Number(7.5)),
+    ("A4", Number(7.5)),
+    ("A5", Number(7.5)),
+    ("A6", Formula("SUM(A1:A5)", 37.5)),
+    ("C1", Money(900.0)),
+    ("C2", Money(50.0)),
+    ("C3", MoneyFormula("SUM(C1:C2)", 950.0)),
+  ]);
+  assert_eq!(book.audit().unwrap().total, at(0, "C3"));
+}
+
+#[test]
+fn of_the_formulas_nothing_reads_the_one_that_comes_to_an_amount_asked_for_is_the_total() {
+  // Two sums that nothing reads. Left to itself, the audit takes the one that reaches
+  // further; told what the labels on the page gave, it takes the one that comes to it.
+  let book = one(&[
+    ("A1", Money(1.0)),
+    ("A2", Money(2.0)),
+    ("A3", Money(3.0)),
+    ("A4", MoneyFormula("SUM(A1:A3)", 6.0)),
+    ("C1", Money(40.0)),
+    ("C2", Money(20.0)),
+    ("C3", MoneyFormula("SUM(C1:C2)", 60.0)),
+  ]);
+  assert_eq!(book.audit().unwrap().total, at(0, "A4"));
+  assert_eq!(book.audit_toward(Some(60.0)).unwrap().total, at(0, "C3"));
+  // An amount no formula comes to changes nothing, and the sign of it is not asked.
+  assert_eq!(book.audit_toward(Some(75.0)).unwrap().total, at(0, "A4"));
+  assert_eq!(book.audit_toward(None).unwrap().total, at(0, "A4"));
+  // A formula that something reads is not a total, whatever it comes to.
+  let read = one(&[
+    ("A1", Money(40.0)),
+    ("A2", Money(20.0)),
+    ("A3", MoneyFormula("SUM(A1:A2)", 60.0)),
+    ("A4", Money(6.0)),
+    ("A5", MoneyFormula("A3+A4", 66.0)),
+  ]);
+  assert_eq!(read.audit_toward(Some(60.0)).unwrap().total, at(0, "A5"));
+}
+
+#[test]
+fn of_two_cells_multiplied_with_neither_shown_as_money_the_one_that_is_a_sum_is_how_many() {
+  // Hours added up, times a rate typed in as a plain number.
+  let audit = one(&[
+    ("A1", Text("Rate")),
+    ("B1", Number(120.0)),
+    ("A2", Text("Monday")),
+    ("B2", Number(3.0)),
+    ("A3", Text("Tuesday")),
+    ("B3", Number(1.5)),
+    ("A4", Text("Hours")),
+    ("B4", Formula("SUM(B2:B3)", 4.5)),
+    ("A5", Text("Labor")),
+    ("B5", Formula("B4*B1", 540.0)),
+    ("A6", Text("Parts")),
+    ("B6", Number(60.0)),
+    ("A7", Text("In all")),
+    ("B7", Formula("SUM(B5:B6)", 600.0)),
+  ])
+  .audit()
+  .unwrap();
+  assert_eq!(
+    lines(&audit),
+    [
+      ("B5".to_string(), 540.0, Some("Labor")),
+      ("B6".to_string(), 60.0, Some("Parts")),
+    ]
+  );
+  assert_eq!(
+    (audit.lines[0].quantity, audit.lines[0].unit_price),
+    (Some(at(0, "B4")), Some(at(0, "B1")))
+  );
 }

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 
 import { WorkupService } from "@/__test__/workup.ts";
 import type { SheetCells } from "@/index.js";
@@ -186,6 +187,112 @@ export class XlsTest extends WorkupService {
   /** The record a workbook saved with a password carries. */
   public get encrypted() {
     return this.record(0x002f, Buffer.alloc(6));
+  }
+
+  /** The password Excel locks a workbook with when it is given none. */
+  public get excelsOwnPassword() {
+    return "VelvetSweatshop";
+  }
+
+  private md5(data: Buffer) {
+    return createHash("md5").update(data).digest();
+  }
+
+  /** The RC4 cipher's stream under `key`, laid over `data`. */
+  private rc4(key: Buffer, data: Buffer) {
+    const state = Uint8Array.from({ length: 256 }, (_, at) => at);
+    const swap = (i: number, j: number) => {
+      const held = state[i] ?? 0;
+      state[i] = state[j] ?? 0;
+      state[j] = held;
+    };
+    let j = 0;
+    for (let i = 0; i < 256; i++) {
+      j = (j + (state[i] ?? 0) + (key[i % key.length] ?? 0)) & 255;
+      swap(i, j);
+    }
+    const out = Buffer.from(data);
+    let i = 0;
+    j = 0;
+    for (let at = 0; at < out.length; at++) {
+      i = (i + 1) & 255;
+      j = (j + (state[i] ?? 0)) & 255;
+      swap(i, j);
+      const over = state[((state[i] ?? 0) + (state[j] ?? 0)) & 255] ?? 0;
+      out[at] = (out[at] ?? 0) ^ over;
+    }
+    return out;
+  }
+
+  /** The salt of every lock made here. */
+  private get salt() {
+    return Buffer.from(Array.from({ length: 16 }, (_, at) => 0x40 + at));
+  }
+
+  /**
+   * The stream laid over one stretch of 1024 bytes of a workbook's records locked with
+   * `password`: the key is the MD5 of the password, mixed with the salt sixteen times over,
+   * and then with the number of the stretch.
+   */
+  private streamOf(password: string, stretch: number) {
+    const ofPassword = this.md5(Buffer.from(password, "utf16le"));
+    const salted = Buffer.concat(
+      Array.from({ length: 16 }, () =>
+        Buffer.concat([ofPassword.subarray(0, 5), this.salt])
+      )
+    );
+    const mixed = this.md5(salted).subarray(0, 5);
+    const key = this.md5(Buffer.concat([mixed, this.u32(stretch)]));
+    return this.rc4(key, Buffer.alloc(1024));
+  }
+
+  /**
+   * The record that states a lock `password` opens: the salt, and then a verifier and its
+   * hash, encrypted one after the other under the key of the first stretch.
+   */
+  private lockStated(password: string) {
+    const verifier = Buffer.from(
+      Array.from({ length: 16 }, (_, at) => 0xa0 ^ (at * 7))
+    );
+    const over = this.streamOf(password, 0);
+    const kept = Buffer.concat([verifier, this.md5(verifier)]).map(
+      (byte, at) => byte ^ (over[at] ?? 0)
+    );
+    return this.record(
+      0x002f,
+      Buffer.concat([Buffer.from([1, 0, 1, 0, 1, 0]), this.salt, kept])
+    );
+  }
+
+  /**
+   * A workbook's records, encrypted as the format says to: every byte of every record's data
+   * after the record that states the lock, under the key of the stretch of 1024 bytes of the
+   * stream the byte is in. Left as they are: the four bytes that head each record, seven
+   * records whole, and the four bytes of the record that lists a sheet that say where the
+   * sheet's records start.
+   */
+  private encrypt(stream: Buffer, password: string) {
+    const out = Buffer.from(stream);
+    const streams = new Map<number, Buffer>();
+    const never = [0x0809, 0x002f, 0x00e1, 0x0194, 0x0195, 0x0196, 0x0138];
+    let locked = false;
+    let at = 0;
+    while (at + 4 <= out.length) {
+      const id = out.readUInt16LE(at);
+      const end = Math.min(at + 4 + out.readUInt16LE(at + 2), out.length);
+      if (locked && !never.includes(id)) {
+        const from = id === 0x0085 ? at + 8 : at + 4;
+        for (let place = from; place < end; place++) {
+          const stretch = Math.floor(place / 1024);
+          const over = streams.get(stretch) ?? this.streamOf(password, stretch);
+          streams.set(stretch, over);
+          out[place] = (out[place] ?? 0) ^ (over[place % 1024] ?? 0);
+        }
+      }
+      locked ||= id === 0x002f;
+      at = end;
+    }
+    return out;
   }
 
   /** The stream of records: the workbook's own, and then each sheet's. */
@@ -390,17 +497,23 @@ export class XlsTest extends WorkupService {
 
   /**
    * An `.xls` file of these sheets, with `globals` among the workbook's own records, and
-   * `beside` as streams beside the workbook's.
+   * `beside` as streams beside the workbook's. With a `password`, the records are locked
+   * with it: the record that states the lock comes first, and the rest are encrypted.
    */
   public file(
     globals: readonly Buffer[],
     sheets: readonly SheetSpec[],
-    beside: readonly StreamSpec[] = []
+    beside: readonly StreamSpec[] = [],
+    password?: string
   ) {
-    return this.compound([
-      { name: "Workbook", data: this.stream(globals, sheets) },
-      ...beside
-    ]);
+    const data =
+      password === undefined
+        ? this.stream(globals, sheets)
+        : this.encrypt(
+            this.stream([this.lockStated(password), ...globals], sheets),
+            password
+          );
+    return this.compound([{ name: "Workbook", data }, ...beside]);
   }
 
   /** The first sheet of a result. */
@@ -531,14 +644,71 @@ export class XlsTest extends WorkupService {
   }
 
   /** A workbook of one sheet with enough cells that reading them takes a while. */
-  public get long() {
+  /** A sheet's worth of numbers: so many rows of five. */
+  private numbers(rows: number) {
     const records = Array.of<Buffer>();
-    for (let row = 0; row < 8000; row++) {
+    for (let row = 0; row < rows; row++) {
       for (let col = 0; col < 5; col++) {
         records.push(this.number(row, col, 0, row * 5 + col + 0.25));
       }
     }
-    return this.file([this.xf(0)], [{ name: "Many", records }]);
+    return records;
+  }
+
+  public get long() {
+    return this.file(
+      [this.xf(0)],
+      [{ name: "Many", records: this.numbers(8000) }]
+    );
+  }
+
+  /**
+   * A ledger: text the cells share, a date, an amount, a formula, a hidden sheet, and a sheet
+   * of numbers long enough for the records to run to several stretches of 1024 bytes. Locked
+   * with `password` where one is given.
+   */
+  private ledgerLockedWith(password?: string) {
+    return this.file(
+      [
+        this.sharedStrings(["Total", "kept back"]),
+        this.xf(0),
+        this.xf(14),
+        this.xf(4)
+      ],
+      [
+        {
+          name: "Costs",
+          records: [
+            this.shared(0, 0, 0, 0),
+            this.number(0, 1, 1, 46349),
+            this.number(1, 1, 2, 1234.5),
+            this.formula(2, 1, 0, 2469)
+          ]
+        },
+        { name: "Notes", hidden: true, records: [this.shared(0, 0, 0, 1)] },
+        { name: "Many", records: this.numbers(60) }
+      ],
+      [],
+      password
+    );
+  }
+
+  /** The ledger, not locked. */
+  public get ledger() {
+    return this.ledgerLockedWith();
+  }
+
+  /**
+   * The ledger as Excel locks a workbook when it is given no password, which it does for one
+   * whose structure is protected: with a password of its own, which it never asks for.
+   */
+  public get lockedByExcel() {
+    return this.ledgerLockedWith(this.excelsOwnPassword);
+  }
+
+  /** The ledger locked with a password of its owner's choosing. */
+  public get lockedByItsOwner() {
+    return this.ledgerLockedWith("known to its owner");
   }
 
   /** The same kind of workbook, saved with a password. */

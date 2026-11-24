@@ -115,7 +115,7 @@ This entry takes a `WebAssembly.Module` and reads no file, which is what a runti
 
 Every method of `XlsDown` has an `Async` twin.
 
-A formula gives the value Excel last left beside it, and its text in `formula`: `SUM(B2:B9)*Rate`. A workbook of Excel 95 or earlier, and one saved with a password, is refused by name.
+A formula gives the value Excel last left beside it, and its text in `formula`: `SUM(B2:B9)*Rate`. A workbook of Excel 95 or earlier, and one locked with a password of its owner's choosing, is refused by name. One that Excel locked with its own password, as it does a workbook whose structure is protected, is unlocked and read like any other.
 
 ## What has been tried
 
@@ -125,7 +125,7 @@ Not yet tried: Firefox and Safari, a bundler's own handling of the worker's file
 
 ## Size
 
-The package is about 1.0 MB packed. Each build is about 0.75 MB, the build without threads is in the package twice (once for the worker), and the worker's script is 0.5 MB, 84 kB gzipped.
+The package is about 1.6 MB packed. Each build is about 1.1 MB, the build without threads is in the package twice (once for the worker), and the worker's script is 0.5 MB, 84 kB gzipped.
 
 ## License
 

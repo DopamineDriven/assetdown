@@ -23,6 +23,50 @@ describe("XlsDown constructor", () => {
       });
     }
   );
+  it(
+    "should read a workbook Excel locked with its own password like any other",
+    {},
+    async () => {
+      const every = { hiddenSheets: true };
+      const open = new XlsDown(t.ledger);
+      const unlocked = new XlsDown(t.lockedByExcel);
+      // Locked, the file is not the bytes it was.
+      assert.notDeepEqual(t.lockedByExcel, t.ledger);
+      assert.equal(open.spreadsheetCells(every).length, 3);
+      assert.deepEqual(
+        unlocked.spreadsheetCells(every),
+        open.spreadsheetCells(every)
+      );
+      assert.deepEqual(unlocked.metadata(), open.metadata());
+      assert.deepEqual(unlocked.invoice(), open.invoice());
+      const later = await XlsDown.openAsync(t.lockedByExcel);
+      assert.deepEqual(
+        await later.spreadsheetCellsAsync(every),
+        open.spreadsheetCells(every)
+      );
+      assert.deepEqual(
+        spreadsheetCells(t.lockedByExcel, every),
+        open.spreadsheetCells(every)
+      );
+      assert.deepEqual(
+        await spreadsheetCellsAsync(t.lockedByExcel, every),
+        open.spreadsheetCells(every)
+      );
+    }
+  );
+  it(
+    "should throw unsupported format for a workbook locked with a password of its owner's choosing",
+    {},
+    async () => {
+      const message = "unsupported format: an encrypted workbook";
+      assert.throws(() => new XlsDown(t.lockedByItsOwner), { message });
+      await assert.rejects(XlsDown.openAsync(t.lockedByItsOwner), { message });
+      assert.throws(() => spreadsheetCells(t.lockedByItsOwner), { message });
+      await assert.rejects(spreadsheetCellsAsync(t.lockedByItsOwner), {
+        message
+      });
+    }
+  );
   it("should throw malformed workbook for bytes that are not one", {}, () => {
     assert.throws(() => new XlsDown(Buffer.from("PK\u0003\u0004 a zip")), {
       message: "malformed workbook: not a compound file"

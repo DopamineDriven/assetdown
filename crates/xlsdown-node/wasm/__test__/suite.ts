@@ -86,6 +86,25 @@ export function wasmSuite(
           spreadsheetCellsAsync(xlsTest.locked),
           /^Error: unsupported format: /
         );
+        await assert.rejects(
+          spreadsheetCellsAsync(xlsTest.lockedByItsOwner),
+          /^Error: unsupported format: an encrypted workbook/
+        );
+      }
+    );
+
+    it(
+      "should read a workbook Excel locked with its own password like any other",
+      {},
+      async () => {
+        const all = { hiddenSheets: true };
+        const open = spreadsheetCells(xlsTest.ledger, all);
+        assert.equal(open.length, 3);
+        assert.deepEqual(spreadsheetCells(xlsTest.lockedByExcel, all), open);
+        assert.deepEqual(
+          await spreadsheetCellsAsync(xlsTest.lockedByExcel, all),
+          open
+        );
       }
     );
 

@@ -11,9 +11,11 @@ export declare const __napiBindingTarget: 'wasm32-wasi'
 export declare class XlsDown {
   /**
    * Parse a workbook from the bytes of an `.xls` file, as Excel wrote them from 1997 to 2003.
-   * Throws `unsupported format: …` for a workbook of an older Excel and for one saved with a
-   * password, `limit exceeded: …` for one past the size limits, and `malformed workbook: …`
-   * for anything else that cannot be read.
+   * A workbook Excel locked with its own password, as it does one whose structure is
+   * protected, is unlocked and read like any other. Throws `unsupported format: …` for a
+   * workbook of an older Excel and for one locked with a password of its owner's choosing,
+   * `limit exceeded: …` for one past the size limits, and `malformed workbook: …` for
+   * anything else that cannot be read.
    */
   constructor(buffer: Buffer)
   /**
@@ -42,11 +44,15 @@ export declare class XlsDown {
   layoutAsync(opts?: SpreadsheetOptions | undefined | null): Promise<Array<SheetPage>>
   /**
    * Invoice fields read from the workbook's visible sheets, each laid out as a page. Where
-   * the workbook's formulas give a total (the formula nothing else reads that reaches the
-   * most cells), it is `fields.invoiceTotal`, and the lines it adds up are `fields.items`,
-   * each with its description, its quantity and unit price where one cell is multiplied by
-   * another, and where its cells are on the page. A warning says when the labels on the
-   * page gave another total, and when the lines do not come to the total.
+   * the workbook's formulas give a total, it is `fields.invoiceTotal`: the formula that
+   * comes to what the labels on the page gave, or failing one the formula nothing else reads
+   * that is shown as money and reaches the most cells. The lines it adds up are
+   * `fields.items`, each with its description, its quantity and unit price where one cell
+   * is multiplied by another, and where its cells are on the page. Amounts are given as
+   * their cells show them, where a cell shows cents. A warning says when the labels gave
+   * another total, and when the lines do not come to the total. A formula total of nought,
+   * and one shown as a plain number beside a labeled amount shown as money, leave the
+   * labels' reading as it was.
    */
   invoice(opts?: InvoiceOptions | undefined | null): InvoiceResult
   /** `invoice` on a worker thread. */

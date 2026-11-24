@@ -11,5 +11,7 @@ version                = "0.3.0"
 [dependencies]
 cfbdown.workspace     = true
 contentdown.workspace = true
+md-5.workspace        = true
+sha1.workspace        = true
 thiserror.workspace   = true
 xlsxdown.workspace    = true

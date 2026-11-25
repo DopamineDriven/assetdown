@@ -55,17 +55,15 @@ runs:
         tesseract --version
     - name: Build
       shell: bash
-      working-directory: crates/tiffdown-node
       env:
         TARGET: ${{ inputs.target }}
       run: >-
-        yarn napi build --platform --esm --release --features ocr
+        yarn workspace @d0paminedriven/tiffdown napi build --platform --esm --release --features ocr
         --package-json-path ocr/package.json --output-dir ocr --js tiffdown_ocr.napi.js
         --target "$TARGET"
     - name: Test
       shell: bash
-      working-directory: crates/tiffdown-node
-      run: yarn test:ocr
+      run: yarn workspace @d0paminedriven/tiffdown test:ocr
     - name: Upload artifact
       uses: actions/upload-artifact@v6
       with:

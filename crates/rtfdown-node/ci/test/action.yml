@@ -44,30 +44,28 @@ runs:
     - name: Typecheck the tests
       if: ${{ inputs.typecheck == 'true' }}
       shell: bash
-      working-directory: crates/rtfdown-node
-      run: yarn tsc --noEmit -p __test__
+      run: yarn workspace @d0paminedriven/rtfdown tsc --noEmit -p __test__
     - name: Test on the runner
       if: ${{ inputs.mode == 'host' }}
       shell: bash
-      working-directory: crates/rtfdown-node
-      run: yarn test
+      run: yarn workspace @d0paminedriven/rtfdown test
     - name: Test in a container
       if: ${{ inputs.mode == 'docker' }}
       shell: bash
       env:
         IMAGE: ${{ inputs.image }}
         PLATFORM: ${{ inputs.platform }}
-      # The container has Node but not Yarn 4, so it runs tsx from node_modules directly
-      # and not through the package's `test` script.
+      # The container has Node but not Yarn 4, so it runs tsx by its own file and not through
+      # the package's `test` script. The file is named, and not `node_modules/.bin/tsx`: the
+      # install links each package to what it declares and keeps no `.bin` beside it.
       run: |
         docker run --rm \
           -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
           -w "$GITHUB_WORKSPACE/crates/rtfdown-node" \
           --platform "$PLATFORM" \
           "$IMAGE" \
-          sh -lc 'node_modules/.bin/tsx --test "__test__/**/*.spec.ts"'
+          sh -lc 'node node_modules/tsx/dist/cli.mjs --test "__test__/**/*.spec.ts"'
     - name: Test the WebAssembly build
       if: ${{ inputs.mode == 'wasi' }}
       shell: bash
-      working-directory: crates/rtfdown-node
-      run: yarn test:wasi
+      run: yarn workspace @d0paminedriven/rtfdown test:wasi

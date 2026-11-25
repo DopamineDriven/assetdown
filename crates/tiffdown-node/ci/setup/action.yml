@@ -1,5 +1,7 @@
 name: Set up tiffdown-node
-description: Yarn 4 through Corepack, Node, and this package's dependencies.
+description: >-
+  Yarn 4 through Corepack, Node, and the workspace's dependencies, installed once at the
+  repository root.
 
 inputs:
   node-version:
@@ -40,12 +42,11 @@ runs:
         node-version: ${{ inputs.node-version }}
         architecture: ${{ inputs.architecture }}
         cache: yarn
-        # The yarn project is this package, not the repository root.
-        cache-dependency-path: crates/tiffdown-node/yarn.lock
+        # The yarn project is the repository root: one lockfile serves every package.
+        cache-dependency-path: yarn.lock
     - name: Widen the architectures yarn installs for
       if: ${{ inputs.cpu != '' || inputs.libc != '' }}
       shell: bash
-      working-directory: crates/tiffdown-node
       env:
         CPU: ${{ inputs.cpu }}
         LIBC: ${{ inputs.libc }}
@@ -54,5 +55,6 @@ runs:
         if [ -n "$LIBC" ]; then yarn config set --json supportedArchitectures.libc "$LIBC"; fi
     - name: Install dependencies
       shell: bash
-      working-directory: crates/tiffdown-node
+      # At the repository root, where the lockfile is. Every yarn command after this is run
+      # from there too, as `yarn workspace <package> <command>`.
       run: yarn install

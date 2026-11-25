@@ -14,7 +14,18 @@
   },
   "scripts": {
     "prepare": "husky",
-    "build:audiodown": "yarn workspace @d0paminedriven/audiodown build"
+    "build:audiodown": "yarn workspace @d0paminedriven/audiodown build",
+    "build:docdown": "yarn workspace @d0paminedriven/docdown build",
+    "build:docxdown": "yarn workspace @d0paminedriven/docxdown build",
+    "build:jpegdown": "yarn workspace @d0paminedriven/jpegdown build",
+    "build:mimedown": "yarn workspace @d0paminedriven/mimedown build",
+    "build:pdfdown": "yarn workspace @d0paminedriven/pdfdown build",
+    "build:pptxdown": "yarn workspace @d0paminedriven/pptxdown build",
+    "build:rtfdown": "yarn workspace @d0paminedriven/rtfdown build",
+    "build:tiffdown": "yarn workspace @d0paminedriven/tiffdown build",
+    "build:videodown": "yarn workspace @d0paminedriven/videodown build",
+    "build:xlsdown": "yarn workspace @d0paminedriven/xlsdown build",
+    "build:xlsxdown": "yarn workspace @d0paminedriven/xlsxdown build"
   },
   "devDependencies": {
     "husky": "catalog:husky"

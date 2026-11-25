@@ -25,6 +25,11 @@ on:
       - crates/contentdown/**
       - Cargo.toml
       - Cargo.lock
+      # The yarn workspace is rooted at the repository: one manifest, one lockfile, and one
+      # catalog of versions serve every package, so a change to any of them is a change here.
+      - package.json
+      - yarn.lock
+      - .yarnrc.yml
       - .github/workflows/docxdown-node.yml
   pull_request:
     branches:
@@ -36,6 +41,11 @@ on:
       - crates/contentdown/**
       - Cargo.toml
       - Cargo.lock
+      # The yarn workspace is rooted at the repository: one manifest, one lockfile, and one
+      # catalog of versions serve every package, so a change to any of them is a change here.
+      - package.json
+      - yarn.lock
+      - .yarnrc.yml
       - .github/workflows/docxdown-node.yml
   workflow_dispatch:
 concurrency:
@@ -45,8 +55,9 @@ permissions:
   contents: read
 defaults:
   run:
+    # Every step runs at the repository root: yarn's commands name their package, and
+    # cargo's workspace is rooted there too.
     shell: bash
-    working-directory: crates/docxdown-node
 jobs:
   plan:
     name: Plan targets
@@ -67,7 +78,7 @@ jobs:
           node-version: 26
       - name: Read napi.targets
         id: plan
-        run: node ci/matrix.ts >> "$GITHUB_OUTPUT"
+        run: node crates/docxdown-node/ci/matrix.ts >> "$GITHUB_OUTPUT"
   lint:
     name: Lint and Rust tests
     needs: plan
@@ -81,14 +92,12 @@ jobs:
         with:
           components: clippy
       - name: Oxlint
-        run: yarn lint
+        run: yarn workspace @d0paminedriven/docxdown lint
       # pdfdown-ocr and ocrdown link the system Tesseract, which this job does not install;
       # the pdfdown-node workflow lints and tests them.
       - name: Clippy
-        working-directory: .
         run: cargo clippy --workspace --exclude pdfdown-ocr --exclude ocrdown --all-targets -- -D warnings
       - name: Rust tests
-        working-directory: .
         run: cargo test --workspace --exclude pdfdown-ocr --exclude ocrdown
   build:
     needs: plan

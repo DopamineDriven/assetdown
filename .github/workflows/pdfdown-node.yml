@@ -36,6 +36,11 @@ on:
       - crates/contentdown/**
       - Cargo.toml
       - Cargo.lock
+      # The yarn workspace is rooted at the repository: one manifest, one lockfile, and one
+      # catalog of versions serve every package, so a change to any of them is a change here.
+      - package.json
+      - yarn.lock
+      - .yarnrc.yml
       - .github/workflows/pdfdown-node.yml
   pull_request:
     branches:
@@ -49,6 +54,11 @@ on:
       - crates/contentdown/**
       - Cargo.toml
       - Cargo.lock
+      # The yarn workspace is rooted at the repository: one manifest, one lockfile, and one
+      # catalog of versions serve every package, so a change to any of them is a change here.
+      - package.json
+      - yarn.lock
+      - .yarnrc.yml
       - .github/workflows/pdfdown-node.yml
   workflow_dispatch:
 concurrency:
@@ -58,8 +68,9 @@ permissions:
   contents: read
 defaults:
   run:
+    # Every step runs at the repository root: yarn's commands name their package, and
+    # cargo's workspace is rooted there too.
     shell: bash
-    working-directory: crates/pdfdown-node
 jobs:
   plan:
     name: Plan targets
@@ -81,7 +92,7 @@ jobs:
           node-version: 26
       - name: Read napi.targets
         id: plan
-        run: node ci/matrix.ts >> "$GITHUB_OUTPUT"
+        run: node crates/pdfdown-node/ci/matrix.ts >> "$GITHUB_OUTPUT"
   lint:
     name: Lint and Rust tests
     needs: plan
@@ -104,17 +115,14 @@ jobs:
             pkg-config
           tesseract --version | head -n1 | grep -q "tesseract 5"
       - name: Oxlint
-        run: yarn lint
+        run: yarn workspace @d0paminedriven/pdfdown lint
       - name: Clippy
-        working-directory: .
         run: cargo clippy --workspace --all-targets -- -D warnings
       # The workspace-wide pass builds this crate with no features; this one covers the code
       # behind `ocr` and `render`.
       - name: Clippy with every feature of the binding
-        working-directory: .
         run: cargo clippy --package pdfdown-node --all-targets --all-features -- -D warnings
       - name: Rust tests
-        working-directory: .
         run: cargo test --workspace
   build:
     needs: plan

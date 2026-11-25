@@ -35,23 +35,20 @@ runs:
         key: xlsdown-node-wasm-package-cargo-${{ runner.os }}
     - name: Build
       shell: bash
-      working-directory: crates/xlsdown-node
       # The build without threads goes last: the scripts say why.
-      run: yarn build:wasm-package
+      run: yarn workspace @d0paminedriven/xlsdown build:wasm-package
     - name: List package files
       shell: bash
       working-directory: crates/xlsdown-node
       run: ls -la wasm
     - name: Typecheck the tests
       shell: bash
-      working-directory: crates/xlsdown-node
       # The tests import the package by its own name, so this also checks that its map of
       # entries finds the declarations, and that they name a WebAssembly build exactly.
-      run: yarn tsc --noEmit -p wasm/__test__
+      run: yarn workspace @d0paminedriven/xlsdown tsc --noEmit -p wasm/__test__
     - name: Test
       shell: bash
-      working-directory: crates/xlsdown-node
-      run: yarn test:wasm
+      run: yarn workspace @d0paminedriven/xlsdown test:wasm
     - name: List what would be published
       shell: bash
       working-directory: crates/xlsdown-node/wasm

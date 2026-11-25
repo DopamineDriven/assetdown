@@ -28,14 +28,15 @@ runs:
           echo "~~~~ node -v ~~~~"
           node -v
           freebsd-version
-          cd crates/pdfdown-node
           echo "~~~~ yarn --version ~~~~"
           yarn --version
+          # Installed and built from the repository root, as on every other runner.
           yarn install
-          yarn napi build --platform --esm --release --features render
-          rm -rf node_modules
+          yarn workspace @d0paminedriven/pdfdown napi build --platform --esm --release --features render
+          # What is left behind is copied back out of the machine, so the folders that
+          # are only needed inside it are removed first.
+          rm -rf node_modules crates/*/node_modules
           rm -rf .yarn/cache
-          cd ../..
           rm -rf target
     - name: Upload artifact
       uses: actions/upload-artifact@v6

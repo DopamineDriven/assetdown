@@ -1,6 +1,6 @@
 {
   "name": "@d0paminedriven/xlsdown-wasm",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Rust-powered xls parsing as WebAssembly, for Node, browsers, and edge runtimes",
   "keywords": [
     "N-API",

@@ -28,14 +28,25 @@ runs:
     # Corepack before setup-node so its `cache: yarn` probe already resolves Yarn 4.
     - name: Enable Corepack
       shell: bash
-      # Shims go to a fresh directory prepended to PATH: on Windows the preinstalled
-      # Yarn 1 and Node's bundled corepack.cmd share the npm prefix and collide with
-      # `npm i -g` / `corepack enable` writing into it.
+      # This runs on the Node the runner image comes with, before setup-node installs the
+      # one asked for. Shims go to a fresh directory prepended to PATH: on Windows the
+      # preinstalled Yarn 1 shares the npm prefix, as does the corepack.cmd of a Node that
+      # still ships one (24 and older; 25 and later do not), and both collide with
+      # `npm i -g` and `corepack enable` writing into it. `--force` is for that older Node:
+      # it lets npm write over shims already there, and does nothing where there are none.
       run: |
-        npm i -g corepack@latest --force
+        npm i -g corepack --force
         mkdir -p "$RUNNER_TEMP/corepack-bin"
         corepack enable --install-directory "$RUNNER_TEMP/corepack-bin"
         echo "$RUNNER_TEMP/corepack-bin" >> "$GITHUB_PATH"
+    # Yarn links every installed file from an index it keeps in its global folder, and a hard
+    # link cannot cross drives. A Windows runner has the home folder on C: and the checkout
+    # on D:, and the install stopped there ("EXDEV: cross-device link not permitted"). So the
+    # global folder, and the cache inside it, is put beside the checkout on every runner.
+    # This comes before setup-node, which asks yarn where its cache is.
+    - name: Keep yarn's global folder on the checkout's drive
+      shell: bash
+      run: echo "YARN_GLOBAL_FOLDER=$RUNNER_TEMP/yarn-global" >> "$GITHUB_ENV"
     - name: Setup node
       uses: actions/setup-node@v6
       with:

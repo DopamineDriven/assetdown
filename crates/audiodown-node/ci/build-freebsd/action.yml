@@ -18,7 +18,7 @@ runs:
         shell: bash
         run: |
           sudo pkg install -y -f curl node libnghttp2 npm
-          sudo npm install -g corepack@latest
+          sudo npm install -g corepack
           sudo corepack enable
           curl https://sh.rustup.rs -sSf --output rustup.sh
           sh rustup.sh -y --profile minimal --default-toolchain stable

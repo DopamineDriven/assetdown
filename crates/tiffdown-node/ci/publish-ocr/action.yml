@@ -84,16 +84,26 @@ runs:
         # for the per-platform packages.
         npm_config_tag: ${{ steps.release.outputs.tag }}
         npm_config_access: public
+        # Provenance, for every `npm publish` here. It is set in the environment and not with
+        # `npm config set`, which npm refuses inside a member of a workspace ("This command
+        # does not support workspaces").
+        npm_config_provenance: "true"
       run: |
         if [ -z "$NPM_TOKEN" ]; then
           echo "::error::This is a release commit but no npm token was provided."
           exit 1
         fi
         echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
-        npm config set provenance true
         # Publishes the per-platform packages and writes them into optionalDependencies.
         # No GitHub release: its tag would be a bare `v<version>`, which several packages
         # in one repository would fight over.
         yarn workspace @d0paminedriven/tiffdown napi pre-publish -t npm --no-gh-release --package-json-path ocr/package.json --npm-dir ocr/npm
         cd ocr
-        npm publish --ignore-scripts
+        # A release commit pushed again finds its version on npm already, and leaves it be.
+        name="$(node -p "require('./package.json').name")"
+        version="$(node -p "require('./package.json').version")"
+        if [ -n "$(npm view "$name@$version" version 2>/dev/null)" ]; then
+          echo "$name@$version is already on npm; nothing to publish."
+        else
+          npm publish --ignore-scripts
+        fi

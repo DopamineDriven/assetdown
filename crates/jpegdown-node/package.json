@@ -20,9 +20,9 @@
     "url": "git+https://github.com/DopamineDriven/assetdown.git"
   },
   "files": [
-    "index.d.ts",
-    "index.js",
-    "browser.js"
+    "/index.d.ts",
+    "/index.js",
+    "/browser.js"
   ],
   "type": "module",
   "main": "index.js",

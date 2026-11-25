@@ -74,22 +74,30 @@ runs:
     - name: Publish
       if: ${{ steps.release.outputs.mode == 'release' }}
       shell: bash
-      working-directory: crates/pptxdown-node
       env:
         NPM_TOKEN: ${{ inputs.npm-token }}
-        # Read by every `npm publish` below, including the ones `napi pre-publish` runs
-        # for the per-platform packages.
+        # yarn takes its token from here; npm takes its own from ~/.npmrc, written below.
+        YARN_NPM_AUTH_TOKEN: ${{ inputs.npm-token }}
+        TAG: ${{ steps.release.outputs.tag }}
+        # Read by every `npm publish` that `napi pre-publish` runs for the per-platform
+        # packages.
         npm_config_tag: ${{ steps.release.outputs.tag }}
         npm_config_access: public
+        # Provenance, for every `npm publish` here. It is set in the environment and not with
+        # `npm config set`, which npm refuses inside a member of a workspace ("This command
+        # does not support workspaces").
+        npm_config_provenance: "true"
       run: |
         if [ -z "$NPM_TOKEN" ]; then
           echo "::error::This is a release commit but no npm token was provided."
           exit 1
         fi
         echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
-        npm config set provenance true
         # Publishes the per-platform packages and writes them into optionalDependencies.
         # No GitHub release: its tag would be a bare `v<version>`, which several packages
         # in one repository would fight over.
         yarn workspace @d0paminedriven/pptxdown napi pre-publish -t npm --no-gh-release
-        npm publish --ignore-scripts
+        # The package itself goes out through yarn, whose workspace this is: where the
+        # manifest says `catalog:`, yarn sends the version the catalog names. A version that
+        # is already on npm (a release commit pushed again) is left alone.
+        yarn workspace @d0paminedriven/pptxdown npm publish --access public --tag "$TAG" --provenance --tolerate-republish

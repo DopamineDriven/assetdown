@@ -1,22 +1,22 @@
+import { createRequire } from "node:module";
 import { arch, platform } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 import { wasm } from "rolldown-plugin-wasm";
 import type { UserConfig } from "tsdown";
 import { defineConfig } from "tsdown";
 
-const p = platform();
-const a = arch();
-// TypeScript 7 ships its native compiler as `tsc`, in a package named for the platform.
-const executable = p === "win32" ? "tsc.exe" : "tsc";
-const dirname = `typescript-${p}-${a}`;
-
-const path = resolve(
-  join(
-    process.cwd(),
-    `../node_modules/@typescript/${dirname}/lib/${executable}`
-  )
+// TypeScript 7 ships its native compiler as `tsc`, in a package named for the platform. That
+// package is a dependency of `typescript` and not of this one, so it is found the way Node
+// finds it: from where `typescript` really is. This holds whether packages are hoisted into
+// one folder or each is linked to exactly what it declares.
+const executable = platform() === "win32" ? "tsc.exe" : "tsc";
+const native = `@typescript/typescript-${platform()}-${arch()}/package.json`;
+const fromHere = createRequire(join(process.cwd(), "package.json"));
+const fromTypescript = createRequire(
+  fromHere.resolve("typescript/package.json")
 );
+const path = join(dirname(fromTypescript.resolve(native)), "lib", executable);
 
 export default defineConfig((options) => [
   // What a page imports: left as the files they are.

@@ -89,9 +89,9 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
-    "@napi-rs/wasm-runtime": "~1.2.7",
     "@emnapi/core": "2.0.0-alpha.5",
-    "@emnapi/runtime": "2.0.0-alpha.5"
+    "@emnapi/runtime": "2.0.0-alpha.5",
+    "@napi-rs/wasm-runtime": "~1.2.7"
   },
   "napi": {
     "binaryName": "rtfdown-node-wasm",

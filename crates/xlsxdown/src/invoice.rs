@@ -6,11 +6,12 @@
 //! become the invoice's items. The labels say what a sheet's maker called things; the
 //! formulas say what is added to what.
 //!
-//! The two are set against each other. The formulas are asked first for a total that comes
-//! to what the labels gave: where one does, the two agree. Where none does, the formulas
-//! have it, with two exceptions that leave the labels' reading as it was: a formula total of
-//! nought, and one shown as a plain number (hours added up, a count) against a labeled
-//! amount shown as money.
+//! The two are set against each other. Where the labels gave the same amount, the two
+//! agree. Where they gave another, the formulas have it, with two exceptions that leave the
+//! labels' reading as it was: a formula total of nought, and one shown as a plain number
+//! (hours added up, a count) against a labeled amount shown as money. The labels are never
+//! asked which formula is the total: that was tried, and measured, and was wrong far more
+//! often than right.
 
 use std::collections::HashMap;
 
@@ -304,9 +305,8 @@ fn audited(workbook: &Workbook, places: Places, audit: &Audit, result: &mut Invo
 impl Workbook {
   /// Invoice fields read from the workbook's visible sheets, each laid out as a page, with
   /// the total and the items taken from the workbook's formulas where they give a total (see
-  /// [`Workbook::audit_toward`]): the total is the formula that comes to what the labels
-  /// gave, or failing one the formula that nothing reads which is shown as money and reaches
-  /// the most cells, and the items are the lines it adds up. An amount is given as its cell
+  /// [`Workbook::audit`]): the total is the formula that nothing reads which is shown as
+  /// money and reaches the most cells, and the items are the lines it adds up. An amount is given as its cell
   /// shows it, where the cell shows cents. Where the labels on the page gave another total,
   /// a warning says both; where the lines do not come to the total, a warning says what they
   /// come to.
@@ -317,10 +317,7 @@ impl Workbook {
       .map(|layout| (layout.page, layout.cells))
       .unzip();
     let mut result = extract_from_pages(&pages, options);
-    // The labels' total is what the formulas are asked about first: where one of them comes
-    // to it, the two agree, and that formula is the total.
-    let labeled = result.fields.invoice_total.as_ref().map(|read| read.value);
-    if let Some(audit) = self.audit_toward(labeled) {
+    if let Some(audit) = self.audit() {
       audited(self, Places::of(self, &pages, &cells), &audit, &mut result);
     }
     result

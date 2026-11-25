@@ -415,20 +415,22 @@ fn a_total_that_is_nought_but_for_the_noise_of_adding_leaves_the_labels_as_they_
 }
 
 #[test]
-fn the_formula_that_comes_to_what_the_labels_read_is_the_total_before_one_that_reaches_further() {
-  // A column of hours added up, which reaches the most cells, and the amounts, labeled.
+fn what_the_labels_read_does_not_choose_among_the_formulas() {
+  // Parts and labor added up beside a label that reads as the total; then freight, and the
+  // sum of all three, which no label marks. Nothing reads the first sum: the last adds the
+  // amounts up again for itself. Where labels and formulas part like this, the formulas are
+  // right far more often, so the label is not asked which formula to take.
   let book = one(&[
-    ("A1", Money(4.0)),
-    ("A2", Money(4.0)),
-    ("A3", Money(4.0)),
-    ("A4", Money(4.0)),
-    ("A5", MoneyFormula("SUM(A1:A4)", 16.0)),
-    ("C1", Text("Parts")),
-    ("D1", Money(40.0)),
-    ("C2", Text("Labor")),
-    ("D2", Money(20.0)),
-    ("C3", Text("Total")),
-    ("D3", MoneyFormula("SUM(D1:D2)", 60.0)),
+    ("A1", Text("Parts")),
+    ("B1", Money(40.0)),
+    ("A2", Text("Labor")),
+    ("B2", Money(20.0)),
+    ("A3", Text("Total")),
+    ("B3", MoneyFormula("B1+B2", 60.0)),
+    ("A4", Text("Freight")),
+    ("B4", Money(5.0)),
+    ("A5", Text("In all")),
+    ("B5", MoneyFormula("SUM(B1:B2)+B4", 65.0)),
   ]);
   assert_eq!(
     read_from_labels(&book)
@@ -437,19 +439,25 @@ fn the_formula_that_comes_to_what_the_labels_read_is_the_total_before_one_that_r
       .map(|field| field.value),
     Some(60.0)
   );
-  // Left to themselves the formulas give the longer sum.
-  assert_eq!(book.audit().map(|audit| audit.value), Some(16.0));
   let result = book.invoice(None);
   let total = result.fields.invoice_total.as_ref().unwrap();
-  assert_eq!((total.value, total.confidence), (60.0, 0.99));
+  assert_eq!((total.value, total.confidence), (65.0, 0.9));
   assert_eq!(
     items(&result),
     [
       (Some("Parts"), None, None, Some(40.0)),
       (Some("Labor"), None, None, Some(20.0)),
+      (Some("Freight"), None, None, Some(5.0)),
     ]
   );
-  assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+  assert!(
+    result
+      .warnings
+      .iter()
+      .any(|warning| warning.contains("65.00") && warning.contains("60.00")),
+    "{:?}",
+    result.warnings
+  );
 }
 
 #[test]

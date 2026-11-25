@@ -49,15 +49,15 @@ export declare class XlsDown {
   layoutAsync(opts?: SpreadsheetOptions | undefined | null): Promise<Array<SheetPage>>
   /**
    * Invoice fields read from the workbook's visible sheets, each laid out as a page. Where
-   * the workbook's formulas give a total, it is `fields.invoiceTotal`: the formula that
-   * comes to what the labels on the page gave, or failing one the formula nothing else reads
-   * that is shown as money and reaches the most cells. The lines it adds up are
-   * `fields.items`, each with its description, its quantity and unit price where one cell
-   * is multiplied by another, and where its cells are on the page. Amounts are given as
-   * their cells show them, where a cell shows cents. A warning says when the labels gave
-   * another total, and when the lines do not come to the total. A formula total of nought,
-   * and one shown as a plain number beside a labeled amount shown as money, leave the
-   * labels' reading as it was.
+   * the workbook's formulas give a total, it is `fields.invoiceTotal`: of the formulas
+   * nothing else reads, one shown as money before one that is not, and then the one that
+   * reaches the most cells. The lines it adds up are `fields.items`, each with its
+   * description, its quantity and unit price where one cell is multiplied by another, and
+   * where its cells are on the page. Amounts are given as their cells show them, where a
+   * cell shows cents. A warning says when the labels on the page gave another total, and
+   * when the lines do not come to the total. A formula total of nought, and one shown as a
+   * plain number beside a labeled amount shown as money, leave the labels' reading as it
+   * was.
    */
   invoice(opts?: InvoiceOptions | undefined | null): InvoiceResult
   /** `invoice` on a worker thread. */

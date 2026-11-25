@@ -332,22 +332,23 @@ impl<'a> Graph<'a> {
     Ok(reached.len())
   }
 
-  /// The total: of the formulas nothing reads, on the sheets that are shown, one that comes
-  /// to `asked` where an amount is asked for (what the labels on the page gave) and some
-  /// formula comes to it. Failing that, one shown as money before one that is not. Of those
-  /// alike so far, the one that reaches the most cells; of those, the lowest on its sheet.
-  fn total(&self, asked: Option<f64>, steps: &mut Steps) -> Result<Option<CellAt>, Spent> {
+  /// The total: of the formulas nothing reads, on the sheets that are shown, one shown as
+  /// money before one that is not; of those, the one that reaches the most cells; of those,
+  /// the lowest on its sheet.
+  ///
+  /// What the labels on the page gave as the total is not asked. It was tried: a formula
+  /// that came to the labels' amount was taken before any other, and measured on real
+  /// workbooks, that moved totals from right to wrong far more often than the other way. A
+  /// label that reads as a total is often on a part of the bill.
+  fn total(&self, steps: &mut Steps) -> Result<Option<CellAt>, Spent> {
     let mut best = None;
     for (at, formula) in &self.formulas {
       if formula.reads.is_empty() || self.read.contains(at) || self.workbook.sheets[at.sheet].hidden
       {
         continue;
       }
-      // The labels give an amount without its sign.
-      let as_asked = asked.is_some_and(|asked| comes_to(formula.value.abs(), asked.abs(), 1));
       let shown_as_money = self.cell(*at).is_some_and(money);
       let rank = (
-        as_asked,
         shown_as_money,
         self.reach(*at, steps)?,
         at.row,
@@ -518,12 +519,8 @@ fn comes_to(sum: f64, whole: f64, count: usize) -> bool {
 }
 
 /// The total of a workbook's formulas and its lines; `Ok(None)` when no formula is a total.
-fn followed(
-  graph: &Graph<'_>,
-  asked: Option<f64>,
-  steps: &mut Steps,
-) -> Result<Option<Audit>, Spent> {
-  let Some(total) = graph.total(asked, steps)? else {
+fn followed(graph: &Graph<'_>, steps: &mut Steps) -> Result<Option<Audit>, Spent> {
+  let Some(total) = graph.total(steps)? else {
     return Ok(None);
   };
   let Some(value) = graph.value(total) else {
@@ -565,20 +562,13 @@ impl Workbook {
   /// follow: one whose formulas read more cells than any real workbook's do, or whose
   /// following takes more looks than any real workbook's does.
   pub fn audit(&self) -> Option<Audit> {
-    self.audit_toward(None)
-  }
-
-  /// [`Workbook::audit`], told an amount to look for: what the labels on the page gave as
-  /// the total, say. Where one of the formulas that nothing reads comes to that amount, it
-  /// is the total, before any that reaches further. The amount's sign is not asked.
-  pub fn audit_toward(&self, asked: Option<f64>) -> Option<Audit> {
-    self.audited(asked, MAX_STEPS)
+    self.audited(MAX_STEPS)
   }
 
   /// The audit, allowed `steps` looks at cells once the formulas are read.
-  fn audited(&self, asked: Option<f64>, steps: usize) -> Option<Audit> {
+  fn audited(&self, steps: usize) -> Option<Audit> {
     let graph = Graph::of(self)?;
-    followed(&graph, asked, &mut Steps(steps)).ok().flatten()
+    followed(&graph, &mut Steps(steps)).ok().flatten()
   }
 }
 

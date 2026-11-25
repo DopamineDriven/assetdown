@@ -416,8 +416,8 @@ fn a_workbook_made_to_be_slow_to_follow_is_given_up_on() {
     Some((at(0, "B200"), 1.0))
   );
   // Allowed fewer looks than it takes, it is not.
-  assert_eq!(book.audited(None, 30_000), None);
-  assert!(book.audited(None, 60_000).is_some());
+  assert_eq!(book.audited(30_000), None);
+  assert!(book.audited(60_000).is_some());
 }
 
 #[test]
@@ -585,35 +585,6 @@ fn a_total_shown_as_money_is_the_total_before_a_plain_one_that_reaches_further()
     ("C3", MoneyFormula("SUM(C1:C2)", 950.0)),
   ]);
   assert_eq!(book.audit().unwrap().total, at(0, "C3"));
-}
-
-#[test]
-fn of_the_formulas_nothing_reads_the_one_that_comes_to_an_amount_asked_for_is_the_total() {
-  // Two sums that nothing reads. Left to itself, the audit takes the one that reaches
-  // further; told what the labels on the page gave, it takes the one that comes to it.
-  let book = one(&[
-    ("A1", Money(1.0)),
-    ("A2", Money(2.0)),
-    ("A3", Money(3.0)),
-    ("A4", MoneyFormula("SUM(A1:A3)", 6.0)),
-    ("C1", Money(40.0)),
-    ("C2", Money(20.0)),
-    ("C3", MoneyFormula("SUM(C1:C2)", 60.0)),
-  ]);
-  assert_eq!(book.audit().unwrap().total, at(0, "A4"));
-  assert_eq!(book.audit_toward(Some(60.0)).unwrap().total, at(0, "C3"));
-  // An amount no formula comes to changes nothing, and the sign of it is not asked.
-  assert_eq!(book.audit_toward(Some(75.0)).unwrap().total, at(0, "A4"));
-  assert_eq!(book.audit_toward(None).unwrap().total, at(0, "A4"));
-  // A formula that something reads is not a total, whatever it comes to.
-  let read = one(&[
-    ("A1", Money(40.0)),
-    ("A2", Money(20.0)),
-    ("A3", MoneyFormula("SUM(A1:A2)", 60.0)),
-    ("A4", Money(6.0)),
-    ("A5", MoneyFormula("A3+A4", 66.0)),
-  ]);
-  assert_eq!(read.audit_toward(Some(60.0)).unwrap().total, at(0, "A5"));
 }
 
 #[test]

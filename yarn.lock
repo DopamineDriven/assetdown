@@ -366,7 +366,150 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@d0paminedriven/mimedown@npm:^0.7.0, @d0paminedriven/mimedown@workspace:crates/mimedown-node":
+"@d0paminedriven/mimedown-android-arm64@npm:0.7.0":
+  version: 0.7.0
+  resolution: "@d0paminedriven/mimedown-android-arm64@npm:0.7.0"
+  conditions: os=android & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-darwin-arm64@npm:0.7.0":
+  version: 0.7.0
+  resolution: "@d0paminedriven/mimedown-darwin-arm64@npm:0.7.0"
+  conditions: os=darwin & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-darwin-x64@npm:0.7.0":
+  version: 0.7.0
+  resolution: "@d0paminedriven/mimedown-darwin-x64@npm:0.7.0"
+  conditions: os=darwin & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-freebsd-x64@npm:0.7.0":
+  version: 0.7.0
+  resolution: "@d0paminedriven/mimedown-freebsd-x64@npm:0.7.0"
+  conditions: os=freebsd & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-linux-arm-gnueabihf@npm:0.7.0":
+  version: 0.7.0
+  resolution: "@d0paminedriven/mimedown-linux-arm-gnueabihf@npm:0.7.0"
+  conditions: os=linux & cpu=arm
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-linux-arm64-gnu@npm:0.7.0":
+  version: 0.7.0
+  resolution: "@d0paminedriven/mimedown-linux-arm64-gnu@npm:0.7.0"
+  conditions: os=linux & cpu=arm64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-linux-arm64-musl@npm:0.7.0":
+  version: 0.7.0
+  resolution: "@d0paminedriven/mimedown-linux-arm64-musl@npm:0.7.0"
+  conditions: os=linux & cpu=arm64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-linux-x64-gnu@npm:0.7.0":
+  version: 0.7.0
+  resolution: "@d0paminedriven/mimedown-linux-x64-gnu@npm:0.7.0"
+  conditions: os=linux & cpu=x64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-linux-x64-musl@npm:0.7.0":
+  version: 0.7.0
+  resolution: "@d0paminedriven/mimedown-linux-x64-musl@npm:0.7.0"
+  conditions: os=linux & cpu=x64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-wasm32-wasi@npm:0.7.0":
+  version: 0.7.0
+  resolution: "@d0paminedriven/mimedown-wasm32-wasi@npm:0.7.0"
+  dependencies:
+    "@emnapi/core": "npm:2.0.0-alpha.5"
+    "@emnapi/runtime": "npm:2.0.0-alpha.5"
+    "@napi-rs/wasm-runtime": "npm:~1.2.7"
+  conditions: cpu=wasm32
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-win32-arm64-msvc@npm:0.7.0":
+  version: 0.7.0
+  resolution: "@d0paminedriven/mimedown-win32-arm64-msvc@npm:0.7.0"
+  conditions: os=win32 & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-win32-ia32-msvc@npm:0.7.0":
+  version: 0.7.0
+  resolution: "@d0paminedriven/mimedown-win32-ia32-msvc@npm:0.7.0"
+  conditions: os=win32 & cpu=ia32
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown-win32-x64-msvc@npm:0.7.0":
+  version: 0.7.0
+  resolution: "@d0paminedriven/mimedown-win32-x64-msvc@npm:0.7.0"
+  conditions: os=win32 & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown@npm:^0.7.0":
+  version: 0.7.0
+  resolution: "@d0paminedriven/mimedown@npm:0.7.0"
+  dependencies:
+    "@d0paminedriven/mimedown-android-arm64": "npm:0.7.0"
+    "@d0paminedriven/mimedown-darwin-arm64": "npm:0.7.0"
+    "@d0paminedriven/mimedown-darwin-x64": "npm:0.7.0"
+    "@d0paminedriven/mimedown-freebsd-x64": "npm:0.7.0"
+    "@d0paminedriven/mimedown-linux-arm-gnueabihf": "npm:0.7.0"
+    "@d0paminedriven/mimedown-linux-arm64-gnu": "npm:0.7.0"
+    "@d0paminedriven/mimedown-linux-arm64-musl": "npm:0.7.0"
+    "@d0paminedriven/mimedown-linux-x64-gnu": "npm:0.7.0"
+    "@d0paminedriven/mimedown-linux-x64-musl": "npm:0.7.0"
+    "@d0paminedriven/mimedown-wasm32-wasi": "npm:0.7.0"
+    "@d0paminedriven/mimedown-win32-arm64-msvc": "npm:0.7.0"
+    "@d0paminedriven/mimedown-win32-ia32-msvc": "npm:0.7.0"
+    "@d0paminedriven/mimedown-win32-x64-msvc": "npm:0.7.0"
+  dependenciesMeta:
+    "@d0paminedriven/mimedown-android-arm64":
+      optional: true
+    "@d0paminedriven/mimedown-darwin-arm64":
+      optional: true
+    "@d0paminedriven/mimedown-darwin-x64":
+      optional: true
+    "@d0paminedriven/mimedown-freebsd-x64":
+      optional: true
+    "@d0paminedriven/mimedown-linux-arm-gnueabihf":
+      optional: true
+    "@d0paminedriven/mimedown-linux-arm64-gnu":
+      optional: true
+    "@d0paminedriven/mimedown-linux-arm64-musl":
+      optional: true
+    "@d0paminedriven/mimedown-linux-x64-gnu":
+      optional: true
+    "@d0paminedriven/mimedown-linux-x64-musl":
+      optional: true
+    "@d0paminedriven/mimedown-wasm32-wasi":
+      optional: true
+    "@d0paminedriven/mimedown-win32-arm64-msvc":
+      optional: true
+    "@d0paminedriven/mimedown-win32-ia32-msvc":
+      optional: true
+    "@d0paminedriven/mimedown-win32-x64-msvc":
+      optional: true
+  checksum: 10c0/641d0d9ceb370114a1e79c11e789066c03de1c61edfcc136444cfd3c4288ecf52bdc20c03d82969eb3e26fd6dced06ad4bc726d57839ecafb3997a864bbd8efe
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/mimedown@workspace:crates/mimedown-node":
   version: 0.0.0-use.local
   resolution: "@d0paminedriven/mimedown@workspace:crates/mimedown-node"
   dependencies:
@@ -395,7 +538,160 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@d0paminedriven/pdfdown@npm:^0.20.0, @d0paminedriven/pdfdown@workspace:crates/pdfdown-node":
+"@d0paminedriven/pdfdown-android-arm-eabi@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-android-arm-eabi@npm:0.20.0"
+  conditions: os=android & cpu=arm
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-android-arm64@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-android-arm64@npm:0.20.0"
+  conditions: os=android & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-darwin-arm64@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-darwin-arm64@npm:0.20.0"
+  conditions: os=darwin & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-darwin-x64@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-darwin-x64@npm:0.20.0"
+  conditions: os=darwin & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-freebsd-x64@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-freebsd-x64@npm:0.20.0"
+  conditions: os=freebsd & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-linux-arm-gnueabihf@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-linux-arm-gnueabihf@npm:0.20.0"
+  conditions: os=linux & cpu=arm
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-linux-arm64-gnu@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-linux-arm64-gnu@npm:0.20.0"
+  conditions: os=linux & cpu=arm64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-linux-arm64-musl@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-linux-arm64-musl@npm:0.20.0"
+  conditions: os=linux & cpu=arm64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-linux-x64-gnu@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-linux-x64-gnu@npm:0.20.0"
+  conditions: os=linux & cpu=x64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-linux-x64-musl@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-linux-x64-musl@npm:0.20.0"
+  conditions: os=linux & cpu=x64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-wasm32-wasi@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-wasm32-wasi@npm:0.20.0"
+  dependencies:
+    "@emnapi/core": "npm:2.0.0-alpha.5"
+    "@emnapi/runtime": "npm:2.0.0-alpha.5"
+    "@napi-rs/wasm-runtime": "npm:~1.2.7"
+  conditions: cpu=wasm32
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-win32-arm64-msvc@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-win32-arm64-msvc@npm:0.20.0"
+  conditions: os=win32 & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-win32-ia32-msvc@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-win32-ia32-msvc@npm:0.20.0"
+  conditions: os=win32 & cpu=ia32
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown-win32-x64-msvc@npm:0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown-win32-x64-msvc@npm:0.20.0"
+  conditions: os=win32 & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown@npm:^0.20.0":
+  version: 0.20.0
+  resolution: "@d0paminedriven/pdfdown@npm:0.20.0"
+  dependencies:
+    "@d0paminedriven/pdfdown-android-arm-eabi": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-android-arm64": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-darwin-arm64": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-darwin-x64": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-freebsd-x64": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-linux-arm-gnueabihf": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-linux-arm64-gnu": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-linux-arm64-musl": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-linux-x64-gnu": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-linux-x64-musl": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-wasm32-wasi": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-win32-arm64-msvc": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-win32-ia32-msvc": "npm:0.20.0"
+    "@d0paminedriven/pdfdown-win32-x64-msvc": "npm:0.20.0"
+  dependenciesMeta:
+    "@d0paminedriven/pdfdown-android-arm-eabi":
+      optional: true
+    "@d0paminedriven/pdfdown-android-arm64":
+      optional: true
+    "@d0paminedriven/pdfdown-darwin-arm64":
+      optional: true
+    "@d0paminedriven/pdfdown-darwin-x64":
+      optional: true
+    "@d0paminedriven/pdfdown-freebsd-x64":
+      optional: true
+    "@d0paminedriven/pdfdown-linux-arm-gnueabihf":
+      optional: true
+    "@d0paminedriven/pdfdown-linux-arm64-gnu":
+      optional: true
+    "@d0paminedriven/pdfdown-linux-arm64-musl":
+      optional: true
+    "@d0paminedriven/pdfdown-linux-x64-gnu":
+      optional: true
+    "@d0paminedriven/pdfdown-linux-x64-musl":
+      optional: true
+    "@d0paminedriven/pdfdown-wasm32-wasi":
+      optional: true
+    "@d0paminedriven/pdfdown-win32-arm64-msvc":
+      optional: true
+    "@d0paminedriven/pdfdown-win32-ia32-msvc":
+      optional: true
+    "@d0paminedriven/pdfdown-win32-x64-msvc":
+      optional: true
+  checksum: 10c0/840dbd5a458686cebbb192f156514426a7442b1e445fcac5ccf8076fcec0ed34b01aa9c2f5635e32b6a779765ea17411b59fac2ac590adb6200533a25059034a
+  languageName: node
+  linkType: hard
+
+"@d0paminedriven/pdfdown@workspace:crates/pdfdown-node":
   version: 0.0.0-use.local
   resolution: "@d0paminedriven/pdfdown@workspace:crates/pdfdown-node"
   dependencies:
@@ -626,6 +922,16 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@emnapi/core@npm:2.0.0-alpha.5":
+  version: 2.0.0-alpha.5
+  resolution: "@emnapi/core@npm:2.0.0-alpha.5"
+  dependencies:
+    "@emnapi/wasi-threads": "npm:2.1.0"
+    tslib: "npm:^2.4.0"
+  checksum: 10c0/c89ae29b699d1b75f555ac18342dfa7354be4ee6ed60c071b1723a7bf2f2f20ed3418e6157ca12e457309e44fc1776e6699f66c65319e6ace56c1c859b42a7b4
+  languageName: node
+  linkType: hard
+
 "@emnapi/core@npm:2.0.0-beta.2":
   version: 2.0.0-beta.2
   resolution: "@emnapi/core@npm:2.0.0-beta.2"
@@ -646,6 +952,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@emnapi/runtime@npm:2.0.0-alpha.5":
+  version: 2.0.0-alpha.5
+  resolution: "@emnapi/runtime@npm:2.0.0-alpha.5"
+  dependencies:
+    tslib: "npm:^2.4.0"
+  checksum: 10c0/0effd9cc76cb7d65d38d4fc30b0d4599bd6c96abbfe334d10f7739e69e95f3e465d4243019931a0d7ae682ba42420b0170b87b341ea410e700343f5002704ec9
+  languageName: node
+  linkType: hard
+
 "@emnapi/runtime@npm:2.0.0-beta.2":
   version: 2.0.0-beta.2
   resolution: "@emnapi/runtime@npm:2.0.0-beta.2"
@@ -661,6 +976,15 @@ __metadata:
   dependencies:
     tslib: "npm:^2.4.0"
   checksum: 10c0/d6ddee4458aacaaff5e83762e72adb369470319ffd3fe2ebf13db0750aecca026e84786ed67cf209afb94c4318d265e937276bcafd8b7e8a169e547a541e2df1
+  languageName: node
+  linkType: hard
+
+"@emnapi/wasi-threads@npm:2.1.0":
+  version: 2.1.0
+  resolution: "@emnapi/wasi-threads@npm:2.1.0"
+  dependencies:
+    tslib: "npm:^2.4.0"
+  checksum: 10c0/01fd84e87420be4bf5edfc4e1845675521017e84788f3c26e7174a5f51f972fbcbaa05aa302fccf2e2eee3fa9160d04eb581c166da07f5eabd3ce8cbfeaef375
   languageName: node
   linkType: hard
 

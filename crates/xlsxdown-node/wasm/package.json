@@ -1,6 +1,6 @@
 {
   "name": "@d0paminedriven/xlsxdown-wasm",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Rust-powered xlsx parsing as WebAssembly, for Node, browsers, and edge runtimes",
   "keywords": [
     "N-API",

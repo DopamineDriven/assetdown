@@ -392,3 +392,13 @@ fn a_camera_s_notes_kept_as_text_in_hexadecimal_are_read_too() {
   // It is read for what it says and is not kept among the text.
   assert_eq!(detail(&facts).text.len(), 0);
 }
+
+#[test]
+fn an_animation_of_one_frame_is_a_still_picture() {
+  let file = png_with(
+    png_header(100, 100, 8, 6),
+    &[png_chunk(b"acTL", &[0, 0, 0, 1, 0, 0, 0, 0])],
+  );
+  let facts = image_facts(specs(&file));
+  assert_eq!((facts.frames, facts.animated), (1, false));
+}

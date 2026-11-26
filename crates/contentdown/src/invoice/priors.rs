@@ -2,7 +2,9 @@
 //! order and the decimal separator, each with the tier that decided it. Nothing here knows a
 //! vendor; the page's own evidence wins, then the caller's option, then a plain default.
 
-use super::amounts::{CODES, Separator, infer_separator, parse_amount, symbol_code};
+use super::amounts::{
+  CODES, Separator, infer_separator, parse_amount, symbol_code, written_as_money,
+};
 use super::dates::{Order, infer_order, parse_date};
 use super::lexicon::{Field, Hit, language_specific};
 use super::segments::Segment;
@@ -46,10 +48,33 @@ fn label_language_order(hits: &[Vec<Hit>]) -> Order {
 }
 
 /// A currency the page states: an ISO code beside an amount, in parentheses, on a totals label
-/// or in a `Currency` label, else an unambiguous glyph on or beside an amount, where "beside"
-/// includes a glyph standing in its own column left of an amount column (`US$ | 400.00`).
+/// or in a `Currency` label; else an unambiguous glyph on or beside an amount, where "beside"
+/// includes a glyph standing in a column of its own on an amount's line (`US$ | 400.00`); else a
+/// code standing in a column of its own right beside an amount written as money
+/// (`USD | 400.00`). That last is taken only when nothing else says, and only right beside the
+/// amount, because many a three-letter abbreviation spells a currency's code.
 fn page_currency(segments: &[Segment], hits: &[Vec<Hit>], separator: Separator) -> Option<String> {
   let mut glyph_code: Option<String> = None;
+  let mut column_code: Option<String> = None;
+  // Whether the segment nearest `s` on its line, to either side, is one amount written as money.
+  let beside_money = |s: &Segment| {
+    let on_line =
+      |t: &&Segment| t.page_index == s.page_index && t.line == s.line && !std::ptr::eq(*t, s);
+    let right = segments
+      .iter()
+      .filter(on_line)
+      .filter(|t| t.x0 >= s.x1)
+      .min_by(|a, b| a.x0.total_cmp(&b.x0));
+    let left = segments
+      .iter()
+      .filter(on_line)
+      .filter(|t| t.x1 <= s.x0)
+      .max_by(|a, b| a.x1.total_cmp(&b.x1));
+    [right, left].into_iter().flatten().any(|t| {
+      let text = t.text.trim();
+      written_as_money(text, separator) && parse_amount(text, separator).is_some()
+    })
+  };
   let line_has_amount = |s: &Segment| {
     segments.iter().any(|t| {
       t.page_index == s.page_index
@@ -83,6 +108,9 @@ fn page_currency(segments: &[Segment], hits: &[Vec<Hit>], separator: Separator) 
         if neighbor_is_amount(i) || parenthesised || labeled || totals_label {
           return Some(code.to_string());
         }
+        if column_code.is_none() && n == 1 && beside_money(s) {
+          column_code = Some(code.to_string());
+        }
       }
       if glyph_code.is_none() {
         if let Some(amount) = parse_amount(token, separator) {
@@ -100,7 +128,7 @@ fn page_currency(segments: &[Segment], hits: &[Vec<Hit>], separator: Separator) 
       }
     }
   }
-  glyph_code
+  glyph_code.or(column_code)
 }
 
 /// Priors for a document from its first page's segments and the caller's options.

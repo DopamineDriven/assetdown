@@ -1,7 +1,9 @@
 //! Totals: the subtotal, tax, total and amount-due candidates reconciled into one story. The
 //! combination where `subTotal + tax ≈ invoiceTotal` wins and lifts every participant; without
-//! one, the lowest `Total` on the page is the invoice total. Amounts are reported absolute; a
-//! negative total is flagged for the credit decision.
+//! one, the lowest `Total` on the page is the invoice total. Noughts that add up to nought are no
+//! such combination, and a total of nought gives way to any that is not: a blank totals block
+//! says nothing about the amount printed beside it. Amounts are reported absolute; a negative
+//! total is flagged for the credit decision.
 
 use super::amounts::Amount;
 use super::lexicon::Field;
@@ -84,6 +86,10 @@ fn tax_field(taxes: &[&TotalCandidate], currency: Option<&str>, bonus: f64) -> O
   }
 }
 
+fn is_nought(c: &TotalCandidate) -> bool {
+  c.amount.value == 0.0
+}
+
 fn best_by_base<'a>(items: &[&'a TotalCandidate]) -> Option<&'a TotalCandidate> {
   items
     .iter()
@@ -139,6 +145,10 @@ pub(crate) fn resolve(items: &[TotalCandidate], currency: Option<&str>) -> Total
       .map(|t| (*t, false))
       .chain(dues.iter().map(|d| (*d, true)));
     for (total, is_due) in total_candidates {
+      // `0 + 0 = 0` holds on every blank totals block; it reconciles nothing.
+      if is_nought(total) {
+        continue;
+      }
       for set in &tax_sets {
         let tax_sum: f64 = set.iter().map(|t| t.amount.value).sum();
         let sum = sub.amount.value + tax_sum;
@@ -188,9 +198,10 @@ pub(crate) fn resolve(items: &[TotalCandidate], currency: Option<&str>) -> Total
     };
   }
 
-  // No reconciliation: a Total on a page that also carries a totals block (a subtotal, tax or
-  // amount-due line) outranks one on a page without; then the last such page, the lowest line on
-  // it, the largest amount among ties. An amount-due line alone is the total.
+  // No reconciliation: a Total that is not nought outranks one that is; then one on a page that
+  // also carries a totals block (a subtotal, tax or amount-due line) outranks one on a page
+  // without; then the last such page, the lowest line on it, the largest amount among ties. An
+  // amount-due line alone is the total, one that is not nought before one that is.
   let block_pages: Vec<u32> = subs
     .iter()
     .chain(&taxes)
@@ -202,13 +213,17 @@ pub(crate) fn resolve(items: &[TotalCandidate], currency: Option<&str>) -> Total
     .copied()
     .min_by(|a, b| {
       let in_block = |c: &TotalCandidate| block_pages.contains(&c.span.page);
-      in_block(b)
-        .cmp(&in_block(a))
+      is_nought(a)
+        .cmp(&is_nought(b))
+        .then(in_block(b).cmp(&in_block(a)))
         .then(b.span.page.cmp(&a.span.page))
         .then(a.span.y0.total_cmp(&b.span.y0))
         .then(b.amount.value.total_cmp(&a.amount.value))
     })
-    .or_else(|| best_by_base(&dues));
+    .or_else(|| {
+      let owed: Vec<&TotalCandidate> = dues.iter().copied().filter(|d| !is_nought(d)).collect();
+      best_by_base(&owed).or_else(|| best_by_base(&dues))
+    });
   let amount_due = best_by_base(&dues);
   Totals {
     sub_total: best_by_base(&subs).map(|c| money(c, currency, 0.0)),

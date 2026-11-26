@@ -14,9 +14,21 @@ const ALIGN_EM: f64 = 1.5;
 /// A value never runs longer than this many tokens; a longer remainder is prose.
 pub(crate) const MAX_VALUE_TOKENS: usize = 12;
 
+/// Where a candidate value sits from its label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Seat {
+  /// The rest of the label's own segment.
+  AfterLabel,
+  /// The aligned unlabeled segment below the label.
+  Below,
+  /// An unlabeled segment to the label's right on its baseline.
+  Right,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Candidate {
   pub text: String,
+  pub seat: Seat,
   /// Indexes into the page's words.
   pub words: Vec<usize>,
   /// The page's position in the array it came from.
@@ -50,6 +62,7 @@ fn same_line(segments: &[Segment], hit: &Hit, s: &Segment) -> Option<Candidate> 
   let _ = segments;
   Some(Candidate {
     text: hit.remainder.clone(),
+    seat: Seat::AfterLabel,
     words,
     page_index: s.page_index,
     label: hit.label,
@@ -127,9 +140,10 @@ fn is_money(field: Field) -> bool {
   )
 }
 
-fn neighbor(t: &Segment, hit: &Hit, geometry: f64) -> Candidate {
+fn neighbor(t: &Segment, hit: &Hit, seat: Seat, geometry: f64) -> Candidate {
   Candidate {
     text: t.text.clone(),
+    seat,
     words: t.words.clone(),
     page_index: t.page_index,
     label: hit.label,
@@ -162,7 +176,7 @@ pub(crate) fn candidates(segments: &[Segment], hits: &[Vec<Hit>], field: Field) 
       if !is_title_row(hit.label)
         && let Some(i) = below(segments, hits, s)
       {
-        out.push(neighbor(&segments[i], hit, 0.8));
+        out.push(neighbor(&segments[i], hit, Seat::Below, 0.8));
       }
       let to_right = right_all(segments, hits, s);
       if is_money(field) {
@@ -176,10 +190,10 @@ pub(crate) fn candidates(segments: &[Segment], hits: &[Vec<Hit>], field: Field) 
           } else {
             0.6
           };
-          out.push(neighbor(t, hit, geometry));
+          out.push(neighbor(t, hit, Seat::Right, geometry));
         }
       } else if let Some(&i) = to_right.first() {
-        out.push(neighbor(&segments[i], hit, 0.7));
+        out.push(neighbor(&segments[i], hit, Seat::Right, 0.7));
       }
     }
   }

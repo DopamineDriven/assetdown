@@ -441,3 +441,39 @@ Excel makes the key of a locked workbook from its password with MD5 (Excel 97 an
 - `crates/xlsxdown-node/ci/wasm` and `ci/publish-wasm` are the xls binding's with the names changed, and `.github/workflows/xlsxdown-node.yml` has the `wasm` and `publish-wasm` jobs, with `wasm` among what `publish` waits on. The base package's release commit, `xlsxdown@<version>`, publishes both.
 - The worker (`XlsxWorker`) answers `spreadsheetCellsAsync`, the one verb the binding has as a function, as `XlsWorker` does.
 - Its tests read the public fixtures, and one workbook no fixture is: `crates/xlsxdown-node/__test__/xlsx-test.ts` writes an `.xlsx` in code (a zip kept without compression), which is where the 40,000 cells come from for the test that a page stays free while the worker reads.
+
+### What changed on 2026-11-26
+
+Asked for, and made, not proposed.
+
+#### `@d0paminedriven/mimedown-wasm`: the WebAssembly-only package for `mimedown`
+
+`crates/mimedown-node/wasm/` is new, laid out as `crates/xlsxdown-node/wasm/` is.
+
+- `wasm/package.json` is a new manifest: the xlsx one with the names changed (`@d0paminedriven/mimedown-wasm`, binary `mimedown-node-wasm`), at 0.8.0 to match its base package, with its own description and keywords. `version.sh` now moves four files for `mimedown`, as it does for `rtfdown`, `xlsxdown`, `xlsdown`, and `docdown`.
+- `crates/mimedown-node/package.json` gained what the xlsx binding's has: the scripts `build:wasm-package` (with its three parts) and `test:wasm`, `build:wasm-package` at the end of `build:all`, and the dev dependencies `playwright-core`, `rolldown`, `rolldown-plugin-wasm`, and `tsdown`, from the catalogs the other bindings use. `yarn.lock` moved with them (four lines). It did not gain the xlsx binding's `workspaces` key, which the `rtfdown` and `docdown` bindings do without.
+- `crates/mimedown-node/.gitignore` is now the same as the xlsx binding's, and `.oxfmtrc.json` gained the five lines that keep the package's generated scripts out of the formatter.
+- `crates/mimedown-node/ci/wasm` and `ci/publish-wasm` are the xlsx binding's with the names changed, and `.github/workflows/mimedown-node.yml` has the `wasm` and `publish-wasm` jobs, with `wasm` among what `publish` waits on. The base package's release commit, `mimedown@<version>`, publishes both.
+- The worker (`MimeWorker`) answers the build's eleven promise verbs, the four tables among them. `wasm/src/protocol.ts` differs from the xlsx one in one type: the verbs the worker runs are the ones that answer at once and have a promise twin (`WorkerBindingKeys`). When the package was first built the tables had none, which is what the type was written for; they have one now (below), and the type stays as the rule a later verb is held to. The client sends only a view's own bytes: a message carries the whole of the buffer a view looks onto, and the pieces a page cuts from a file it holds are views.
+- Its tests build their files in code. `crates/mimedown-node/__test__/mime-test.ts` is new and holds `MimeTest`, moved out of `index.spec.ts` so that the package's tests can use it without loading the native addon: a still and an animated PNG, GIF, and WebP, an icon of several sizes, a TIFF of several pages, and a WAVE file of any length. The page test asks for the shape of half a minute of sound 24 times at once, which is what takes the worker long enough to show that the page stays free.
+
+The package is 7.5 MB packed, where the xlsx one is 1.6 MB: each build is 6.6 MB (2.4 MB gzipped) because the binding turns on all four parsers. Built for the target without threads, for comparison:
+
+| Parsers | Raw | Gzipped |
+|---|---|---|
+| none (sniffing, and a picture's facts) | 0.89 MB | 0.35 MB |
+| PDF and Office | 3.17 MB | 1.24 MB |
+| audio and video | 4.51 MB | 1.66 MB |
+| all four, as built | 6.57 MB | 2.42 MB |
+
+A smaller entry for a page would take features on `crates/mimedown-node/Cargo.toml` and a second build in the package. Neither is made, and neither is wanted for now: you took the size as it is the same day, for reading a file's facts on the client, to be whittled down later.
+
+#### `crates/mimedown-node`: six promise verbs
+
+`sniffFromRangesAsync` and `specsFromRangesAsync` are new, so that every verb that reads a file has a twin that does not block. The pieces are checked on the JS thread and then copied, as a whole file's bytes are, so what is wrong with them is thrown where they were passed.
+
+The four tables have twins too, which you asked for after the first two: `mediaTypesOfAsync`, `mediaTypeOfPathAsync`, `extensionsOfAsync`, and `builtWithAsync`. They read no file and cannot block; the twins are there so that a caller who has only promises, as a page has of the worker, can ask them without a second copy of the build on its own thread. Every verb the binding has as a function now has a promise twin. No manifest changed for any of this.
+
+#### `mimedown`: what `frames` counts
+
+`frames` is now the frames of an animation and nothing else: an icon's sizes and a TIFF's pages are no longer counted in it, and stay in each format's own detail. This changes what a published package returns for those two formats, so it goes out as the next minor. No manifest changed for it.

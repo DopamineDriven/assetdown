@@ -40,6 +40,7 @@
     "build": "yarn build:base",
     "build:base": "napi build --platform --esm --release",
     "build:wasm": "yarn build:wasm32",
+    "build:all": "yarn build:base && yarn build:wasm && yarn build:wasm-package",
     "build:wasm-package": "yarn build:wasm-package:threads && yarn build:wasm-package:threadless && yarn build:wasm-package:worker",
     "build:wasm-package:worker": "cd wasm && node ../node_modules/tsdown/dist/run.mjs",
     "build:wasm-package:threadless": "napi build --platform --no-js --esm --release --target wasm32-wasip1 --package-json-path wasm/package.json --output-dir wasm",

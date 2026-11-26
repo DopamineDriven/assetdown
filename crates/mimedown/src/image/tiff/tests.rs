@@ -104,7 +104,8 @@ fn the_pages_are_counted_by_following_each_directory_to_the_next() {
   );
   let facts = image_facts(specs(&file));
   // The size is the first page's.
-  assert_eq!((facts.width, facts.frames, facts.animated), (8, 3, false));
+  // Pages are not frames: nothing here moves.
+  assert_eq!((facts.width, facts.frames, facts.animated), (8, 1, false));
   assert_eq!(detail(&facts).pages, 3);
 }
 
@@ -315,7 +316,7 @@ fn directories_that_lead_back_to_one_already_counted_are_counted_once() {
   let found = specs(&file);
   assert_eq!(found.warnings.len(), 1);
   let facts = image_facts(found);
-  assert_eq!((facts.frames, detail(&facts).pages), (2, 2));
+  assert_eq!((facts.frames, detail(&facts).pages), (1, 2));
 }
 
 #[test]

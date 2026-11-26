@@ -53,6 +53,8 @@ export interface BuiltWith {
   video: boolean
 }
 
+export declare function builtWithAsync(): Promise<BuiltWith>
+
 /** A range of a file. */
 export interface ByteRange {
   /** Where the range starts: from the start of the file, or back from its end. */
@@ -115,6 +117,8 @@ export type Evidence = 'signature' | 'container' | 'content' | 'fileName'
 
 /** The file extensions in use for a type, the usual one first, without the dot. */
 export declare function extensionsOf(mime: string): Array<string>
+
+export declare function extensionsOfAsync(mime: string): Promise<Array<string>>
 
 /** The facts of a file, by the kind of facts its type has. */
 export type Facts =
@@ -202,7 +206,11 @@ export type ImageDetail =
 export interface ImageFacts {
   width: number
   height: number
-  /** How many pictures the file holds: an animation's frames, an icon's sizes. */
+  /**
+   * How many frames the picture is made of: more than one for an animation, one for a
+   * still. An icon's sizes and a TIFF's pages are not frames; each is in its format's own
+   * detail. An animated JPEG XL says it moves and not how many frames it has, so it is one.
+   */
   frames: number
   animated: boolean
   hasAlpha: boolean | null
@@ -292,8 +300,12 @@ export type KeyframesOutcome =
 /** The type a path's extension names, when it names one. */
 export declare function mediaTypeOfPath(path: string): Mime | null
 
+export declare function mediaTypeOfPathAsync(path: string): Promise<Mime | null>
+
 /** The types a file extension is in use for, the usual one first. The dot is optional. */
 export declare function mediaTypesOf(extension: string): Array<Mime>
+
+export declare function mediaTypesOfAsync(extension: string): Promise<Array<Mime>>
 
 /** A media type, as its string: `image/png`. */
 export type Mime = 'image/png' | 'image/apng' | 'image/jpeg' | 'image/gif' | 'image/bmp' | 'image/webp' | 'image/avif' | 'image/heic' | 'image/heif' | 'image/avci' | 'image/svg+xml' | 'image/x-icon' | 'image/tiff' | 'image/vnd.radiance' | 'image/aces' | 'image/dpx' | 'image/emf' | 'image/ktx' | 'image/ktx2' | 'image/jxl' | 'image/jp2' | 'image/jpx' | 'image/jpm' | 'image/jph' | 'image/j2c' | 'image/jxr' | 'image/jls' | 'image/x-adobe-dng' | 'image/x-canon-cr2' | 'image/x-canon-cr3' | 'image/x-nikon-nef' | 'image/x-sony-arw' | 'image/x-fuji-raf' | 'image/x-olympus-orf' | 'image/x-panasonic-rw2' | 'image/x-dcraw' | 'application/pdf' | 'application/vnd.fdf' | 'application/vnd.ms-xpsdocument' | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' | 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' | 'application/vnd.openxmlformats-officedocument.presentationml.presentation' | 'application/vnd.ms-word.document.macroenabled.12' | 'application/vnd.openxmlformats-officedocument.wordprocessingml.template' | 'application/vnd.ms-excel.sheet.macroenabled.12' | 'application/vnd.openxmlformats-officedocument.spreadsheetml.template' | 'application/vnd.ms-powerpoint.presentation.macroenabled.12' | 'application/vnd.openxmlformats-officedocument.presentationml.template' | 'application/vnd.openxmlformats-officedocument.presentationml.slideshow' | 'application/msword' | 'application/vnd.ms-excel' | 'application/vnd.ms-powerpoint' | 'application/vnd.visio' | 'application/vnd.oasis.opendocument.text' | 'application/vnd.oasis.opendocument.spreadsheet' | 'application/vnd.oasis.opendocument.presentation' | 'application/epub+zip' | 'application/vnd.amazon.ebook' | 'application/x-abiword' | 'application/rtf' | 'application/postscript' | 'text/plain' | 'text/markdown' | 'application/x-mdx' | 'text/csv' | 'text/html' | 'application/xhtml+xml' | 'application/xml' | 'text/css' | 'text/javascript' | 'application/node' | 'text/typescript' | 'application/json' | 'application/jsonc' | 'application/json5' | 'application/jsonl' | 'application/x-ndjson' | 'application/ld+json' | 'application/manifest+json' | 'application/yaml' | 'application/toml' | 'application/sql' | 'application/x-sh' | 'application/x-csh' | 'text/x-c' | 'text/x-c++' | 'text/x-csharp' | 'text/x-java' | 'text/x-php' | 'text/x-python' | 'text/x-ruby' | 'text/rust' | 'text/x-tex' | 'text/calendar' | 'text/vcard' | 'text/vtt' | 'text/event-stream' | 'application/vnd.apple.mpegurl' | 'application/dash+xml' | 'application/vnd.mozilla.xul+xml' | 'audio/mpeg' | 'audio/wav' | 'audio/flac' | 'audio/ogg' | 'audio/aac' | 'audio/mp4' | 'audio/webm' | 'audio/midi' | 'video/mp4' | 'video/quicktime' | 'video/webm' | 'video/x-matroska' | 'video/x-msvideo' | 'video/mpeg' | 'video/mp2t' | 'video/ogg' | 'video/3gpp' | 'video/3gpp2' | 'application/zip' | 'application/gzip' | 'application/x-bzip' | 'application/x-bzip2' | 'application/x-tar' | 'application/x-7z-compressed' | 'application/vnd.rar' | 'application/java-archive' | 'application/vnd.apple.pkpass' | 'application/x-freearc' | 'application/x-cfb' | 'application/x-ooxml-encrypted' | 'font/woff' | 'font/woff2' | 'font/otf' | 'font/ttf' | 'font/collection' | 'application/vnd.ms-fontobject' | 'model/gltf-binary' | 'model/gltf+json' | 'model/obj' | 'model/mtl' | 'model/vnd.usdz+zip' | 'model/vnd.pixar.usd' | 'model/vnd.usda' | 'model/stl' | 'model/3mf' | 'model/iges' | 'model/step' | 'model/mesh' | 'model/vrml' | 'model/x3d+xml' | 'model/vnd.collada+xml' | 'haptics/hjif' | 'haptics/hmpg' | 'haptics/ivs' | 'application/ogg' | 'application/wasm' | 'application/x-cdf' | 'application/x-python-code' | 'application/vnd.apple.installer+xml' | 'application/x-msi' | 'application/octet-stream' | 'application/x-empty'
@@ -314,7 +326,7 @@ export interface Options {
 }
 
 /** The package of this family that reads a type in full. */
-export type Parser = 'pdfdown' | 'xlsxdown' | 'docxdown' | 'pptxdown' | 'audiodown' | 'videodown' | 'tiffdown' | 'jpegdown' | 'rtfdown'
+export type Parser = 'pdfdown' | 'xlsxdown' | 'docxdown' | 'pptxdown' | 'audiodown' | 'videodown' | 'tiffdown' | 'jpegdown' | 'rtfdown' | 'xlsdown' | 'docdown'
 
 export interface PdfDetail {
   version: string | null
@@ -426,6 +438,8 @@ export interface Sniffed {
  */
 export declare function sniffFromRanges(pieces: Array<Piece>, size?: number | undefined | null, options?: Options | undefined | null): Sniffed
 
+export declare function sniffFromRangesAsync(pieces: Array<Piece>, size?: number | undefined | null, options?: Options | undefined | null): Promise<Sniffed>
+
 /** What the whole file in `data` is, and what it says of itself. */
 export declare function specs(data: Uint8Array, options?: Options | undefined | null): Specs
 
@@ -454,6 +468,8 @@ export declare function specsAsync(data: Uint8Array, options?: Options | undefin
  * that would complete it: fetch that range and ask again with every piece fetched so far.
  */
 export declare function specsFromRanges(pieces: Array<Piece>, size?: number | undefined | null, options?: Options | undefined | null): Specs
+
+export declare function specsFromRangesAsync(pieces: Array<Piece>, size?: number | undefined | null, options?: Options | undefined | null): Promise<Specs>
 
 export interface SvgDetail {
   /** The width and height as the file writes them, units and all. */

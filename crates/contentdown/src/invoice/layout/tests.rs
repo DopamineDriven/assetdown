@@ -379,3 +379,224 @@ fn a_document_is_as_sure_as_its_key_fields_and_surer_when_its_totals_reconcile()
   };
   assert_eq!(document_confidence(&sure, true), 0.99);
 }
+
+/// A page whose only total is the one line given, under an invented letterhead.
+fn page_with_total_line(line: &str) -> PageLayout {
+  use super::super::testing::page;
+  page(&[
+    (50.0, 760.0, 14.0, true, "NORTHFIELD AVIONICS"),
+    (380.0, 730.0, 10.0, false, "Invoice No: N-2207"),
+    (50.0, 300.0, 10.0, false, line),
+  ])
+}
+
+#[test]
+fn a_total_followed_by_more_words_is_read_from_the_token_after_its_label() {
+  for (line, value, text) in [
+    ("Total: 48,250 payable by March 3, 2021", 48_250.0, "48,250"),
+    (
+      "Total: $48,250.00 payable by March 3, 2021",
+      48_250.0,
+      "$48,250.00",
+    ),
+    (
+      "Total: 915.40 payable within thirty days of receipt",
+      915.4,
+      "915.40",
+    ),
+    (
+      "Total: 48,250, payable by March 3, 2021",
+      48_250.0,
+      "48,250",
+    ),
+  ] {
+    let r = extract_from_pages(&[page_with_total_line(line)], None);
+    let total = r
+      .fields
+      .invoice_total
+      .unwrap_or_else(|| panic!("no total from `{line}`"));
+    assert_eq!(total.value, value, "{line}");
+    assert_eq!(total.text, text, "{line}");
+  }
+}
+
+#[test]
+fn a_bare_count_after_a_total_label_is_still_not_a_total() {
+  for line in [
+    "Total: 12 hours worked on site this week",
+    "Total: 3 engines inspected at the main base",
+  ] {
+    let r = extract_from_pages(&[page_with_total_line(line)], None);
+    assert!(r.fields.invoice_total.is_none(), "{line}");
+  }
+}
+
+#[test]
+fn the_last_amount_of_a_long_row_still_outranks_the_one_after_the_label() {
+  let r = extract_from_pages(
+    &[page_with_total_line("Total 1,200.00 300.00 0.00 1,500.00")],
+    None,
+  );
+  assert_eq!(r.fields.invoice_total.unwrap().value, 1_500.0);
+}
+
+#[test]
+fn a_paragraph_under_a_totals_label_is_not_read_for_the_amount_it_opens_with() {
+  use super::super::testing::page;
+  let r = extract_from_pages(
+    &[page(&[
+      (50.0, 760.0, 14.0, true, "NORTHFIELD AVIONICS"),
+      (380.0, 730.0, 10.0, false, "Invoice No: N-2207"),
+      (50.0, 300.0, 10.0, false, "Total"),
+      (400.0, 300.0, 10.0, false, "$1,280.00"),
+      (
+        50.0,
+        286.0,
+        10.0,
+        false,
+        "$500 is charged for each day a rented part comes back late, without notice",
+      ),
+    ])],
+    None,
+  );
+  assert_eq!(r.fields.invoice_total.unwrap().value, 1_280.0);
+}
+
+#[test]
+fn a_letter_spaced_amount_after_a_label_is_not_read_as_its_first_piece() {
+  for line in ["Total: $8 1 5 . 3 0", "Total: €2 4 9 0 , 0 0"] {
+    let r = extract_from_pages(&[page_with_total_line(line)], None);
+    let read = r.fields.invoice_total.map(|total| total.value);
+    assert!(read != Some(8.0) && read != Some(2.0), "{line}: {read:?}");
+  }
+}
+
+/// A page with no totals label on it: a letterhead, an invoice number, and the lines given.
+fn unlabeled_page(lines: &[(f64, f64, &str)]) -> PageLayout {
+  use super::super::testing::{Run, page};
+  let mut runs: Vec<Run<'_>> = vec![
+    (50.0, 760.0, 14.0, true, "NORTHFIELD AVIONICS"),
+    (380.0, 730.0, 10.0, false, "Invoice No: N-2207"),
+  ];
+  runs.extend(lines.iter().map(|&(x, y, text)| (x, y, 10.0, false, text)));
+  page(&runs)
+}
+
+#[test]
+fn with_no_label_the_largest_amount_stated_twice_is_a_last_resort_and_says_so() {
+  let r = extract_from_pages(
+    &[unlabeled_page(&[
+      (50.0, 600.0, "Engine wash and borescope inspection"),
+      (450.0, 600.0, "1,150.00"),
+      (50.0, 586.0, "Shop supplies"),
+      (450.0, 586.0, "86.40"),
+      (450.0, 560.0, "1,236.40"),
+      (50.0, 500.0, "Cover held on this airframe 4,410.00"),
+      (
+        50.0,
+        300.0,
+        "1,236.40 falls to the operator under the lease",
+      ),
+    ])],
+    None,
+  );
+  let total = r.fields.invoice_total.expect("a last resort");
+  assert_eq!(total.value, 1_236.4);
+  assert_eq!(total.text, "1,236.40");
+  // Three other amounts stand on the page beside it.
+  assert_eq!(total.confidence, Contest::Several.confidence());
+  assert!(total.confidence > CONFIDENCE_FLOOR);
+  assert!(total.span.is_some());
+  assert!(
+    r.warnings.iter().any(|w| w.contains("last resort")),
+    "{:?}",
+    r.warnings
+  );
+}
+
+#[test]
+fn the_last_resort_ranks_a_currency_then_decimals_and_twice_before_once() {
+  // A currency beside the amount and stated twice, before a larger one with decimals alone.
+  let twice = extract_from_pages(
+    &[unlabeled_page(&[
+      (450.0, 600.0, "$75.20"),
+      (450.0, 586.0, "640.00"),
+      (50.0, 300.0, "$75.20"),
+      (50.0, 286.0, "640.00"),
+    ])],
+    None,
+  );
+  assert_eq!(twice.fields.invoice_total.unwrap().value, 75.2);
+  // Decimals stated twice, before a currency stated once.
+  let once = extract_from_pages(
+    &[unlabeled_page(&[
+      (450.0, 600.0, "$900"),
+      (450.0, 586.0, "640.00"),
+      (50.0, 286.0, "640.00"),
+    ])],
+    None,
+  );
+  assert_eq!(once.fields.invoice_total.unwrap().value, 640.0);
+  // Digits grouped in threes are the least of it, and still an amount.
+  let grouped = extract_from_pages(
+    &[unlabeled_page(&[
+      (450.0, 600.0, "3,300"),
+      (450.0, 586.0, "12,800"),
+    ])],
+    None,
+  );
+  assert_eq!(grouped.fields.invoice_total.unwrap().value, 12_800.0);
+}
+
+#[test]
+fn the_last_resort_stands_aside_for_a_labeled_total_and_makes_nothing_of_counts() {
+  let labeled = extract_from_pages(&[super::super::testing::acme_page()], None);
+  assert_eq!(labeled.fields.invoice_total.unwrap().value, 13_321.5);
+  assert!(!labeled.warnings.iter().any(|w| w.contains("last resort")));
+  let counts = extract_from_pages(
+    &[unlabeled_page(&[
+      (50.0, 600.0, "Hours flown this month 46"),
+      (50.0, 586.0, "Landings 112"),
+      (50.0, 572.0, "0.00"),
+      (50.0, 558.0, "$0.00"),
+    ])],
+    None,
+  );
+  assert!(
+    counts.fields.invoice_total.is_none(),
+    "{:?}",
+    counts.fields.invoice_total
+  );
+}
+
+#[test]
+fn the_last_resort_is_surer_the_less_there_is_to_mistake_its_pick_for() {
+  let sure = |amounts: &[&str]| {
+    let lines: Vec<(f64, f64, &str)> = amounts
+      .iter()
+      .enumerate()
+      .map(|(at, amount)| (450.0, 640.0 - 20.0 * at as f64, *amount))
+      .collect();
+    extract_from_pages(&[unlabeled_page(&lines)], None)
+      .fields
+      .invoice_total
+      .expect("a last resort")
+      .confidence
+  };
+  let alone_twice = sure(&["2,480.00", "2,480.00"]);
+  let alone = sure(&["2,480.00"]);
+  let few_twice = sure(&["2,480.00", "2,480.00", "310.00"]);
+  let few = sure(&["2,480.00", "310.00", "96.25"]);
+  let several = sure(&["2,480.00", "2,480.00", "310.00", "96.25", "41.10", "18.00"]);
+  let many = sure(&[
+    "2,480.00", "2,480.00", "310.00", "96.25", "41.10", "18.00", "7.75", "64.30", "120.00",
+  ]);
+  assert_eq!(alone_twice, Contest::AloneRepeated.confidence());
+  assert_eq!(alone, Contest::Alone.confidence());
+  assert_eq!(few_twice, Contest::FewRepeated.confidence());
+  assert_eq!(few, Contest::Few.confidence());
+  assert_eq!(several, Contest::Several.confidence());
+  assert_eq!(many, Contest::Many.confidence());
+  assert!(alone_twice > alone && alone >= few_twice && few_twice > few);
+  assert!(few >= several && several > many && many > CONFIDENCE_FLOOR);
+}

@@ -148,7 +148,9 @@ pub enum ImageDetail {
 pub struct ImageFacts {
   pub width: u32,
   pub height: u32,
-  /// How many pictures the file holds: an animation's frames, an icon's sizes.
+  /// How many frames the picture is made of: more than one for an animation, one for a
+  /// still. An icon's sizes and a TIFF's pages are not frames; each is in its format's own
+  /// detail. An animated JPEG XL says it moves and not how many frames it has, so it is one.
   pub frames: u32,
   pub animated: bool,
   /// Whether any of it can be see-through. None when the header does not say.

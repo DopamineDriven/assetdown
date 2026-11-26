@@ -1,6 +1,6 @@
 use contentdown::PageLayout;
 use contentdown::invoice::{
-  FieldSpan, InvoiceDocumentType, InvoiceResult, document_confidence, extract_from_pages,
+  FieldSpan, InvoiceDocumentType, InvoiceResult, document_confidence, read_pages,
 };
 
 use crate::testing::Holds::{Formula, Money, MoneyFormula, Number, Text, TextFormula};
@@ -14,7 +14,7 @@ fn read_from_labels(book: &Workbook) -> InvoiceResult {
     .into_iter()
     .map(|layout| layout.page)
     .collect();
-  extract_from_pages(&pages, None)
+  read_pages(&pages, None).result
 }
 
 /// Each item as its description, how many, the price of each, and its amount.
@@ -569,4 +569,43 @@ fn a_total_written_out_as_text_is_the_invoice_s_total_with_the_text_the_sheet_sh
       (Some("Carriage"), None, None, Some(86.5)),
     ]
   );
+}
+
+#[test]
+fn a_workbook_with_no_formulas_and_no_labels_takes_the_page_readers_last_resort() {
+  // Typed amounts and nothing that says which is the total: the one stated twice is the guess.
+  let typed = one(&[
+    ("A1", Text("Hangar rent")),
+    ("B1", Money(310.0)),
+    ("A2", Text("Tie-down")),
+    ("B2", Money(45.5)),
+    ("B4", Money(355.5)),
+    ("D9", Money(355.5)),
+  ]);
+  let result = typed.invoice(None);
+  let total = result.fields.invoice_total.as_ref().expect("a last resort");
+  assert_eq!(total.value, 355.5);
+  // Two other amounts beside it, and it is stated twice: surer than a bare guess, and still
+  // under what formulas the labels agree with would give.
+  assert!(
+    total.confidence > 0.5 && total.confidence < 0.99,
+    "{}",
+    total.confidence
+  );
+  assert!(
+    result.warnings.iter().any(|w| w.contains("last resort")),
+    "{:?}",
+    result.warnings
+  );
+  assert_eq!(result.document_type, InvoiceDocumentType::Invoice);
+  // With a formula that gives the total, the guess is never asked for.
+  let summed = one(&[
+    ("B1", Money(310.0)),
+    ("B2", Money(45.5)),
+    ("B3", MoneyFormula("SUM(B1:B2)", 355.5)),
+    ("D9", Money(310.0)),
+  ]);
+  let result = summed.invoice(None);
+  assert_eq!(result.fields.invoice_total.as_ref().unwrap().value, 355.5);
+  assert!(!result.warnings.iter().any(|w| w.contains("last resort")));
 }

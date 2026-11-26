@@ -2,8 +2,8 @@
 //! native PDF, the OCR cascade, a workbook's logical pages, or a consumer's own layout call).
 //! This file is the engine's entry; the modules beside it do the reading.
 
-use super::amounts::{Separator, parse_amount};
-use super::anchors::{Candidate, MAX_VALUE_TOKENS, candidates, score};
+use super::amounts::{Amount, Separator, has_decimals, parse_amount, written_as_money};
+use super::anchors::{Candidate, MAX_VALUE_TOKENS, Seat, candidates, score};
 use super::dates::parse_date;
 use super::identifiers::{parse_identifier, parse_registration, parse_serial};
 use super::lexicon::Hit;
@@ -14,9 +14,10 @@ use super::segments::{Segment, label_hits, segments, span_of};
 use super::totals::{TotalCandidate, Totals, resolve};
 use crate::invoice::types::{
   AddressField, AircraftReference, DateField, FieldSpan, InvoiceDocumentType, InvoiceFields,
-  InvoiceOptions, InvoiceResult, InvoiceSource, StringField,
+  InvoiceOptions, InvoiceResult, InvoiceSource, MoneyField, StringField,
 };
 use crate::layout::{PageLayout, TextSource};
+use std::collections::HashMap;
 
 pub(crate) const NO_WORDS_WARNING: &str = "no words on the first page; nothing to read";
 /// A field scoring under this is withheld (counted in a warning) rather than reported.
@@ -47,6 +48,99 @@ struct Accepted {
   value: String,
   validator: f64,
   tokens_used: usize,
+}
+
+/// How an amount on the page is written, most like money first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Written {
+  /// With a currency symbol or code beside it.
+  Currency,
+  /// With two decimals and no currency.
+  Decimals,
+  /// With no more than its digits grouped in threes.
+  Grouped,
+}
+
+/// How much an amount is written like a total, most like one first: the order of the variants
+/// is the order the last resort takes them in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Standing {
+  CurrencyRepeated,
+  DecimalsRepeated,
+  Currency,
+  Decimals,
+  GroupedRepeated,
+  Grouped,
+}
+
+/// How much else the pages state beside the last resort's pick. The fewer other amounts there
+/// are to mistake it for, the surer the pick; and stating it twice counts for much while they
+/// are few, and for nothing once they are many.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Contest {
+  /// No other amount, and the pick stated twice or more.
+  AloneRepeated,
+  /// No other amount.
+  Alone,
+  /// One or two other amounts, and the pick stated twice or more.
+  FewRepeated,
+  /// One or two other amounts.
+  Few,
+  /// Three to five other amounts.
+  Several,
+  /// Six or more other amounts.
+  Many,
+}
+
+impl Contest {
+  fn of(others: usize, repeated: bool) -> Self {
+    match others {
+      0 if repeated => Contest::AloneRepeated,
+      0 => Contest::Alone,
+      1..=2 if repeated => Contest::FewRepeated,
+      1..=2 => Contest::Few,
+      3..=5 => Contest::Several,
+      _ => Contest::Many,
+    }
+  }
+
+  /// How sure the pick is. Every grade is over the floor, so the total is always returned; the
+  /// warning beside it is what says it was no label's reading.
+  fn confidence(self) -> f64 {
+    match self {
+      Contest::AloneRepeated => 0.9,
+      Contest::Alone | Contest::FewRepeated => 0.8,
+      Contest::Few | Contest::Several => 0.5,
+      Contest::Many => 0.35,
+    }
+  }
+}
+
+/// An amount the pages state, as the last resort weighs it: how it is written, and how often.
+struct Stated {
+  amount: Amount,
+  text: String,
+  times: usize,
+  /// The most like money any statement of it is written.
+  written: Written,
+  /// Where it is first stated: the page's position among the pages, and the word's on it.
+  at: (usize, usize),
+}
+
+impl Stated {
+  /// An amount stated twice or more stands before one stated once, except that digits grouped
+  /// in threes and nothing more stand last either way.
+  fn standing(&self) -> Standing {
+    let repeated = self.times >= 2;
+    match self.written {
+      Written::Currency if repeated => Standing::CurrencyRepeated,
+      Written::Decimals if repeated => Standing::DecimalsRepeated,
+      Written::Currency => Standing::Currency,
+      Written::Decimals => Standing::Decimals,
+      Written::Grouped if repeated => Standing::GroupedRepeated,
+      Written::Grouped => Standing::Grouped,
+    }
+  }
 }
 
 /// The engine's working state for one document.
@@ -167,20 +261,35 @@ impl<'a> Reader<'a> {
         let tokens: Vec<&str> = c.text.split_whitespace().collect();
         // The whole text; else its last token, else its first. A long remainder is prose, and a
         // number at its end is an amount only when it is written with decimals (`Total hours
-        // worked this period 12` is not).
+        // worked this period 12` is not). The number the rest of the label's own line opens with
+        // is an amount only when it is written as money (`Total: 48,250 payable by …` is,
+        // `Total: 12 hours worked` is not), and it gives way to an amount at the end, where a row
+        // keeps its total. A paragraph below or beside a label is never read for its opening, and
+        // nor is a line whose opening is followed by more digits: that is one amount set with
+        // its characters apart (`$4 2 , 7 1 0 . 0 0`), and its first piece is not the amount.
         let mut attempts: Vec<(String, Vec<usize>)> = vec![(c.text.clone(), c.words.clone())];
         let last = (
           tokens.last().map(|t| (*t).to_string()).unwrap_or_default(),
           c.words.last().copied().into_iter().collect(),
         );
+        let first: (String, Vec<usize>) = (
+          tokens.first().map(|t| (*t).to_string()).unwrap_or_default(),
+          c.words.first().copied().into_iter().collect(),
+        );
         if tokens.len() <= 3 {
           attempts.push(last);
-          attempts.push((
-            tokens.first().map(|t| (*t).to_string()).unwrap_or_default(),
-            c.words.first().copied().into_iter().collect(),
-          ));
-        } else if has_decimals(&last.0) {
-          attempts.push(last);
+          attempts.push(first);
+        } else {
+          if has_decimals(&last.0) {
+            attempts.push(last);
+          }
+          let opening = first.0.trim_end_matches([',', ';', ':']);
+          let words_follow = tokens
+            .get(1)
+            .is_some_and(|next| next.starts_with(|ch: char| ch.is_alphabetic() || ch == '('));
+          if c.seat == Seat::AfterLabel && words_follow && written_as_money(opening, separator) {
+            attempts.push((opening.to_string(), first.1));
+          }
         }
         let Some((text, words, amount)) = attempts
           .into_iter()
@@ -209,6 +318,102 @@ impl<'a> Reader<'a> {
       items.extend(self.money_candidates(field));
     }
     resolve(&items, self.priors.currency.as_deref())
+  }
+
+  /// The total when no label pointed at one: of the amounts the given pages state, the one
+  /// written most like a total (`Stated::standing`), and the largest of those. A currency set as a
+  /// word of its own before the amount counts as beside it. Nought is never it, and nor is a
+  /// lone digit, which is what an amount set with its characters apart leaves. It is a guess and
+  /// is returned as one: as sure as its `Contest` allows, with the warning that says so.
+  fn last_resort(&self, readable: &[usize]) -> Option<LastResort> {
+    let separator = self.priors.separator;
+    let mut stated: Vec<Stated> = Vec::new();
+    let mut by_amount: HashMap<String, usize> = HashMap::new();
+    for &index in readable {
+      let Some(page) = self.page(index) else {
+        continue;
+      };
+      for (at, word) in page.words.iter().enumerate() {
+        let token = word.text.trim_end_matches([',', ';', ':']);
+        let digits = token.chars().filter(char::is_ascii_digit).count();
+        if digits == 0 || (digits == 1 && !has_decimals(token)) {
+          continue;
+        }
+        let beside = at
+          .checked_sub(1)
+          .and_then(|before| page.words.get(before))
+          .filter(|before| {
+            before.line == word.line
+              && before.text.chars().count() <= 3
+              && !before.text.chars().any(|c| c.is_ascii_digit())
+          })
+          .and_then(|before| parse_amount(&format!("{}{token}", before.text), separator))
+          .filter(|amount| amount.symbol.is_some() || amount.code.is_some());
+        let Some(amount) = beside.or_else(|| {
+          written_as_money(token, separator)
+            .then(|| parse_amount(token, separator))
+            .flatten()
+        }) else {
+          continue;
+        };
+        if amount.value == 0.0 {
+          continue;
+        }
+        let written = if amount.symbol.is_some() || amount.code.is_some() {
+          Written::Currency
+        } else if has_decimals(token) {
+          Written::Decimals
+        } else {
+          Written::Grouped
+        };
+        match by_amount.get(&format!("{:.2}", amount.value)) {
+          Some(&held) => {
+            let held = &mut stated[held];
+            held.times += 1;
+            held.written = held.written.min(written);
+            if held.amount.symbol.is_none() && held.amount.code.is_none() {
+              held.amount.symbol = amount.symbol;
+              held.amount.code = amount.code;
+            }
+          }
+          None => {
+            by_amount.insert(format!("{:.2}", amount.value), stated.len());
+            stated.push(Stated {
+              amount,
+              text: token.to_string(),
+              times: 1,
+              written,
+              at: (index, at),
+            });
+          }
+        }
+      }
+    }
+    let found = stated.iter().min_by(|a, b| {
+      a.standing()
+        .cmp(&b.standing())
+        .then(b.amount.value.total_cmp(&a.amount.value))
+    })?;
+    let page = self.page(found.at.0)?;
+    Some(LastResort {
+      warning: format!(
+        "no label pointed at a total; `{}` is a last resort (the amount written most like one, \
+         stated {} time(s)) and wants checking",
+        found.text, found.times
+      ),
+      total: MoneyField {
+        value: found.amount.value,
+        text: found.text.clone(),
+        confidence: Contest::of(stated.len().saturating_sub(1), found.times >= 2).confidence(),
+        span: Some(span_of(page, &[found.at.1])),
+        currency_code: found
+          .amount
+          .code
+          .clone()
+          .or_else(|| self.priors.currency.clone()),
+        currency_symbol: found.amount.symbol.clone(),
+      },
+    })
   }
 
   /// Credit titles in the top band of the first page.
@@ -256,17 +461,6 @@ fn party_fields(party: Option<Party>) -> PartyFields {
     Some(p) => (p.name, p.address, p.email, p.phone, p.id),
     None => (None, None, None, None, None),
   }
-}
-
-/// Whether a token ends in a decimal separator and two digits (`1,234.56`, `93,50`, `(8.00)`).
-fn has_decimals(token: &str) -> bool {
-  let digits: Vec<char> = token
-    .trim_end_matches(|c: char| !c.is_ascii_digit())
-    .chars()
-    .collect();
-  digits.len() >= 3
-    && matches!(digits[digits.len() - 3], '.' | ',')
-    && digits[digits.len() - 2..].iter().all(char::is_ascii_digit)
 }
 
 /// The role a page's top band declares; a page without words has none, a page without a title is
@@ -333,8 +527,49 @@ pub fn document_confidence(fields: &InvoiceFields, reconciled: bool) -> f64 {
   (key.iter().sum::<f64>() / key.len() as f64 + bonus).min(0.99)
 }
 
-/// Header fields from pages.
+/// The last resort's guess at a total, and the warning that says it is one.
+#[derive(Debug, Clone)]
+pub struct LastResort {
+  pub total: MoneyField,
+  pub warning: String,
+}
+
+/// What the pages gave: the fields their labels pointed at and, where no label pointed at a
+/// total, the last resort's guess at one. The guess is kept apart so that a reader with more
+/// to go on than the page (a workbook, which has its formulas) can ask that first.
+#[derive(Debug, Clone)]
+pub struct PagesRead {
+  pub result: InvoiceResult,
+  pub last_resort: Option<LastResort>,
+}
+
+impl PagesRead {
+  /// The result, with the guess written in as its total where it still has none: a document
+  /// with a total is an invoice, and it is as sure as its key fields then are.
+  pub fn settled(self) -> InvoiceResult {
+    let mut result = self.result;
+    if result.fields.invoice_total.is_none()
+      && let Some(guess) = self.last_resort
+    {
+      result.fields.invoice_total = Some(guess.total);
+      result.warnings.push(guess.warning);
+      if result.document_type == InvoiceDocumentType::Unknown {
+        result.document_type = InvoiceDocumentType::Invoice;
+      }
+      result.confidence = document_confidence(&result.fields, false);
+    }
+    result
+  }
+}
+
+/// Header fields from pages: what their labels point at and, where no label points at a
+/// total, the last resort's guess at one, marked as a guess (see [`PagesRead::settled`]).
 pub fn extract_from_pages(pages: &[PageLayout], opts: Option<&InvoiceOptions>) -> InvoiceResult {
+  read_pages(pages, opts).settled()
+}
+
+/// Header fields from pages by their labels alone, with the last resort's guess beside them.
+pub fn read_pages(pages: &[PageLayout], opts: Option<&InvoiceOptions>) -> PagesRead {
   let source = source_of(pages);
   let mut warnings = Vec::new();
   // Pages play roles: the invoice's own pages carry the fields; our own purchase order, a
@@ -368,15 +603,18 @@ pub fn extract_from_pages(pages: &[PageLayout], opts: Option<&InvoiceOptions>) -
   };
   let Some(&first_index) = readable.first() else {
     warnings.push(NO_WORDS_WARNING.to_string());
-    return InvoiceResult {
-      source,
-      document_type: InvoiceDocumentType::Unknown,
-      confidence: 0.0,
-      fields: InvoiceFields::default(),
-      warnings,
-      embedded_xml: None,
-      currency_source: None,
-      credit_signals: Vec::new(),
+    return PagesRead {
+      result: InvoiceResult {
+        source,
+        document_type: InvoiceDocumentType::Unknown,
+        confidence: 0.0,
+        fields: InvoiceFields::default(),
+        warnings,
+        embedded_xml: None,
+        currency_source: None,
+        credit_signals: Vec::new(),
+      },
+      last_resort: None,
     };
   };
   let first_page = &pages[first_index];
@@ -488,6 +726,11 @@ pub fn extract_from_pages(pages: &[PageLayout], opts: Option<&InvoiceOptions>) -
   let (_, shipping_address, _, _, _) = party_fields(party(Field::ShipTo));
   let (_, remittance_address, _, _, _) = party_fields(party(Field::RemitTo));
   let totals = reader.totals();
+  let last_resort = if totals.invoice_total.is_none() {
+    reader.last_resort(&readable)
+  } else {
+    None
+  };
   let fields = InvoiceFields {
     sub_total: totals.sub_total,
     total_tax: totals.total_tax,
@@ -536,15 +779,18 @@ pub fn extract_from_pages(pages: &[PageLayout], opts: Option<&InvoiceOptions>) -
       reader.withheld
     ));
   }
-  InvoiceResult {
-    source,
-    document_type,
-    confidence,
-    fields,
-    warnings,
-    embedded_xml: None,
-    currency_source: Some(reader.priors.currency_source),
-    credit_signals,
+  PagesRead {
+    result: InvoiceResult {
+      source,
+      document_type,
+      confidence,
+      fields,
+      warnings,
+      embedded_xml: None,
+      currency_source: Some(reader.priors.currency_source),
+      credit_signals,
+    },
+    last_resort,
   }
 }
 

@@ -120,9 +120,7 @@ pub(crate) fn read(source: &Source<'_>, reading: &mut Reading) -> Option<ImageFa
     _ => ColorModel::Unknown,
   };
   let (width, height) = (largest.width, largest.height);
-  let frames = u32::try_from(entries.len()).unwrap_or(u32::MAX);
   Some(ImageFacts {
-    frames,
     // Every picture of an icon carries a mask of what is see-through.
     has_alpha: Some(true),
     color_model,

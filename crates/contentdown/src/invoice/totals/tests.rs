@@ -175,3 +175,61 @@ fn without_a_reconciliation_the_lowest_total_wins_and_a_negative_total_is_flagge
     "credit amounts are absolute"
   );
 }
+
+#[test]
+fn noughts_that_add_up_to_nought_do_not_outrank_a_total_that_is_printed() {
+  // A subtotal and a tax of nought beside a total that is not (carriage alone, say), with a
+  // payment of nought under it: `0 + 0 = 0` reconciles nothing.
+  let under = resolve(
+    &[
+      cand(Field::SubTotal, 0.0, 400.0),
+      cand(Field::Tax, 0.0, 388.0),
+      cand(Field::Total, 64.15, 376.0),
+      cand(Field::AmountDue, 0.0, 364.0),
+    ],
+    None,
+  );
+  assert_eq!(under.invoice_total.as_ref().unwrap().value, 64.15);
+  assert!(!under.reconciled);
+  // The same when the nought is itself read as a total, above the printed one or below it.
+  for y in [382.0, 352.0] {
+    let t = resolve(
+      &[
+        cand(Field::SubTotal, 0.0, 400.0),
+        cand(Field::Tax, 0.0, 388.0),
+        cand(Field::Total, 64.15, 376.0),
+        cand(Field::Total, 0.0, y),
+      ],
+      None,
+    );
+    assert_eq!(t.invoice_total.as_ref().unwrap().value, 64.15, "y {y}");
+    assert!(!t.reconciled, "y {y}");
+  }
+}
+
+#[test]
+fn a_due_amount_that_is_not_nought_stands_in_before_one_that_is() {
+  let nought = cand(Field::AmountDue, 0.0, 300.0);
+  let owed = cand(Field::AmountDue, 212.4, 340.0);
+  for dues in [
+    [nought.clone(), owed.clone()],
+    [owed.clone(), nought.clone()],
+  ] {
+    let t = resolve(&dues, None);
+    assert_eq!(t.invoice_total.as_ref().unwrap().value, 212.4);
+  }
+}
+
+#[test]
+fn a_page_of_nothing_but_noughts_still_has_a_total_of_nought() {
+  let t = resolve(
+    &[
+      cand(Field::SubTotal, 0.0, 400.0),
+      cand(Field::Tax, 0.0, 388.0),
+      cand(Field::Total, 0.0, 376.0),
+    ],
+    None,
+  );
+  assert_eq!(t.invoice_total.as_ref().unwrap().value, 0.0);
+  assert!(!t.reconciled, "noughts reconcile nothing");
+}

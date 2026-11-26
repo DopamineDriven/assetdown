@@ -36,6 +36,7 @@
     "bench": "node --import @oxc-node/core/register benchmark/bench.ts",
     "build": "yarn build:base",
     "build:base": "napi build --platform --esm --release",
+    "build:all": "yarn build:base && yarn build:wasm",
     "build:wasm": "yarn build:wasm32",
     "build:wasm32": "napi build --platform --esm --release --target wasm32-wasip1-threads",
     "format": "run-p format:oxfmt format:rs format:toml",

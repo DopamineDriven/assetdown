@@ -118,10 +118,12 @@ fn read(
     MediaType::Bmp => image::bmp::read(source, reading),
     MediaType::Ico => image::ico::read(source, reading),
     MediaType::Jpeg | MediaType::Jls => image::jpeg::read(source, reading),
-    MediaType::Tiff => image::tiff::read(source, false, reading),
-    MediaType::Dng | MediaType::Cr2 | MediaType::Nef | MediaType::Arw | MediaType::Raw => {
-      image::tiff::read(source, true, reading)
-    }
+    MediaType::Tiff
+    | MediaType::Dng
+    | MediaType::Cr2
+    | MediaType::Nef
+    | MediaType::Arw
+    | MediaType::Raw => image::tiff::read(source, reading),
     MediaType::Webp => image::webp::read(source, reading),
     MediaType::Hdr => image::hdr::read(source, reading),
     MediaType::Jxl => image::jxl::read(source, reading),

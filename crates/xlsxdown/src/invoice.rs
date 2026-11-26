@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use contentdown::PageLayout;
 use contentdown::invoice::{
   FieldSpan, InvoiceDocumentType, InvoiceItem, InvoiceOptions, InvoiceResult, MoneyField,
-  NumberField, StringField, document_confidence, extract_from_pages,
+  NumberField, StringField, document_confidence, read_pages,
 };
 
 use crate::address::cell_ref;
@@ -309,18 +309,26 @@ impl Workbook {
   /// money and reaches the most cells, and the items are the lines it adds up. An amount is given as its cell
   /// shows it, where the cell shows cents. Where the labels on the page gave another total,
   /// a warning says both; where the lines do not come to the total, a warning says what they
-  /// come to.
+  /// come to. Where neither the formulas nor the labels give a total, the page reader's last
+  /// resort is taken, at its low confidence and with its warning.
   pub fn invoice(&self, options: Option<&InvoiceOptions>) -> InvoiceResult {
     let (pages, cells): (Vec<PageLayout>, Vec<Vec<String>>) = self
       .layout(None, false, false)
       .into_iter()
       .map(|layout| (layout.page, layout.cells))
       .unzip();
-    let mut result = extract_from_pages(&pages, options);
+    // The labels first, then the formulas over them; the page reader's guess at a total is
+    // taken only when neither gave one.
+    let mut read = read_pages(&pages, options);
     if let Some(audit) = self.audit() {
-      audited(self, Places::of(self, &pages, &cells), &audit, &mut result);
+      audited(
+        self,
+        Places::of(self, &pages, &cells),
+        &audit,
+        &mut read.result,
+      );
     }
-    result
+    read.settled()
   }
 }
 

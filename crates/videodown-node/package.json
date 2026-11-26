@@ -46,6 +46,7 @@
     "build:base": "napi build --platform --esm --release",
     "build:wasm": "yarn build:wasm32",
     "build:wasm32": "napi build --platform --esm --release --target wasm32-wasip1-threads",
+    "build:all": "yarn build:base && yarn build:wasm",
     "format": "run-p format:oxfmt format:rs format:toml",
     "format:oxfmt": "oxfmt",
     "format:rs": "cargo fmt",

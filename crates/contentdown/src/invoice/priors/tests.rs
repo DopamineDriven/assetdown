@@ -96,3 +96,54 @@ fn separator_and_order_come_from_unambiguous_tokens() {
   assert_eq!(p.separator, Separator::Point);
   assert_eq!(p.order, Order::Mdy);
 }
+
+#[test]
+fn a_code_in_a_column_of_its_own_beside_an_amount_is_the_pages_currency() {
+  // A currency column and an amount column: the code and the amount stand apart on the line.
+  let columns = segments_at(&page(&[
+    (60.0, 700.0, 10.0, false, "Wheel bearing overhaul"),
+    (380.0, 700.0, 10.0, false, "GBP"),
+    (480.0, 700.0, 10.0, false, "912.40"),
+  ]));
+  let p = infer_of(&columns, None);
+  assert_eq!(p.currency.as_deref(), Some("GBP"));
+  assert_eq!(p.currency_source, CurrencySource::Page);
+
+  // The same kind of letters with no amount on their line are a word, not a currency.
+  let word = segments_at(&page(&[
+    (60.0, 700.0, 10.0, false, "ALL"),
+    (60.0, 680.0, 10.0, false, "Wheel bearing overhaul"),
+    (480.0, 660.0, 10.0, false, "912.40"),
+  ]));
+  assert_eq!(infer_of(&word, None).currency, None);
+}
+
+#[test]
+fn letters_that_spell_a_code_are_a_currency_only_right_beside_an_amount_written_as_money() {
+  // An abbreviation in a column of its own, with a description between it and the amount.
+  let apart = segments_at(&page(&[
+    (60.0, 700.0, 10.0, false, "SVC"),
+    (140.0, 700.0, 10.0, false, "Engine wash"),
+    (480.0, 700.0, 10.0, false, "1,200.00"),
+  ]));
+  assert_eq!(infer_of(&apart, None).currency, None);
+
+  // Right beside a count, which is not written as money.
+  let count = segments_at(&page(&[
+    (60.0, 700.0, 10.0, false, "CUP"),
+    (140.0, 700.0, 10.0, false, "4"),
+    (480.0, 700.0, 10.0, false, "1,200.00"),
+  ]));
+  assert_eq!(infer_of(&count, None).currency, None);
+}
+
+#[test]
+fn a_code_in_a_column_of_its_own_gives_way_to_one_the_page_states_outright() {
+  let both = segments_at(&page(&[
+    (60.0, 700.0, 10.0, false, "CAD"),
+    (140.0, 700.0, 10.0, false, "64.00"),
+    (60.0, 300.0, 10.0, false, "Total EUR 300.00"),
+  ]));
+  let p = infer_of(&both, None);
+  assert_eq!(p.currency.as_deref(), Some("EUR"));
+}

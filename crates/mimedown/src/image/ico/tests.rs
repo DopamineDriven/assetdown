@@ -47,7 +47,8 @@ fn an_icon_is_as_large_as_its_largest_picture() {
   );
   let facts = image_facts(specs(&file));
   assert_eq!((facts.width, facts.height), (256, 256));
-  assert_eq!((facts.frames, facts.animated), (3, false));
+  // Three sizes of one picture are a set, not frames: they are in the detail below.
+  assert_eq!((facts.frames, facts.animated), (1, false));
   assert_eq!(
     (facts.has_alpha, facts.color_model),
     (Some(true), ColorModel::Rgba)

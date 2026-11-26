@@ -16,7 +16,7 @@ pub(crate) mod testing;
 pub(crate) mod totals;
 mod types;
 
-pub use layout::{document_confidence, extract_from_pages};
+pub use layout::{LastResort, PagesRead, document_confidence, extract_from_pages, read_pages};
 pub use types::{
   AddressField, AircraftReference, CurrencySource, DateField, DateOrder, EInvoiceStandard,
   EmbeddedFile, EmbeddedInvoiceXml, FieldSpan, InvoiceDocumentType, InvoiceFields, InvoiceItem,

@@ -1,76 +1,31 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { WorkupService } from "@/__test__/workup.ts";
+import { MimeTest } from "@/__test__/mime-test.ts";
 import {
   MimeDown,
   builtWith,
+  builtWithAsync,
   extensionsOf,
+  extensionsOfAsync,
   keyframes,
   keyframesAsync,
   mediaTypeOfPath,
+  mediaTypeOfPathAsync,
   mediaTypesOf,
+  mediaTypesOfAsync,
   poster,
   sniff,
   sniffAsync,
   sniffFromRanges,
+  sniffFromRangesAsync,
   specs,
   specsAsync,
   specsFromRanges,
+  specsFromRangesAsync,
   waveform,
   waveformAsync
 } from "@/index.js";
-
-export class MimeTest extends WorkupService {
-  /** The four Illustrator documents among the fixtures. Each is a PDF under another name. */
-  public get illustrator() {
-    return Object.keys(this.fixturePaths);
-  }
-
-  /** The start of a PNG of one pixel: its signature and its header chunk, checksum and all. */
-  public get png() {
-    return Buffer.from(
-      "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489",
-      "hex"
-    );
-  }
-
-  /** A WAVE file of half a second of silence: one channel, 16 bits, 8,000 samples a second. */
-  public get wav() {
-    const sound = 8000;
-    const file = Buffer.alloc(44 + sound);
-    file.write("RIFF", 0, "latin1");
-    file.writeUInt32LE(36 + sound, 4);
-    file.write("WAVEfmt ", 8, "latin1");
-    file.writeUInt32LE(16, 16);
-    file.writeUInt16LE(1, 20);
-    file.writeUInt16LE(1, 22);
-    file.writeUInt32LE(8000, 24);
-    file.writeUInt32LE(16_000, 28);
-    file.writeUInt16LE(2, 32);
-    file.writeUInt16LE(16, 34);
-    file.write("data", 36, "latin1");
-    file.writeUInt32LE(sound, 40);
-    return file;
-  }
-
-  /**
-   * What a fetcher ends with: the head of `file`, then each range the answer asks for, until
-   * it asks for nothing. With it, how many ranges that took.
-   */
-  public settle(file: Buffer, head: number) {
-    const pieces = [{ offset: 0, bytes: file.subarray(0, head) }];
-    let answer = specsFromRanges(pieces, file.byteLength);
-    let fetches = 1;
-    while (answer.needs !== null && fetches < 8) {
-      const { offset, length } = answer.needs;
-      pieces.push({ offset, bytes: file.subarray(offset, offset + length) });
-      answer = specsFromRanges(pieces, file.byteLength);
-      fetches += 1;
-    }
-    return { answer, fetches } as const;
-  }
-}
 
 const mimeTest = new MimeTest();
 
@@ -176,6 +131,15 @@ describe("sniff", () => {
     assert.equal(found.mime, "image/png");
     assert.notEqual(found.needs, null);
   });
+
+  it(
+    "should give the same answer for a head from its promise",
+    {},
+    async () => {
+      const head = [{ offset: 0, bytes: mimeTest.png.subarray(0, 8) }];
+      assert.deepEqual(await sniffFromRangesAsync(head), sniffFromRanges(head));
+    }
+  );
 });
 
 describe("specs", () => {
@@ -216,7 +180,11 @@ describe("specs", () => {
     () => {
       for (const name of mimeTest.illustrator) {
         const file = mimeTest.getFixtureBuff(name);
-        const { answer, fetches } = mimeTest.settle(file, 1024);
+        const { answer, fetches } = mimeTest.settle(
+          specsFromRanges,
+          file,
+          1024
+        );
         assert.equal(answer.needs, null);
         assert.ok(fetches <= 2, `${name} took ${fetches} fetches`);
         assert.deepEqual(answer, specs(file));
@@ -256,6 +224,109 @@ describe("specs", () => {
   );
 });
 
+describe("the promise of an answer from ranges", () => {
+  const [name] = mimeTest.illustrator;
+  assert.ok(name !== undefined);
+  const file = mimeTest.getFixtureBuff(name);
+
+  it("should be what the answer at once is, at each fetch", {}, async () => {
+    const pieces = [{ offset: 0, bytes: file.subarray(0, 1024) }];
+    const first = specsFromRanges(pieces, file.byteLength);
+    assert.deepEqual(
+      await specsFromRangesAsync(pieces, file.byteLength),
+      first
+    );
+    assert.ok(first.needs !== null);
+    const { offset, length } = first.needs;
+    pieces.push({ offset, bytes: file.subarray(offset, offset + length) });
+    assert.deepEqual(
+      await specsFromRangesAsync(pieces, file.byteLength),
+      specs(file)
+    );
+  });
+
+  it(
+    "should read the pieces as they were when it was asked",
+    {},
+    async () => {
+      // The work runs on another thread, and a caller may reuse its buffer meanwhile.
+      const bytes = Buffer.from(mimeTest.png);
+      const asked = specsFromRangesAsync([{ offset: 0, bytes }]);
+      bytes.fill(0);
+      assert.equal((await asked).mime, "image/png");
+    }
+  );
+
+  it(
+    "should refuse what is wrong with the pieces where they are passed",
+    {},
+    () => {
+      // Thrown at the call, as the answer at once throws it, and not from the promise.
+      assert.throws(
+        () => specsFromRangesAsync([{ offset: -1, bytes: mimeTest.png }]),
+        { code: "InvalidArg" }
+      );
+      assert.throws(
+        () => sniffFromRangesAsync([{ offset: 0, bytes: mimeTest.png }], 1.5),
+        { code: "InvalidArg" }
+      );
+      // A piece that ends past the end of the file it is said to be a piece of.
+      assert.throws(
+        () => sniffFromRangesAsync([{ offset: 0, bytes: mimeTest.png }], 4),
+        { code: "InvalidArg" }
+      );
+    }
+  );
+});
+
+describe("the frames of a picture", () => {
+  /** The type and the facts of a file the test expects to be a picture. */
+  const picture = (file: Buffer) => {
+    const found = specs(file);
+    assert.ok(found.facts.type === "image", `${found.mime} is no picture`);
+    return { mime: found.mime, ...found.facts.image };
+  };
+  /** What tells a still picture from one that moves. */
+  const moves = (file: Buffer) => {
+    const { mime, frames, animated } = picture(file);
+    return [mime, frames, animated];
+  };
+
+  it("should tell a still picture from one that moves", {}, () => {
+    assert.deepEqual(moves(mimeTest.pngOf()), ["image/png", 1, false]);
+    assert.deepEqual(moves(mimeTest.pngOf(3)), ["image/apng", 3, true]);
+    assert.deepEqual(moves(mimeTest.gifOf(1)), ["image/gif", 1, false]);
+    assert.deepEqual(moves(mimeTest.gifOf(3)), ["image/gif", 3, true]);
+    assert.deepEqual(moves(mimeTest.webpOf()), ["image/webp", 1, false]);
+    assert.deepEqual(moves(mimeTest.webpOf(3)), ["image/webp", 3, true]);
+  });
+
+  it("should call an animation of one frame a still picture", {}, () => {
+    assert.deepEqual(moves(mimeTest.pngOf(1)).slice(1), [1, false]);
+    assert.deepEqual(moves(mimeTest.webpOf(1)).slice(1), [1, false]);
+  });
+
+  it(
+    "should not count an icon's sizes or a TIFF's pages as frames",
+    {},
+    () => {
+      // A set of sizes of one picture, and pages: neither moves. Each is counted in its
+      // format's own detail.
+      const icon = picture(mimeTest.icoOf([16, 32, 256]));
+      assert.deepEqual([icon.frames, icon.animated], [1, false]);
+      assert.ok(icon.detail.type === "ico");
+      assert.deepEqual(
+        icon.detail.ico.entries.map((entry) => entry.width),
+        [16, 32, 256]
+      );
+      const scan = picture(mimeTest.tiffOf(3));
+      assert.deepEqual([scan.frames, scan.animated], [1, false]);
+      assert.ok(scan.detail.type === "tiff");
+      assert.equal(scan.detail.tiff.pages, 3);
+    }
+  );
+});
+
 describe("the tables", () => {
   it("should go between a type and the extensions in use for it", {}, () => {
     assert.deepEqual(mediaTypesOf("jpg"), ["image/jpeg"]);
@@ -264,6 +335,24 @@ describe("the tables", () => {
     assert.equal(extensionsOf("image/jpeg").at(0), "jpg");
     assert.equal(mediaTypeOfPath("a/b/report.final.pdf"), "application/pdf");
     assert.equal(mediaTypeOfPath("a/b/no-extension"), null);
+  });
+
+  it("should give the same answers from their promises", {}, async () => {
+    for (const extension of ["jpg", ".PDF", "no-such-extension"]) {
+      assert.deepEqual(
+        await mediaTypesOfAsync(extension),
+        mediaTypesOf(extension)
+      );
+    }
+    for (const mime of ["image/jpeg", "no/such-type"]) {
+      assert.deepEqual(await extensionsOfAsync(mime), extensionsOf(mime));
+    }
+    assert.equal(
+      await mediaTypeOfPathAsync("a/b/report.final.pdf"),
+      "application/pdf"
+    );
+    assert.equal(await mediaTypeOfPathAsync("a/b/no-extension"), null);
+    assert.deepEqual(await builtWithAsync(), builtWith());
   });
 });
 

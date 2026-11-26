@@ -6,11 +6,20 @@ import {
   MimeDown,
   __napiBindingTarget,
   builtWith,
+  builtWithAsync,
+  extensionsOf,
+  extensionsOfAsync,
+  mediaTypeOfPathAsync,
+  mediaTypesOf,
+  mediaTypesOfAsync,
   sniff,
   sniffAsync,
+  sniffFromRanges,
+  sniffFromRangesAsync,
   specs,
   specsAsync,
-  specsFromRanges
+  specsFromRanges,
+  specsFromRangesAsync
 } from "@/index.js";
 import type { Specs } from "@/index.js";
 
@@ -127,6 +136,25 @@ describe("wasm32-wasi build", { skip }, () => {
       assert.deepEqual(held.specs(), specs(illustrator));
       assert.deepEqual(await held.specsAsync(), held.specs());
       assert.deepEqual(await held.keyframesAsync(), held.keyframes());
+      // From pieces of a file too: its head, and its size.
+      const head = [{ offset: 0, bytes: illustrator.subarray(0, 1024) }];
+      const size = illustrator.byteLength;
+      assert.deepEqual(
+        await sniffFromRangesAsync(head, size),
+        sniffFromRanges(head, size)
+      );
+      assert.deepEqual(
+        await specsFromRangesAsync(head, size),
+        specsFromRanges(head, size)
+      );
+      // And the tables, which read no file.
+      assert.deepEqual(await mediaTypesOfAsync("jpg"), mediaTypesOf("jpg"));
+      assert.deepEqual(
+        await extensionsOfAsync("image/jpeg"),
+        extensionsOf("image/jpeg")
+      );
+      assert.equal(await mediaTypeOfPathAsync("a/b/c.pdf"), "application/pdf");
+      assert.deepEqual(await builtWithAsync(), builtWith());
     }
   );
   it(

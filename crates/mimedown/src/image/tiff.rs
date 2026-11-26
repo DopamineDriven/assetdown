@@ -133,9 +133,9 @@ fn full_picture<'d>(
   Ok(best.map_or(first, |(_, _, directory)| directory))
 }
 
-/// `raw` says the file is one a camera recorded, whose other directories are smaller copies
-/// of the one picture and not pages.
-pub(crate) fn read(source: &Source<'_>, raw: bool, reading: &mut Reading) -> Option<ImageFacts> {
+/// What a TIFF says of its picture, and how many directories it holds. A file a camera recorded
+/// is read the same way: its other directories are smaller copies of the one picture.
+pub(crate) fn read(source: &Source<'_>, reading: &mut Reading) -> Option<ImageFacts> {
   let tiff = reading.take(Tiff::open(source), "inside its header")??;
   let first = reading.take(tiff.directory(tiff.first), "before its first directory")?;
   let subs = reading
@@ -179,7 +179,6 @@ pub(crate) fn read(source: &Source<'_>, raw: bool, reading: &mut Reading) -> Opt
       }
     }
   }
-  facts.frames = if raw { 1 } else { pages };
   if let ImageDetail::Tiff(detail) = &mut facts.detail {
     detail.pages = pages;
   }

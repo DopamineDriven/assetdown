@@ -81,6 +81,7 @@ fn the_two_simple_forms_keep_their_size_in_the_picture_itself() {
   assert_eq!(found.media_type, MediaType::Webp);
   let facts = image_facts(found);
   assert_eq!((facts.width, facts.height, facts.frames), (640, 480, 1));
+  assert!(!facts.animated);
   assert_eq!(
     (facts.has_alpha, facts.color_model, facts.color_space),
     (Some(false), ColorModel::Rgb, ColorSpace::Srgb)
@@ -231,4 +232,15 @@ fn a_first_chunk_that_is_no_picture_is_a_webp_that_says_so() {
     found.warnings,
     ["the file's first chunk is not a picture's"]
   );
+}
+
+#[test]
+fn the_animation_flag_over_a_single_frame_is_a_still_picture() {
+  let file = webp(&[
+    flags(IS_ANIMATED, 400, 300),
+    chunk(b"ANIM", &[0, 0, 0, 0, 0, 0]),
+    frame(100, &lossless(400, 300, false)),
+  ]);
+  let facts = image_facts(specs(&file));
+  assert_eq!((facts.frames, facts.animated), (1, false));
 }

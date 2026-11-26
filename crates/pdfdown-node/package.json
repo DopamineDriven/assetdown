@@ -33,6 +33,7 @@
     "artifacts:ocr": "napi artifacts --package-json-path ocr/package.json --npm-dir ocr/npm",
     "bench": "node --import @oxc-node/core/register benchmark/bench.ts",
     "build": "yarn build:base",
+    "build:all": "yarn build:base && yarn build:superset && yarn build:wasm",
     "build:base": "napi build --platform --esm --release --features render",
     "build:superset": "napi build --platform --esm --release --features ocr,render --package-json-path ocr/package.json --output-dir ocr --js pdfdown_ocr.napi.js",
     "build:wasm": "yarn build:wasm32",

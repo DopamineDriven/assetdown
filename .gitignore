@@ -152,3 +152,4 @@ crates/pdfdown-node/index.js
 notes/*
 crates/tiffdown-node/index.js
 .yarn/*
+.DS_STORE

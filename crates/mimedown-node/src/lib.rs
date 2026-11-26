@@ -84,13 +84,9 @@ impl Said {
   }
 }
 
-/// The pieces of a file as the library takes them, read where they lie in the caller's
-/// buffers.
-fn from_pieces<T>(
-  pieces: &[Piece],
-  size: Option<f64>,
-  read: impl FnOnce(&mimedown::Source<'_>) -> T,
-) -> Result<T> {
+/// The pieces of a file as the library takes them, where they lie in the caller's buffers, and
+/// the file's size: each offset and the size a whole number.
+fn placed(pieces: &[Piece], size: Option<f64>) -> Result<(Vec<mimedown::Piece<'_>>, Option<u64>)> {
   let size = size.map(|size| whole(size, "size", 0, SAFE)).transpose()?;
   let pieces = pieces
     .iter()
@@ -101,9 +97,63 @@ fn from_pieces<T>(
       })
     })
     .collect::<Result<Vec<_>>>()?;
+  Ok((pieces, size))
+}
+
+/// A file read from pieces of it. What is wrong with the pieces is the caller's mistake.
+fn read_pieces<T>(
+  pieces: &[mimedown::Piece<'_>],
+  size: Option<u64>,
+  read: impl FnOnce(&mimedown::Source<'_>) -> T,
+) -> Result<T> {
   let source =
-    mimedown::Source::from_pieces(&pieces, size).map_err(|error| invalid(error.to_string()))?;
+    mimedown::Source::from_pieces(pieces, size).map_err(|error| invalid(error.to_string()))?;
   Ok(read(&source))
+}
+
+/// The pieces of a file read where they lie in the caller's buffers.
+fn from_pieces<T>(
+  pieces: &[Piece],
+  size: Option<f64>,
+  read: impl FnOnce(&mimedown::Source<'_>) -> T,
+) -> Result<T> {
+  let (pieces, size) = placed(pieces, size)?;
+  read_pieces(&pieces, size, read)
+}
+
+/// The pieces of a file copied out of the caller's buffers, so that they can cross to another
+/// thread: where each starts and its bytes, and the file's size when it is known.
+pub struct Kept {
+  pieces: Vec<(u64, Vec<u8>)>,
+  size: Option<u64>,
+}
+
+impl Kept {
+  /// The pieces are checked here, on the JS thread and before they are copied, so that what
+  /// is wrong with them is thrown where they were passed and not from a promise.
+  fn new(pieces: &[Piece], size: Option<f64>) -> Result<Self> {
+    let (pieces, size) = placed(pieces, size)?;
+    read_pieces(&pieces, size, |_| ())?;
+    Ok(Kept {
+      pieces: pieces
+        .iter()
+        .map(|piece| (piece.offset, piece.bytes.to_vec()))
+        .collect(),
+      size,
+    })
+  }
+
+  fn read<T>(&self, read: impl FnOnce(&mimedown::Source<'_>) -> T) -> Result<T> {
+    let pieces: Vec<mimedown::Piece<'_>> = self
+      .pieces
+      .iter()
+      .map(|(offset, bytes)| mimedown::Piece {
+        offset: *offset,
+        bytes,
+      })
+      .collect();
+    read_pieces(&pieces, self.size, read)
+  }
 }
 
 fn waveform_options(options: Option<WaveformOptions>) -> Result<mimedown::WaveformOptions> {
@@ -204,6 +254,48 @@ impl Task for SpecsTask {
   }
 }
 
+pub struct SniffRangesTask {
+  kept: Kept,
+  said: Said,
+}
+
+#[napi]
+impl Task for SniffRangesTask {
+  type Output = mimedown::Sniffed;
+  type JsValue = Sniffed;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    self
+      .kept
+      .read(|source| mimedown::sniff_with(source, self.said.options()))
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output.into())
+  }
+}
+
+pub struct SpecsRangesTask {
+  kept: Kept,
+  said: Said,
+}
+
+#[napi]
+impl Task for SpecsRangesTask {
+  type Output = mimedown::Specs;
+  type JsValue = Specs;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    self
+      .kept
+      .read(|source| mimedown::specs_with(source, self.said.options()))
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output.into())
+  }
+}
+
 pub struct WaveformTask {
   bytes: Arc<Vec<u8>>,
   options: mimedown::WaveformOptions,
@@ -261,6 +353,79 @@ impl Task for KeyframesTask {
   }
 }
 
+// The tables read no file and answer at once. Each has a promise all the same, so that a
+// caller who has only promises, as a page has of a worker, can ask them too.
+
+pub struct MediaTypesOfTask {
+  extension: String,
+}
+
+#[napi]
+impl Task for MediaTypesOfTask {
+  type Output = Vec<mimedown::MediaType>;
+  type JsValue = Vec<Mime>;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    Ok(mimedown::media_types_of(&self.extension))
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output.into_iter().map(Into::into).collect())
+  }
+}
+
+pub struct MediaTypeOfPathTask {
+  path: String,
+}
+
+#[napi]
+impl Task for MediaTypeOfPathTask {
+  type Output = Option<mimedown::MediaType>;
+  type JsValue = Option<Mime>;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    Ok(mimedown::media_type_of_path(&self.path))
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output.map(Into::into))
+  }
+}
+
+pub struct ExtensionsOfTask {
+  mime: String,
+}
+
+#[napi]
+impl Task for ExtensionsOfTask {
+  type Output = &'static [&'static str];
+  type JsValue = Vec<String>;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    Ok(mimedown::extensions_of(&self.mime))
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(extensions(output))
+  }
+}
+
+pub struct BuiltWithTask;
+
+#[napi]
+impl Task for BuiltWithTask {
+  type Output = mimedown::BuiltWith;
+  type JsValue = BuiltWith;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    Ok(mimedown::built_with())
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output.into())
+  }
+}
+
 // ── What a file is ──────────────────────────────────────────────────────────────────────────
 
 /// What the whole file in `data` is, from as few of its bytes as that takes.
@@ -292,6 +457,18 @@ pub fn sniff_from_ranges(
   })
 }
 
+#[napi]
+pub fn sniff_from_ranges_async(
+  pieces: Vec<Piece>,
+  size: Option<f64>,
+  options: Option<Options>,
+) -> Result<AsyncTask<SniffRangesTask>> {
+  Ok(AsyncTask::new(SniffRangesTask {
+    kept: Kept::new(&pieces, size)?,
+    said: Said::new(options),
+  }))
+}
+
 /// What the whole file in `data` is, and what it says of itself.
 #[napi]
 pub fn specs(data: &[u8], options: Option<Options>) -> Specs {
@@ -321,6 +498,18 @@ pub fn specs_from_ranges(
   })
 }
 
+#[napi]
+pub fn specs_from_ranges_async(
+  pieces: Vec<Piece>,
+  size: Option<f64>,
+  options: Option<Options>,
+) -> Result<AsyncTask<SpecsRangesTask>> {
+  Ok(AsyncTask::new(SpecsRangesTask {
+    kept: Kept::new(&pieces, size)?,
+    said: Said::new(options),
+  }))
+}
+
 // ── The tables ──────────────────────────────────────────────────────────────────────────────
 
 /// The types a file extension is in use for, the usual one first. The dot is optional.
@@ -332,31 +521,49 @@ pub fn media_types_of(extension: String) -> Vec<Mime> {
     .collect()
 }
 
+#[napi]
+pub fn media_types_of_async(extension: String) -> AsyncTask<MediaTypesOfTask> {
+  AsyncTask::new(MediaTypesOfTask { extension })
+}
+
 /// The type a path's extension names, when it names one.
 #[napi]
 pub fn media_type_of_path(path: String) -> Option<Mime> {
   mimedown::media_type_of_path(&path).map(Into::into)
 }
 
-/// The file extensions in use for a type, the usual one first, without the dot.
 #[napi]
-pub fn extensions_of(mime: String) -> Vec<String> {
-  mimedown::extensions_of(&mime)
+pub fn media_type_of_path_async(path: String) -> AsyncTask<MediaTypeOfPathTask> {
+  AsyncTask::new(MediaTypeOfPathTask { path })
+}
+
+fn extensions(of_a_type: &[&str]) -> Vec<String> {
+  of_a_type
     .iter()
     .map(|extension| extension.to_string())
     .collect()
 }
 
+/// The file extensions in use for a type, the usual one first, without the dot.
+#[napi]
+pub fn extensions_of(mime: String) -> Vec<String> {
+  extensions(mimedown::extensions_of(&mime))
+}
+
+#[napi]
+pub fn extensions_of_async(mime: String) -> AsyncTask<ExtensionsOfTask> {
+  AsyncTask::new(ExtensionsOfTask { mime })
+}
+
 /// Which of the parsers the addon was built with.
 #[napi]
 pub fn built_with() -> BuiltWith {
-  let built = mimedown::built_with();
-  BuiltWith {
-    pdf: built.pdf,
-    office: built.office,
-    audio: built.audio,
-    video: built.video,
-  }
+  mimedown::built_with().into()
+}
+
+#[napi]
+pub fn built_with_async() -> AsyncTask<BuiltWithTask> {
+  AsyncTask::new(BuiltWithTask)
 }
 
 // ── What takes more than a header ───────────────────────────────────────────────────────────

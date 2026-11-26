@@ -25,7 +25,18 @@
     "build:tiffdown": "yarn workspace @d0paminedriven/tiffdown build",
     "build:videodown": "yarn workspace @d0paminedriven/videodown build",
     "build:xlsdown": "yarn workspace @d0paminedriven/xlsdown build",
-    "build:xlsxdown": "yarn workspace @d0paminedriven/xlsxdown build"
+    "build:xlsxdown": "yarn workspace @d0paminedriven/xlsxdown build",
+    "build:all:audiodown": "yarn workspace @d0paminedriven/audiodown build:all",
+    "build:all:docdown": "yarn workspace @d0paminedriven/docdown build:all",
+    "build:all:docxdown": "yarn workspace @d0paminedriven/docxdown build:all",
+    "build:all:jpegdown": "yarn workspace @d0paminedriven/jpegdown build:all",
+    "build:all:mimedown": "yarn workspace @d0paminedriven/mimedown build:all",
+    "build:all:pdfdown": "yarn workspace @d0paminedriven/pdfdown build:all",
+    "build:all:rtfdown": "yarn workspace @d0paminedriven/rtfdown build:all",
+    "build:all:tiffdown": "yarn workspace @d0paminedriven/tiffdown build:all",
+    "build:all:videodown": "yarn workspace @d0paminedriven/videodown build:all",
+    "build:all:xlsdown": "yarn workspace @d0paminedriven/xlsdown build:all",
+    "build:all:xlsxdown": "yarn workspace @d0paminedriven/xlsxdown build:all"
   },
   "devDependencies": {
     "husky": "catalog:husky"

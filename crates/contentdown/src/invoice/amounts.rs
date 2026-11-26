@@ -238,6 +238,43 @@ pub(crate) fn parse_amount(text: &str, sep: Separator) -> Option<Amount> {
   })
 }
 
+/// Whether a token ends in a decimal separator and two digits (`1,234.56`, `93,50`, `(8.00)`).
+pub(crate) fn has_decimals(token: &str) -> bool {
+  let digits: Vec<char> = token
+    .trim_end_matches(|c: char| !c.is_ascii_digit())
+    .chars()
+    .collect();
+  digits.len() >= 3
+    && matches!(digits[digits.len() - 3], '.' | ',')
+    && digits[digits.len() - 2..].iter().all(char::is_ascii_digit)
+}
+
+/// Whether a token groups its digits in threes (`48,250`, `1.234.567`, `12'500`).
+pub(crate) fn has_groups(token: &str) -> bool {
+  let all_digits = |group: &str| !group.is_empty() && group.chars().all(|c| c.is_ascii_digit());
+  let mut groups = token
+    .trim_matches(|c: char| !c.is_ascii_digit())
+    .split([',', '.', '\'']);
+  let Some(lead) = groups.next() else {
+    return false;
+  };
+  let rest: Vec<&str> = groups.collect();
+  !rest.is_empty()
+    && lead.len() <= 3
+    && all_digits(lead)
+    && rest
+      .iter()
+      .all(|group| group.len() == 3 && all_digits(group))
+}
+
+/// Whether a token is written as money and not as a count: with two decimals, with its digits
+/// grouped in threes, or with a currency beside it (`915.40`, `48,250`, `$300`).
+pub(crate) fn written_as_money(token: &str, separator: Separator) -> bool {
+  has_decimals(token)
+    || has_groups(token)
+    || parse_amount(token, separator).is_some_and(|a| a.symbol.is_some() || a.code.is_some())
+}
+
 /// Which separator the tokens that show two decimals vote for, else `fallback`.
 pub(crate) fn infer_separator(tokens: &[&str], fallback: Separator) -> Separator {
   let mut point = 0usize;

@@ -468,6 +468,16 @@ The package is 7.5 MB packed, where the xlsx one is 1.6 MB: each build is 6.6 MB
 
 A smaller entry for a page would take features on `crates/mimedown-node/Cargo.toml` and a second build in the package. Neither is made, and neither is wanted for now: you took the size as it is the same day, for reading a file's facts on the client, to be whittled down later.
 
+#### `@d0paminedriven/mimedown-wasm` needs Node 26
+
+The first `mimedown@0.9.0` commit failed one job, the package's tests on Node 24, with `Fatal process out of memory: Zone`, and so published nothing. It is not memory: it happens at once on a machine with 128 GB, and a heap of 16 GB changes nothing.
+
+- What fails is the engine's optimizing compiler for WebAssembly (V8 13.6, in Node 24.22.3), on a background thread, in one function: `lopdf::encodings::glyphnames::Glyph::from_name`, which is 532 kB of the build, five times the next largest. Told to optimize only that function, Node 24 fails; told to optimize any other, or none, it does not. Node 26 optimizes it.
+- It takes reading between 11 and 20 PDFs with `specs` in one process to get there, which the package's tests do.
+- `wasm/package.json` now says `"node": ">=26"`, the README says so and why, and the `wasm` job in `.github/workflows/mimedown-node.yml` runs on Node 26 alone.
+- The same failure is in what is already published: `@d0paminedriven/pdfdown`'s own WebAssembly build fails the same way on Node 24 after enough PDFs. Nothing tested it, because the `test-wasi` jobs run on Node 26. It matters only where no native addon loads.
+- What would bring Node 24 back, and take half a megabyte out of every build that reads PDFs: that lookup as a sorted table and not one function, in `lopdf` or in `pdfdown` in its place. Not started.
+
 #### `crates/mimedown-node`: six promise verbs
 
 `sniffFromRangesAsync` and `specsFromRangesAsync` are new, so that every verb that reads a file has a twin that does not block. The pieces are checked on the JS thread and then copied, as a whole file's bytes are, so what is wrong with them is thrown where they were passed.

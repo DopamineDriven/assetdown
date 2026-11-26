@@ -12,7 +12,7 @@ yarn add @d0paminedriven/mimedown-wasm
 pnpm add @d0paminedriven/mimedown-wasm
 ```
 
-node &ge; 24. There is nothing else to install, and no flag to pass.
+node &ge; 26. There is nothing else to install, and no flag to pass. On Node 24 the package loads and answers, and then the engine itself fails (`Fatal process out of memory: Zone`) once it has read a dozen or so PDFs: its compiler cannot optimize one very large function of the PDF reader. Node 26 can.
 
 ## Which entry to import
 

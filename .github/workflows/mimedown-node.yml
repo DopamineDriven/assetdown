@@ -214,8 +214,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The newest Node, and the oldest this package supports.
-        node: ["26", "24"]
+        # Node 26 only, which is this package's floor. Node 24's engine (V8 13.6) dies with
+        # "Fatal process out of memory: Zone" when it optimizes one very large function of
+        # the PDF reader, after a dozen or so PDFs. It is the engine's compiler that fails
+        # and not memory that runs out, so no heap setting helps.
+        node: ["26"]
     name: WebAssembly package - node@${{ matrix.node }}
     runs-on: ubuntu-latest
     steps:

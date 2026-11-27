@@ -1,6 +1,6 @@
 {
   "name": "@d0paminedriven/pptxdown",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Convenient Rust-powered pptx parsing for Node",
   "keywords": [
     "N-API",

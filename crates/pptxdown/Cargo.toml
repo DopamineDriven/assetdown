@@ -5,7 +5,7 @@ keywords             = ["pptx", "extract", "extraction", "slides"]
 license              = { workspace = true }
 name                 = "pptxdown"
 repository.workspace = true
-version              = "0.1.0"
+version              = "0.2.0"
 
 [dependencies]
 contentdown.workspace = true

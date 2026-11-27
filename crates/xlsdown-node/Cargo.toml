@@ -6,7 +6,7 @@ name                   = "xlsdown-node"
 publish                = false
 repository.workspace   = true
 rust-version.workspace = true
-version                = "0.5.0"
+version                = "0.6.0"
 
 [lib]
 crate-type = ["cdylib"]

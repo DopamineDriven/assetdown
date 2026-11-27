@@ -1,6 +1,6 @@
 {
   "name": "@d0paminedriven/xlsdown",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Convenient Rust-powered xls parsing for Node",
   "keywords": [
     "N-API",

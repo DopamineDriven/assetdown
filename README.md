@@ -69,7 +69,7 @@ pptxdown-node   →  pptxdown     →  ooxmldown, contentdown
 audiodown-node  →  audiodown
 videodown-node  →  videodown
 ```
- 
+
 ## Layout
 
 ```text
@@ -109,3 +109,4 @@ A commit to `main` titled `<name>@<version>`, with the version in that package's
 ## License
 
 MIT
+

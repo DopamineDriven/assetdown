@@ -32,3 +32,27 @@ fn bbox_handles_rotation() {
   assert!((x0 - 98.0).abs() < 1e-9 && (x1 - 100.0).abs() < 1e-9);
   assert!((y0 - 100.0).abs() < 1e-9 && (y1 - 110.0).abs() < 1e-9);
 }
+
+#[test]
+fn only_a_matrix_with_no_turn_and_no_mirroring_keeps_an_image_upright() {
+  let matrix = |a: f64, b: f64, c: f64, d: f64| Matrix {
+    a,
+    b,
+    c,
+    d,
+    e: 40.0,
+    f: 60.0,
+  };
+  // The usual placement: the image's width and height, and where it goes.
+  assert!(matrix(560.0, 0.0, 0.0, 720.0).keeps_upright());
+  // A hair of skew, as a scanner's driver writes, is no turn.
+  assert!(matrix(560.0, 0.2, -0.2, 720.0).keeps_upright());
+  // A half turn, the two quarter turns, and each of the two mirrorings.
+  assert!(!matrix(-560.0, 0.0, 0.0, -720.0).keeps_upright());
+  assert!(!matrix(0.0, 720.0, -560.0, 0.0).keeps_upright());
+  assert!(!matrix(0.0, -720.0, 560.0, 0.0).keeps_upright());
+  assert!(!matrix(-560.0, 0.0, 0.0, 720.0).keeps_upright());
+  assert!(!matrix(560.0, 0.0, 0.0, -720.0).keeps_upright());
+  // A turn of a few degrees is a turn.
+  assert!(!matrix(558.0, 48.0, -62.0, 717.0).keeps_upright());
+}

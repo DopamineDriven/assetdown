@@ -38,6 +38,13 @@ impl Matrix {
     f: 0.0,
   };
 
+  /// Whether an image painted through this matrix lies on the page the way up it is kept: not
+  /// turned, and not mirrored. A hair of skew, a thousandth of a side, is not a turn.
+  pub fn keeps_upright(&self) -> bool {
+    const HAIR: f64 = 1e-3;
+    self.a > 0.0 && self.d > 0.0 && self.b.abs() <= HAIR * self.a && self.c.abs() <= HAIR * self.d
+  }
+
   pub fn translate(tx: f64, ty: f64) -> Matrix {
     Matrix {
       e: tx,
@@ -198,6 +205,9 @@ pub(crate) struct Interpreter<'a> {
   font_index: HashMap<FontKey, usize>,
   pub glyphs: Vec<Glyph>,
   pub images: Vec<PlacedImage>,
+  /// The names of the images painted, at least once, turned or mirrored: in the order they
+  /// were first painted so.
+  pub turned_images: Vec<String>,
   pub warnings: Vec<String>,
   tm: Matrix,
   tlm: Matrix,
@@ -219,6 +229,7 @@ impl<'a> Interpreter<'a> {
       font_index: HashMap::new(),
       glyphs: Vec::new(),
       images: Vec::new(),
+      turned_images: Vec::new(),
       warnings: Vec::new(),
       tm: Matrix::IDENTITY,
       tlm: Matrix::IDENTITY,
@@ -476,8 +487,13 @@ impl<'a> Interpreter<'a> {
     match subtype {
       b"Image" => {
         let (x0, y0, x1, y1) = bbox_of(gs.ctm, 0.0, 0.0, 1.0, 1.0);
+        let xobject_name = String::from_utf8_lossy(name).to_string();
+        // The box says where the image is and not which way up: that is kept beside it.
+        if !gs.ctm.keeps_upright() && !self.turned_images.contains(&xobject_name) {
+          self.turned_images.push(xobject_name.clone());
+        }
         self.images.push(PlacedImage {
-          xobject_name: String::from_utf8_lossy(name).to_string(),
+          xobject_name,
           x0,
           y0,
           x1,

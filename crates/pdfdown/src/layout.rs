@@ -79,6 +79,10 @@ pub struct NativeLayout {
   pub layout: PageLayout,
   pub words: Vec<Word>,
   pub fonts: Vec<FontMeta>,
+  /// The names of the images the page paints, at least once, turned or mirrored. An image's
+  /// placement in `layout.images` is the box it fills, which does not say which way up it
+  /// lies there; an image not named here lies on the page the way up it is kept.
+  pub turned_images: Vec<String>,
 }
 
 pub fn native_layout(doc: &Document, page_num: u32, page_id: ObjectId) -> NativeLayout {
@@ -106,6 +110,7 @@ pub fn native_layout(doc: &Document, page_num: u32, page_id: ObjectId) -> Native
         layout,
         words: Vec::new(),
         fonts: Vec::new(),
+        turned_images: Vec::new(),
       };
     }
   };
@@ -125,6 +130,7 @@ pub fn native_layout(doc: &Document, page_num: u32, page_id: ObjectId) -> Native
     layout,
     words: raw,
     fonts,
+    turned_images: interp.turned_images,
   }
 }
 

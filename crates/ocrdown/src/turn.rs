@@ -19,6 +19,17 @@ const OSD_MIN_CONFIDENCE: f32 = 3.0;
 /// and sideways reads scored 40–62. Keeps the ~1 s detector off the common, upright page.
 const OSD_SKIP_CONFIDENCE: f32 = 80.0;
 
+/// A turn that was expected stands without a search only when at least this many words read
+/// at it. A stamp or a mark of a word or two reads "well" at more than one turn; measured over
+/// scanned pages, the pictures that read at the turn their page is shown at held 265 words at
+/// the median, and 1 in 200 held fewer than ten.
+const EXPECTED_MIN_WORDS: usize = 10;
+
+/// Whether what a picture read at the turn it was expected to need is good enough to stop at.
+pub(crate) fn expected_is_convincing(words: usize, mean_confidence: f32) -> bool {
+  words >= EXPECTED_MIN_WORDS && upright_is_convincing(words, mean_confidence)
+}
+
 /// Whether an upright pass is good enough to skip orientation detection altogether.
 pub(crate) fn upright_is_convincing(words: usize, mean_confidence: f32) -> bool {
   words > 0 && mean_confidence >= OSD_SKIP_CONFIDENCE
@@ -29,6 +40,8 @@ pub(crate) fn upright_is_convincing(words: usize, mean_confidence: f32) -> bool 
 pub enum OrientationSource {
   /// The first pass read upright well enough.
   Upright,
+  /// The caller said which turn the picture was likely to need, and it read best at that turn.
+  Expected,
   /// Tesseract's orientation and script detector named the turn.
   Osd,
   /// The confidence retry over the quarter and half turns found a better score.
@@ -36,10 +49,11 @@ pub enum OrientationSource {
 }
 
 impl OrientationSource {
-  /// How the decision is put in a warning: `upright`, `by OSD`, `by retry`.
+  /// How the decision is put in a warning: `upright`, `as expected`, `by OSD`, `by retry`.
   pub fn label(self) -> &'static str {
     match self {
       OrientationSource::Upright => "upright",
+      OrientationSource::Expected => "as expected",
       OrientationSource::Osd => "by OSD",
       OrientationSource::Retry => "by retry",
     }

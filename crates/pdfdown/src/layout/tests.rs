@@ -296,3 +296,41 @@ fn multi_page_extraction_keeps_page_order() {
   assert_eq!(all[0].page, 1);
   assert_eq!(all[0].lines[0].text, "only");
 }
+
+#[test]
+fn an_image_painted_turned_is_named_among_the_turned_images() {
+  let place = |matrix: [i64; 6], name: &str| {
+    vec![
+      op("q", vec![]),
+      op("cm", matrix.iter().map(|value| (*value).into()).collect()),
+      op("Do", vec![name.into()]),
+      op("Q", vec![]),
+    ]
+  };
+  // One image as it is kept, one turned a half turn, and one painted both ways.
+  let ops = [
+    place([200, 0, 0, 100, 50, 300], "Kept"),
+    place([-200, 0, 0, -100, 450, 600], "Turned"),
+    place([200, 0, 0, 100, 50, 100], "Both"),
+    place([0, 100, -200, 0, 500, 100], "Both"),
+  ]
+  .concat();
+  let (mut doc, page) = doc_with_content(ops);
+  let image = doc.add_object(Stream::new(
+      dictionary! { "Type" => "XObject", "Subtype" => "Image", "Width" => 2, "Height" => 2, "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8 },
+      vec![0, 0, 0, 0],
+    ));
+  if let Some(Object::Dictionary(p)) = doc.objects.get_mut(&page)
+    && let Ok(Object::Dictionary(res)) = p.get_mut(b"Resources")
+  {
+    res.set(
+      "XObject",
+      Object::Dictionary(dictionary! {
+        "Kept" => Object::Reference(image), "Turned" => Object::Reference(image), "Both" => Object::Reference(image),
+      }),
+    );
+  }
+  let native = native_layout(&doc, 1, page);
+  assert_eq!(native.layout.images.len(), 4);
+  assert_eq!(native.turned_images, ["Turned", "Both"]);
+}

@@ -6,8 +6,8 @@ use image::DynamicImage;
 use crate::engine::tessdata_prefix;
 use crate::resolution::{DEFAULT_SOURCE_PPI, set_resolution};
 use crate::turn::{
-  OrientationSource, ROTATION_RETRY_CONFIDENCE, ROTATIONS, osd_rotation, pick_first_rotation,
-  rotate_image, upright_is_convincing,
+  OrientationSource, ROTATION_RETRY_CONFIDENCE, ROTATIONS, expected_is_convincing, osd_rotation,
+  pick_first_rotation, rotate_image, upright_is_convincing,
 };
 
 /// How a picture of gray or of color is cut into black and white before it is read. A picture
@@ -162,6 +162,21 @@ pub fn recognize_words_upright(img: &DynamicImage, lang: &str, ppi: Option<i32>)
   recognize_words_upright_cut(img, lang, ppi, Thresholding::Global)
 }
 
+/// [`recognize_words_upright`], told the clockwise turn the picture is expected to need: the
+/// one its page says it is shown at, say. That turn is read before the picture as it is, and
+/// stands when a page's worth of words reads convincingly at it, so that a picture kept on its
+/// side in a page shown turned is read once, and the detector is not asked. An expectation that does not read
+/// convincingly costs the one pass and changes nothing else: the search ends where it does
+/// with nothing expected. Anything but a quarter turn or a half turn is no expectation.
+pub fn recognize_words_upright_expecting(
+  img: &DynamicImage,
+  lang: &str,
+  ppi: Option<i32>,
+  expected: u32,
+) -> Upright {
+  upright_search(img, lang, ppi, Thresholding::Global, expected)
+}
+
 /// [`recognize_words_upright`], with the way the picture is cut into black and white chosen.
 pub fn recognize_words_upright_cut(
   img: &DynamicImage,
@@ -169,14 +184,22 @@ pub fn recognize_words_upright_cut(
   ppi: Option<i32>,
   cut: Thresholding,
 ) -> Upright {
-  let datapath = tessdata_prefix().unwrap_or("");
-  let mut tried: Vec<u32> = Vec::new();
-  let mut best: Option<OrientedPass> = None;
+  upright_search(img, lang, ppi, cut, 0)
+}
 
-  let mut consider =
-    |degrees: u32, source: OrientationSource, tried: &mut Vec<u32>| -> (bool, bool) {
-      tried.push(degrees);
-      let (words, dims) = if degrees == 0 {
+/// The search for the way up over a picture, read by Tesseract at each turn it tries.
+fn upright_search(
+  img: &DynamicImage,
+  lang: &str,
+  ppi: Option<i32>,
+  cut: Thresholding,
+  expected: u32,
+) -> Upright {
+  let datapath = tessdata_prefix().unwrap_or("");
+  way_up(
+    expected,
+    |degrees| {
+      if degrees == 0 {
         (words_cut(img, lang, ppi, cut), (img.width(), img.height()))
       } else {
         let rotated = rotate_image(img, degrees);
@@ -184,7 +207,58 @@ pub fn recognize_words_upright_cut(
           words_cut(&rotated, lang, ppi, cut),
           (rotated.width(), rotated.height()),
         )
+      }
+    },
+    || osd_rotation(img, datapath, ppi),
+  )
+}
+
+/// What one pass over a picture gives: its words, and the width and height of the picture as
+/// it was turned for the pass.
+pub(crate) type Pass = (Vec<OcrWord>, (u32, u32));
+
+/// Which way up a picture reads, and its words that way up. `read` gives the words of the
+/// picture turned clockwise by so many degrees, with the turned picture's size; `detect` asks
+/// the orientation detector for the turn it would make and how sure it is.
+///
+/// The expected turn, when there is one, is read ahead of everything, and stands at once when
+/// it reads convincingly and holds more than a word or two. When it does not, the search is the one made with nothing expected,
+/// and ends where that one does: what was read ahead is only kept for when the search comes
+/// to that turn itself, so that no turn is read twice. That search reads the picture as it
+/// is, which stands when it is convincing; failing that the detector names a turn to read,
+/// and the turns not yet read are the last resort. Of the turns the search reads, the one
+/// whose words are surest is kept.
+pub(crate) fn way_up(
+  expected: u32,
+  mut read: impl FnMut(u32) -> Pass,
+  detect: impl FnOnce() -> Option<(u32, f32)>,
+) -> Upright {
+  let expected = expected % 360;
+  let mut ahead: Option<(u32, Pass)> = None;
+  if ROTATIONS.contains(&expected) {
+    let (words, size) = read(expected);
+    if expected_is_convincing(words.len(), mean_confidence(&words)) {
+      return Upright {
+        words,
+        degrees: expected,
+        size,
+        decided: OrientationSource::Expected,
       };
+    }
+    ahead = Some((expected, (words, size)));
+  }
+  // From here on, the search as it is made with nothing expected.
+  let mut read = |degrees: u32| match ahead.take_if(|(turn, _)| *turn == degrees) {
+    Some((_, pass)) => pass,
+    None => read(degrees),
+  };
+  let mut tried: Vec<u32> = Vec::new();
+  let mut best: Option<OrientedPass> = None;
+
+  let mut consider =
+    |degrees: u32, source: OrientationSource, tried: &mut Vec<u32>| -> (bool, bool) {
+      tried.push(degrees);
+      let (words, dims) = read(degrees);
       let confidence = mean_confidence(&words);
       if best.as_ref().is_none_or(|b| confidence > b.confidence) {
         best = Some(OrientedPass {
@@ -209,7 +283,7 @@ pub fn recognize_words_upright_cut(
     return b.upright();
   }
   // Not convincing: ask the detector which turn to try before the blind retry.
-  if let Some(degrees) = pick_first_rotation(osd_rotation(img, datapath, ppi))
+  if let Some(degrees) = pick_first_rotation(detect())
     && degrees != 0
     && consider(degrees, OrientationSource::Osd, &mut tried).0
   {

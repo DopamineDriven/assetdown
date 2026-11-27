@@ -5,9 +5,11 @@
 use contentdown::{FontMeta, PageLayout, PlacedImage, TextSource, Word, words_to_lines};
 use image::DynamicImage;
 use lopdf::{Document, ObjectId};
+#[cfg(feature = "render")]
+use ocrdown::recognize_words_upright;
 use ocrdown::{
-  DEFAULT_SOURCE_PPI, OcrWord, Upright, place_words, pool, recognize_text, recognize_words_upright,
-  source_ppi, unrotate_pixel_box,
+  DEFAULT_SOURCE_PPI, OcrWord, Upright, place_words, pool, recognize_text,
+  recognize_words_upright_expecting, source_ppi, unrotate_pixel_box,
 };
 use pdfdown::PageText;
 use pdfdown::images::composite::{InkTone, OcrImages, OneBitComposite, collect_page_ocr_images};
@@ -329,12 +331,15 @@ struct RasterRead {
 }
 
 /// OCR one raster at its best orientation and place its words on `dest`, the user-space
-/// rectangle `[x0, y0, x1, y1]` the raster covers as painted.
+/// rectangle `[x0, y0, x1, y1]` the raster covers as painted. `page_turn` is the clockwise
+/// turn the page says it is shown at: a scanner that keeps a sheet as it was fed, on its side,
+/// says so there, so the raster is read at that turn first.
 fn read_placed_raster(
   subject: String,
   img: &DynamicImage,
   dest: [f64; 4],
   lang: &str,
+  page_turn: u32,
   warnings: &mut Vec<String>,
 ) -> RasterRead {
   let ppi = source_ppi(img.width(), dest[2] - dest[0]);
@@ -343,7 +348,7 @@ fn read_placed_raster(
     degrees,
     size: (rw, rh),
     decided,
-  } = recognize_words_upright(img, lang, Some(ppi));
+  } = recognize_words_upright_expecting(img, lang, Some(ppi), page_turn);
   let painted = words_in_painted_raster(words, degrees, rw, rh);
   let words = place_words(painted, img.width(), img.height(), dest);
   // A logo or rule that OCR read as a word or two (fewer than WEAK_TIER2_WORDS) has no
@@ -378,28 +383,39 @@ fn composite_subject(composite: &OneBitComposite) -> String {
 }
 
 /// Tier 2: OCR the page's embedded raster images and place each word in the frame as painted.
-/// `page_box` is the page's box in user space. Returns the words and the page's dominant turn;
-/// the caller turns the whole page frame by it.
+/// `page_box` is the page's box in user space, `page_turn` the turn the page says it is shown
+/// at, and `turned` the names of the images the page paints turned or mirrored. Returns the
+/// words and the page's dominant turn; the caller turns the whole page frame by it.
+#[allow(clippy::too_many_arguments)]
 fn ocr_page_image_words(
   doc: &Document,
   page_id: ObjectId,
   lang: &str,
   placements: &[PlacedImage],
+  turned: &[String],
   page_box: [f64; 4],
+  page_turn: u32,
   warnings: &mut Vec<String>,
 ) -> (Vec<Word>, u32) {
   let images = collect_page_ocr_images(doc, page_id, page_box);
-  read_page_rasters(images, lang, placements, warnings)
+  read_page_rasters(images, lang, placements, turned, page_turn, warnings)
 }
 
 /// Read a page's rasters: its one-bit images together, merged onto one raster for each tone,
 /// with their words placed on the area that raster covers; then every other image by itself,
 /// placed through its `Do` placement from the native pass. Returns the words in the frame as
 /// painted and the page's dominant turn.
+///
+/// `page_turn`, the turn the page says it is shown at, is counted from the page as painted. A
+/// merged raster is the page as painted, so it is read at that turn first. An image is read as
+/// it is kept, which is the page as painted only when the painting does not turn it: one named
+/// in `turned` is expected to need no turn in particular, and is searched as it always was.
 fn read_page_rasters(
   images: OcrImages,
   lang: &str,
   placements: &[PlacedImage],
+  turned: &[String],
+  page_turn: u32,
   warnings: &mut Vec<String>,
 ) -> (Vec<Word>, u32) {
   let OcrImages { named, composites } = images;
@@ -408,7 +424,9 @@ fn read_page_rasters(
     let subject = composite_subject(&composite);
     let dest = composite.bbox;
     let img = DynamicImage::ImageLuma8(composite.image);
-    reads.push(read_placed_raster(subject, &img, dest, lang, warnings));
+    reads.push(read_placed_raster(
+      subject, &img, dest, lang, page_turn, warnings,
+    ));
   }
   for (name, img) in named {
     let placed: Vec<&PlacedImage> = placements
@@ -428,11 +446,16 @@ fn read_page_rasters(
       ));
     }
     let dest = [first.x0, first.y0, first.x1, first.y1];
+    let expected = match turned.contains(&name) {
+      true => 0,
+      false => page_turn,
+    };
     reads.push(read_placed_raster(
       format!("image {name}"),
       &img,
       dest,
       lang,
+      expected,
       warnings,
     ));
   }
@@ -704,6 +727,7 @@ pub fn extract_layout_with_ocr(
           layout: native,
           words: native_words,
           fonts,
+          turned_images,
         } = native_layout(doc, page_num, page_id);
         let mut warnings = Vec::new();
         let mut rotation = 0u32;
@@ -758,7 +782,9 @@ pub fn extract_layout_with_ocr(
             page_id,
             lang,
             &native.images,
+            &turned_images,
             geo.bbox,
+            geo.rotate,
             &mut warnings,
           );
           rotation = dominant;
@@ -851,3 +877,6 @@ mod page_filter_tests;
 
 #[cfg(test)]
 mod frame_tests;
+
+#[cfg(test)]
+mod placement_tests;

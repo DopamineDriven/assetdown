@@ -1,6 +1,6 @@
 {
   "name": "@d0paminedriven/rtfdown-wasm",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Rust-powered rtf parsing as WebAssembly, for Node, browsers, and edge runtimes",
   "keywords": [
     "N-API",

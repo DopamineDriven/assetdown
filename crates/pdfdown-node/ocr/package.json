@@ -1,6 +1,6 @@
 {
   "name": "@d0paminedriven/pdfdown-ocr",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "Rust powered PDF extraction for Node with OCR and optional rendering (requires system tesseract).",
   "keywords": [
     "N-API",

@@ -5,7 +5,7 @@ keywords             = ["docx", "extraction", "metadata", "ooxml", "word documen
 license              = { workspace = true }
 name                 = "docxdown"
 repository.workspace = true
-version              = "0.2.0"
+version              = "0.3.0"
 
 [dependencies]
 contentdown.workspace = true

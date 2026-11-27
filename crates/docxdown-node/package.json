@@ -1,6 +1,6 @@
 {
   "name": "@d0paminedriven/docxdown",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Convenient Rust-powered docx parsing for Node",
   "keywords": [
     "N-API",

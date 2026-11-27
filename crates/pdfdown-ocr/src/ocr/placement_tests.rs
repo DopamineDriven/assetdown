@@ -123,6 +123,14 @@ fn times(texts: &[String], word: &str) -> usize {
   texts.iter().filter(|text| *text == word).count()
 }
 
+/// How many of the words hold this digit. The block face is rough, and Tesseract takes a `6`
+/// at the end of a row for a `B`, or drops it, now and then: `B06` and `60` for `606`. Which
+/// way up a page was read does not hang on that. Right way up its grid is full of sixes and
+/// has no nine in it, and upside down it is the other way about.
+fn holding(texts: &[String], digit: char) -> usize {
+  texts.iter().filter(|text| text.contains(digit)).count()
+}
+
 #[test]
 fn the_picture_reads_convincingly_either_way_up() {
   // What the test below rests on: turned upside down, this picture is not noise. Its grid
@@ -134,13 +142,13 @@ fn the_picture_reads_convincingly_either_way_up() {
     (0, OrientationSource::Upright)
   );
   let texts: Vec<String> = found.words.into_iter().map(|word| word.text).collect();
-  assert!(times(&texts, "909") >= 10, "{texts:?}");
+  assert!(holding(&texts, '9') >= 10, "{texts:?}");
+  assert_eq!(holding(&texts, '6'), 0, "{texts:?}");
 }
 
 #[test]
 fn a_picture_its_page_turns_and_turns_back_is_read_as_the_page_shows_it() {
   let picture = bill();
-  let grid = usize::try_from(ROWS).unwrap() * ACROSS;
   // Painted the usual way on a page shown as it is; and painted a half turn round on a page
   // that says it is shown a half turn round. The two turns undo each other, and both pages
   // show the same picture, the right way up.
@@ -158,8 +166,8 @@ fn a_picture_its_page_turns_and_turns_back_is_read_as_the_page_shows_it() {
     };
     assert_eq!(page.source, TextSource::Ocr, "{which}");
     let texts: Vec<String> = page.words.iter().map(|word| word.text.clone()).collect();
-    assert_eq!(times(&texts, "606"), grid, "{which}: {texts:?}");
-    assert_eq!(times(&texts, "909"), 0, "{which}: {texts:?}");
+    assert!(holding(&texts, '6') >= 10, "{which}: {texts:?}");
+    assert_eq!(holding(&texts, '9'), 0, "{which}: {texts:?}");
     assert_eq!(
       (times(&texts, "TOTAL"), times(&texts, "42")),
       (1, 1),

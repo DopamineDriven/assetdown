@@ -5,9 +5,12 @@ use image::DynamicImage;
 
 use crate::engine::tessdata_prefix;
 use crate::resolution::{DEFAULT_SOURCE_PPI, set_resolution};
+#[cfg(test)]
+use crate::turn::reads_both_ways;
 use crate::turn::{
-  OrientationSource, ROTATION_RETRY_CONFIDENCE, ROTATIONS, expected_is_convincing, osd_rotation,
-  pick_first_rotation, rotate_image, upright_is_convincing,
+  OrientationSource, ROTATION_RETRY_CONFIDENCE, ROTATIONS, expected_is_convincing,
+  may_be_upside_down, osd_rotation, other_way_up_reads_better, pick_first_rotation, rotate_image,
+  upright_is_convincing,
 };
 
 /// How a picture of gray or of color is cut into black and white before it is read. A picture
@@ -213,6 +216,28 @@ fn upright_search(
   )
 }
 
+/// A reading sure enough of itself to stand, held against the picture's other way up when it
+/// may be upside down all the same: when half its words or more are numbers and words that
+/// read either way up (`606` and `909`). The picture is then read a half turn round as well,
+/// and the words that read one way only say which reading is kept. Any other reading is
+/// returned as it is, with nothing more read.
+fn against_its_other_way_up(first: Upright, read: impl FnOnce(u32) -> Pass) -> Upright {
+  if !may_be_upside_down(&first.words) {
+    return first;
+  }
+  let degrees = (first.degrees + 180) % 360;
+  let (words, size) = read(degrees);
+  match other_way_up_reads_better(&first.words, &words) {
+    true => Upright {
+      words,
+      degrees,
+      size,
+      decided: OrientationSource::OneWayWords,
+    },
+    false => first,
+  }
+}
+
 /// What one pass over a picture gives: its words, and the width and height of the picture as
 /// it was turned for the pass.
 pub(crate) type Pass = (Vec<OcrWord>, (u32, u32));
@@ -238,12 +263,13 @@ pub(crate) fn way_up(
   if ROTATIONS.contains(&expected) {
     let (words, size) = read(expected);
     if expected_is_convincing(words.len(), mean_confidence(&words)) {
-      return Upright {
+      let first = Upright {
         words,
         degrees: expected,
         size,
         decided: OrientationSource::Expected,
       };
+      return against_its_other_way_up(first, read);
     }
     ahead = Some((expected, (words, size)));
   }
@@ -280,7 +306,7 @@ pub(crate) fn way_up(
   let (upright_ok, convincing) = consider(0, OrientationSource::Upright, &mut tried);
   if convincing {
     let b = best.expect("a pass was recorded");
-    return b.upright();
+    return against_its_other_way_up(b.upright(), read);
   }
   // Not convincing: ask the detector which turn to try before the blind retry.
   if let Some(degrees) = pick_first_rotation(detect())

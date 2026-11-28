@@ -298,7 +298,45 @@ fn multi_page_extraction_keeps_page_order() {
 }
 
 #[test]
-fn an_image_painted_turned_is_named_among_the_turned_images() {
+fn a_placement_says_how_its_image_lies_on_the_page() {
+  let lie = |a: f64, b: f64, c: f64, d: f64| Placement::new([a, b, c, d, 40.0, 60.0]).lie();
+  // The usual placement, and the same with a hair of skew.
+  assert_eq!(lie(560.0, 0.0, 0.0, 720.0), Lie::AsKept);
+  assert_eq!(lie(560.0, 0.2, -0.2, 720.0), Lie::AsKept);
+  // A half turn; and the quarter turns, named by the clockwise turn the image is given.
+  assert_eq!(lie(-560.0, 0.0, 0.0, -720.0), Lie::Turned(180));
+  assert_eq!(lie(0.0, -720.0, 560.0, 0.0), Lie::Turned(90));
+  assert_eq!(lie(0.0, 720.0, -560.0, 0.0), Lie::Turned(270));
+  // Mirrored left to right, and then turned: a flip top to bottom is a mirroring and a half turn.
+  assert_eq!(lie(-560.0, 0.0, 0.0, 720.0), Lie::Mirrored(0));
+  assert_eq!(lie(560.0, 0.0, 0.0, -720.0), Lie::Mirrored(180));
+  assert_eq!(lie(0.0, 720.0, 560.0, 0.0), Lie::Mirrored(90));
+  assert_eq!(lie(0.0, -720.0, -560.0, 0.0), Lie::Mirrored(270));
+  // A turn of a few degrees, and a matrix that flattens the image to nothing.
+  assert_eq!(lie(558.0, 48.0, -62.0, 717.0), Lie::Askew);
+  assert_eq!(lie(0.0, 0.0, 0.0, 0.0), Lie::Askew);
+}
+
+#[test]
+fn a_placement_carries_a_point_of_its_image_onto_the_page() {
+  // Across and up the image, each from 0 to 1, with the image's top at 1.
+  let at = |matrix: [f64; 6], across: f64, up: f64| Placement::new(matrix).onto_page(across, up);
+  let usual = [200.0, 0.0, 0.0, 100.0, 50.0, 300.0];
+  assert_eq!(at(usual, 0.0, 0.0), (50.0, 300.0));
+  assert_eq!(at(usual, 1.0, 1.0), (250.0, 400.0));
+  // A half turn about the same box: the image's top left corner lands at the bottom right.
+  let half = [-200.0, 0.0, 0.0, -100.0, 250.0, 400.0];
+  assert_eq!(at(half, 0.0, 1.0), (250.0, 300.0));
+  assert_eq!(at(half, 1.0, 0.0), (50.0, 400.0));
+  // Mirrored: read the image flipped left to right, and it is a placement that is not.
+  let mirrored = Placement::new([-200.0, 0.0, 0.0, 100.0, 250.0, 300.0]);
+  let flipped = mirrored.of_the_flipped_image();
+  assert_eq!(flipped.lie(), Lie::AsKept);
+  assert_eq!(flipped.onto_page(0.25, 0.5), mirrored.onto_page(0.75, 0.5));
+}
+
+#[test]
+fn every_painted_image_has_its_placement_beside_its_box() {
   let place = |matrix: [i64; 6], name: &str| {
     vec![
       op("q", vec![]),
@@ -307,12 +345,9 @@ fn an_image_painted_turned_is_named_among_the_turned_images() {
       op("Q", vec![]),
     ]
   };
-  // One image as it is kept, one turned a half turn, and one painted both ways.
   let ops = [
     place([200, 0, 0, 100, 50, 300], "Kept"),
     place([-200, 0, 0, -100, 450, 600], "Turned"),
-    place([200, 0, 0, 100, 50, 100], "Both"),
-    place([0, 100, -200, 0, 500, 100], "Both"),
   ]
   .concat();
   let (mut doc, page) = doc_with_content(ops);
@@ -325,12 +360,19 @@ fn an_image_painted_turned_is_named_among_the_turned_images() {
   {
     res.set(
       "XObject",
-      Object::Dictionary(dictionary! {
-        "Kept" => Object::Reference(image), "Turned" => Object::Reference(image), "Both" => Object::Reference(image),
-      }),
+      Object::Dictionary(
+        dictionary! { "Kept" => Object::Reference(image), "Turned" => Object::Reference(image) },
+      ),
     );
   }
   let native = native_layout(&doc, 1, page);
-  assert_eq!(native.layout.images.len(), 4);
-  assert_eq!(native.turned_images, ["Turned", "Both"]);
+  let names: Vec<&str> = native
+    .layout
+    .images
+    .iter()
+    .map(|image| image.xobject_name.as_str())
+    .collect();
+  assert_eq!(names, ["Kept", "Turned"]);
+  let lies: Vec<Lie> = native.placements.iter().map(Placement::lie).collect();
+  assert_eq!(lies, [Lie::AsKept, Lie::Turned(180)]);
 }

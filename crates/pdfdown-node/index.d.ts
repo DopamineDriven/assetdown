@@ -107,6 +107,12 @@ export interface Capabilities {
   render: boolean
 }
 
+/**
+ * `capabilities` from a promise. It reads no file; the promise is there so that a caller who
+ * has only promises, as a page has of a worker, can ask it too.
+ */
+export declare function capabilitiesAsync(): Promise<Capabilities>
+
 export interface ChoiceOption {
   exportValue: string
   displayValue: string

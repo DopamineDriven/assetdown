@@ -5,3 +5,8 @@ browser.js
 home/dopaminedriven/rust/workspace/crates/pdfdown-node/index.js
 wasi-worker*.mjs
 ocr/pdfdown_ocr.napi.js
+wasm/*.wasi.cjs
+wasm/*.wasip1.cjs
+wasm/*-browser.js
+wasm/*-deferred.js
+wasm/npm

@@ -2,6 +2,7 @@
 //! is read as given, Tesseract's own detector is asked when that read is not convincing, and the
 //! other turns are tried when nothing has read well.
 
+use crate::read::OcrWord;
 use image::DynamicImage;
 
 use crate::resolution::{DEFAULT_SOURCE_PPI, set_resolution};
@@ -30,6 +31,59 @@ pub(crate) fn expected_is_convincing(words: usize, mean_confidence: f32) -> bool
   words >= EXPECTED_MIN_WORDS && upright_is_convincing(words, mean_confidence)
 }
 
+/// The letters and digits that are a letter or a digit upside down too, as themselves or as
+/// another of these: `6` and `9`, `u` and `n`, `p` and `d`, `b` and `q`, `M` and `W`. Drawn
+/// upside down in a plain face, Tesseract read `606` as `909`, and `NOON`, `SWIMS`, `pod`, and
+/// `x` as themselves, each at a confidence of 88 or more; no other kind of word it was tried
+/// on read that surely the wrong way up as a word of the same kind.
+const BOTH_WAYS: &str = "01689oOxXsSzZNHIpdbqunMWl";
+
+/// Whether a word reads as a word either way up: it has a letter or a digit, and every one it
+/// has is among those that do. Other marks are passed over.
+pub(crate) fn reads_both_ways(word: &str) -> bool {
+  let mut marks = word
+    .chars()
+    .filter(|mark| mark.is_alphanumeric())
+    .peekable();
+  marks.peek().is_some() && marks.all(|mark| BOTH_WAYS.contains(mark))
+}
+
+/// Whether a reading that is sure of itself may still be upside down: half its words or more
+/// read either way up. Over the scanned pages this was measured on, one page in ten thousand
+/// was like that, so the second reading it calls for is rare.
+pub(crate) fn may_be_upside_down(words: &[OcrWord]) -> bool {
+  let both = words
+    .iter()
+    .filter(|word| reads_both_ways(&word.text))
+    .count();
+  !words.is_empty() && both * 2 >= words.len()
+}
+
+/// How sure a reading is of its words that read one way only, on which its way up rests; and
+/// nothing when it has none.
+fn one_way_confidence(words: &[OcrWord]) -> Option<f32> {
+  let one_way: Vec<f32> = words
+    .iter()
+    .filter(|word| word.text.chars().any(char::is_alphanumeric) && !reads_both_ways(&word.text))
+    .map(|word| word.confidence)
+    .collect();
+  match one_way.is_empty() {
+    true => None,
+    false => Some(one_way.iter().sum::<f32>() / one_way.len() as f32),
+  }
+}
+
+/// Whether a picture's other way up overturns its first reading: its one-way words read
+/// convincingly, and better than the first reading's do. A picture with no such words either
+/// way up cannot say which way up it is, and keeps its first reading.
+pub(crate) fn other_way_up_reads_better(first: &[OcrWord], other: &[OcrWord]) -> bool {
+  match (one_way_confidence(first), one_way_confidence(other)) {
+    (_, None) => false,
+    (None, Some(theirs)) => theirs >= OSD_SKIP_CONFIDENCE,
+    (Some(ours), Some(theirs)) => theirs >= OSD_SKIP_CONFIDENCE && theirs > ours,
+  }
+}
+
 /// Whether an upright pass is good enough to skip orientation detection altogether.
 pub(crate) fn upright_is_convincing(words: usize, mean_confidence: f32) -> bool {
   words > 0 && mean_confidence >= OSD_SKIP_CONFIDENCE
@@ -42,6 +96,9 @@ pub enum OrientationSource {
   Upright,
   /// The caller said which turn the picture was likely to need, and it read best at that turn.
   Expected,
+  /// The picture read well either way up, being mostly numbers and words that do, and the
+  /// words on it that read one way only decided against its first reading.
+  OneWayWords,
   /// Tesseract's orientation and script detector named the turn.
   Osd,
   /// The confidence retry over the quarter and half turns found a better score.
@@ -49,11 +106,13 @@ pub enum OrientationSource {
 }
 
 impl OrientationSource {
-  /// How the decision is put in a warning: `upright`, `as expected`, `by OSD`, `by retry`.
+  /// How the decision is put in a warning: `upright`, `as expected`, `by its one-way words`,
+  /// `by OSD`, `by retry`.
   pub fn label(self) -> &'static str {
     match self {
       OrientationSource::Upright => "upright",
       OrientationSource::Expected => "as expected",
+      OrientationSource::OneWayWords => "by its one-way words",
       OrientationSource::Osd => "by OSD",
       OrientationSource::Retry => "by retry",
     }

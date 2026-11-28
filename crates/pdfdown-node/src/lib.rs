@@ -450,6 +450,29 @@ pub fn capabilities() -> Capabilities {
   }
 }
 
+pub struct CapabilitiesTask;
+
+#[napi]
+impl Task for CapabilitiesTask {
+  type Output = Capabilities;
+  type JsValue = Capabilities;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    Ok(capabilities())
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output)
+  }
+}
+
+/// `capabilities` from a promise. It reads no file; the promise is there so that a caller who
+/// has only promises, as a page has of a worker, can ask it too.
+#[napi]
+pub fn capabilities_async() -> AsyncTask<CapabilitiesTask> {
+  AsyncTask::new(CapabilitiesTask)
+}
+
 // ── Standalone async functions (libuv thread pool via AsyncTask) ─
 
 pub struct ExtractTextTask(Vec<u8>);

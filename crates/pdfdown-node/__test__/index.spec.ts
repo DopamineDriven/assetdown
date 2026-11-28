@@ -9,6 +9,7 @@ import {
   attachments,
   attachmentsAsync,
   capabilities,
+  capabilitiesAsync,
   extractAnnotationsPerPage,
   extractAnnotationsPerPageAsync,
   extractFormFieldsPerPage,
@@ -91,6 +92,10 @@ describe("PdfDown constructor", () => {
 });
 
 describe("capabilities", () => {
+  it("should give the same answer from its promise", {}, async () => {
+    assert.deepEqual(await capabilitiesAsync(), capabilities());
+  });
+
   it("should report no OCR in the base package", {}, () => {
     const caps = capabilities();
     assert.equal(caps.ocr, false);

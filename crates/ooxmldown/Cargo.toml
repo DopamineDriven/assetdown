@@ -1,9 +1,10 @@
 [package]
-edition.workspace    = true
-keywords             = ["ooxml", "office", "extraction", "docx", "xlsx", "pptx"]
-license              = { workspace = true }
-name                 = "ooxmldown"
-repository.workspace = true
+edition.workspace      = true
+keywords               = ["ooxml", "office", "extraction", "docx", "xlsx", "pptx"]
+license                = { workspace = true }
+name                   = "ooxmldown"
+repository.workspace   = true
+rust-version.workspace = true
 
 [dependencies]
 roxmltree.workspace = true

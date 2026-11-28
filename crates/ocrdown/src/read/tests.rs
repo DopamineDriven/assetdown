@@ -298,3 +298,151 @@ fn a_picture_of_a_word_or_two_does_not_stop_the_search_at_what_was_expected() {
   assert_eq!(read, [270]);
   assert_eq!(found.decided, OrientationSource::Expected);
 }
+
+/// A pass over a picture that is mostly numbers which read either way up: so many of `number`
+/// at one confidence, and a few other words at another.
+fn mostly_numbers(number: &str, sure: f32, others: &[&str], others_sure: f32) -> Pass {
+  let word = |text: &str, confidence: f32| OcrWord {
+    text: text.into(),
+    left: 0,
+    top: 0,
+    right: 40,
+    bottom: 12,
+    confidence,
+  };
+  let mut words: Vec<OcrWord> = others.iter().map(|text| word(text, others_sure)).collect();
+  words.extend(std::iter::repeat_n(word(number, sure), 84));
+  (words, (800, 600))
+}
+
+/// The search over a picture whose grid reads `606` one way up and `909` the other, with a
+/// head that reads only the right way up, which is at `right_way` degrees.
+fn search_a_grid(expected: u32, right_way: u32) -> (Upright, Vec<u32>) {
+  let mut read = Vec::new();
+  let found = way_up(
+    expected,
+    |degrees| {
+      read.push(degrees);
+      if degrees == right_way {
+        // The right way up: the head reads well, and the grid a little less surely.
+        mostly_numbers("606", 82.0, &["Invoice", "total", "$69.00"], 93.0)
+      } else if degrees == (right_way + 180) % 360 {
+        // Upside down: the grid reads better than it does the right way up, and the head
+        // comes out as three sure-of-nothing scraps.
+        mostly_numbers("909", 97.0, &["SDIOAU]", "JE}OL", "00'69$"], 24.0)
+      } else {
+        pass(31.0)
+      }
+    },
+    || None,
+  );
+  (found, read)
+}
+
+#[test]
+fn a_word_reads_both_ways_up_when_every_mark_in_it_does() {
+  // Marks that are no letter and no digit are passed over: a number is as much a number
+  // upside down with a currency mark at its other end.
+  for word in [
+    "606", "909", "1,000.00", "0.00", "88.10", "$69.00", "NOON", "SWIMS", "pod", "x", "100",
+  ] {
+    assert!(reads_both_ways(word), "{word}");
+  }
+  for word in [
+    "Invoice",
+    "total",
+    "252",
+    "2019",
+    "12/05/2014",
+    "QTY",
+    "USD",
+    "TOTAL",
+  ] {
+    assert!(!reads_both_ways(word), "{word}");
+  }
+  // Marks alone are not a word either way.
+  assert!(!reads_both_ways("--"));
+  assert!(!reads_both_ways(""));
+}
+
+#[test]
+fn a_page_of_numbers_that_read_either_way_up_is_not_taken_on_its_first_reading() {
+  // Read upside down first, because that was expected of it, and it reads better that way
+  // than the right way up. Its other way up is read too, and the head decides.
+  let (found, read) = search_a_grid(180, 0);
+  assert_eq!(read, [180, 0]);
+  assert_eq!(
+    (found.degrees, found.decided),
+    (0, OrientationSource::OneWayWords)
+  );
+  assert!(found.words.iter().any(|word| word.text == "$69.00"));
+  // The same with nothing expected of a picture kept upside down.
+  let (found, read) = search_a_grid(0, 180);
+  assert_eq!(read, [0, 180]);
+  assert_eq!(
+    (found.degrees, found.decided),
+    (180, OrientationSource::OneWayWords)
+  );
+  // And on its side, when the turn expected of it is a half turn out.
+  let (found, read) = search_a_grid(90, 270);
+  assert_eq!(read, [90, 270]);
+  assert_eq!(found.degrees, 270);
+}
+
+#[test]
+fn a_first_reading_that_is_the_right_way_up_stands_after_its_other_way_is_read() {
+  // The price of the check: one more reading, and nothing else changes.
+  let (found, read) = search_a_grid(0, 0);
+  assert_eq!(read, [0, 180]);
+  assert_eq!(
+    (found.degrees, found.decided),
+    (0, OrientationSource::Upright)
+  );
+  let (found, read) = search_a_grid(270, 270);
+  assert_eq!(read, [270, 90]);
+  assert_eq!(
+    (found.degrees, found.decided),
+    (270, OrientationSource::Expected)
+  );
+}
+
+#[test]
+fn a_page_with_nothing_on_it_that_reads_one_way_only_keeps_its_first_reading() {
+  // A grid and no head: nothing can say which way up it is, so nothing overturns the first.
+  let mut read = Vec::new();
+  let found = way_up(
+    0,
+    |degrees| {
+      read.push(degrees);
+      match degrees {
+        0 => mostly_numbers("909", 97.0, &[], 0.0),
+        _ => mostly_numbers("606", 82.0, &[], 0.0),
+      }
+    },
+    || None,
+  );
+  assert_eq!(read, [0, 180]);
+  assert_eq!(
+    (found.degrees, found.decided),
+    (0, OrientationSource::Upright)
+  );
+}
+
+#[test]
+fn an_ordinary_page_is_not_read_a_second_time() {
+  // A few numbers among words is what every invoice is: under half, and the check is not made.
+  let mut read = Vec::new();
+  let found = way_up(
+    0,
+    |degrees| {
+      read.push(degrees);
+      let (mut words, size) = pass(94.0);
+      let (numbers, _) = mostly_numbers("1,000.00", 94.0, &[], 0.0);
+      words.extend(numbers.into_iter().take(30));
+      (words, size)
+    },
+    || None,
+  );
+  assert_eq!(read, [0]);
+  assert_eq!(found.decided, OrientationSource::Upright);
+}

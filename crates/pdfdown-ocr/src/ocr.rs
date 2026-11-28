@@ -16,7 +16,9 @@ use pdfdown::images::composite::{InkTone, OcrImages, OneBitComposite, collect_pa
 use pdfdown::images::page_path_op_count;
 #[cfg(feature = "render")]
 use pdfdown::images::{page_has_form_xobjects, page_has_image_xobjects};
-use pdfdown::layout::{NativeLayout, PageGeometry, native_layout, page_geometry, page_layout};
+use pdfdown::layout::{
+  Lie, NativeLayout, PageGeometry, Placement, native_layout, page_geometry, page_layout,
+};
 #[cfg(feature = "render")]
 use pdfdown::render;
 use pdfdown::text::{detect_headers_footers, strip_footer_artifacts, text_of_layout};
@@ -369,6 +371,78 @@ fn read_placed_raster(
   }
 }
 
+/// The words of a raster set on the page through the placement that painted it: each box is
+/// the box, square to the page, that holds the word where it landed.
+fn place_through(words: Vec<OcrWord>, width: u32, height: u32, placement: &Placement) -> Vec<Word> {
+  // Across the raster and up it, each from 0 to 1, which is what a placement carries.
+  let mut placed = place_words(words, width, height, [0.0, 0.0, 1.0, 1.0]);
+  for word in placed.iter_mut() {
+    let corners = [
+      placement.onto_page(word.x0, word.y0),
+      placement.onto_page(word.x1, word.y0),
+      placement.onto_page(word.x0, word.y1),
+      placement.onto_page(word.x1, word.y1),
+    ];
+    let least =
+      |pick: fn(&(f64, f64)) -> f64| corners.iter().map(pick).fold(f64::INFINITY, f64::min);
+    let most =
+      |pick: fn(&(f64, f64)) -> f64| corners.iter().map(pick).fold(f64::NEG_INFINITY, f64::max);
+    word.x0 = least(|corner| corner.0);
+    word.y0 = least(|corner| corner.1);
+    word.x1 = most(|corner| corner.0);
+    word.y1 = most(|corner| corner.1);
+    word.baseline = word.y0;
+  }
+  placed
+}
+
+/// OCR one raster that does not lie on the page the way up it is kept, and set its words on
+/// the page through the placement that painted it.
+///
+/// `painted` is the clockwise turn the placement gives the raster, when it is a quarter turn
+/// or a half turn. It counts twice. The turn the page says it is shown at is counted from the
+/// page as painted, so the raster as it is kept is expected to need that turn and the
+/// placement's together. And the turn the raster read at, less the placement's, is the turn
+/// the page as painted needs, which is what the raster's vote for the page's turn is. A
+/// placement that is askew says nothing of either: nothing is expected, and the raster votes
+/// with the turn it read at.
+fn read_through_placement(
+  subject: String,
+  img: &DynamicImage,
+  placement: &Placement,
+  painted: Option<u32>,
+  lang: &str,
+  page_turn: u32,
+  warnings: &mut Vec<String>,
+) -> RasterRead {
+  let (from, to) = (placement.onto_page(0.0, 0.0), placement.onto_page(1.0, 0.0));
+  let across = (to.0 - from.0).hypot(to.1 - from.1);
+  let ppi = source_ppi(img.width(), across);
+  let expected = painted.map_or(0, |turn| (page_turn + turn) % 360);
+  let Upright {
+    words,
+    degrees,
+    size: (rw, rh),
+    decided,
+  } = recognize_words_upright_expecting(img, lang, Some(ppi), expected);
+  let kept = words_in_painted_raster(words, degrees, rw, rh);
+  let words = place_through(kept, img.width(), img.height(), placement);
+  if degrees != 0 && words.len() >= WEAK_TIER2_WORDS {
+    warnings.push(format!(
+      "{subject}: {} words read upright after a {degrees}° turn ({})",
+      words.len(),
+      decided.label()
+    ));
+  }
+  let score = ocr_score(&words);
+  RasterRead {
+    subject,
+    words,
+    degrees: painted.map_or(degrees, |turn| (degrees + 360 - turn % 360) % 360),
+    score,
+  }
+}
+
 /// How a warning names a raster of merged one-bit images.
 fn composite_subject(composite: &OneBitComposite) -> String {
   let images = if composite.pieces == 1 {
@@ -384,21 +458,21 @@ fn composite_subject(composite: &OneBitComposite) -> String {
 
 /// Tier 2: OCR the page's embedded raster images and place each word in the frame as painted.
 /// `page_box` is the page's box in user space, `page_turn` the turn the page says it is shown
-/// at, and `turned` the names of the images the page paints turned or mirrored. Returns the
-/// words and the page's dominant turn; the caller turns the whole page frame by it.
+/// at, and `painted` how each of `placements` was painted. Returns the words and the page's
+/// dominant turn; the caller turns the whole page frame by it.
 #[allow(clippy::too_many_arguments)]
 fn ocr_page_image_words(
   doc: &Document,
   page_id: ObjectId,
   lang: &str,
   placements: &[PlacedImage],
-  turned: &[String],
+  painted: &[Placement],
   page_box: [f64; 4],
   page_turn: u32,
   warnings: &mut Vec<String>,
 ) -> (Vec<Word>, u32) {
   let images = collect_page_ocr_images(doc, page_id, page_box);
-  read_page_rasters(images, lang, placements, turned, page_turn, warnings)
+  read_page_rasters(images, lang, placements, painted, page_turn, warnings)
 }
 
 /// Read a page's rasters: its one-bit images together, merged onto one raster for each tone,
@@ -408,13 +482,16 @@ fn ocr_page_image_words(
 ///
 /// `page_turn`, the turn the page says it is shown at, is counted from the page as painted. A
 /// merged raster is the page as painted, so it is read at that turn first. An image is read as
-/// it is kept, which is the page as painted only when the painting does not turn it: one named
-/// in `turned` is expected to need no turn in particular, and is searched as it always was.
+/// it is kept, which is the page as painted only when the painting does not turn it. `painted`
+/// says how each of `placements` was painted, in the same order: an image painted turned is
+/// read with that turn counted in, and its words are set on the page through its placement;
+/// one painted mirrored is flipped first, since no turn makes mirrored text read. A placement
+/// with nothing said of it is taken to keep its image as it is.
 fn read_page_rasters(
   images: OcrImages,
   lang: &str,
   placements: &[PlacedImage],
-  turned: &[String],
+  painted: &[Placement],
   page_turn: u32,
   warnings: &mut Vec<String>,
 ) -> (Vec<Word>, u32) {
@@ -429,11 +506,12 @@ fn read_page_rasters(
     ));
   }
   for (name, img) in named {
-    let placed: Vec<&PlacedImage> = placements
+    let placed: Vec<(usize, &PlacedImage)> = placements
       .iter()
-      .filter(|p| p.xobject_name == name)
+      .enumerate()
+      .filter(|(_, p)| p.xobject_name == name)
       .collect();
-    let Some(first) = placed.first() else {
+    let Some(&(at, first)) = placed.first() else {
       warnings.push(format!(
         "image {name}: no placement found; its OCR words were skipped"
       ));
@@ -445,19 +523,36 @@ fn read_page_rasters(
         placed.len()
       ));
     }
-    let dest = [first.x0, first.y0, first.x1, first.y1];
-    let expected = match turned.contains(&name) {
-      true => 0,
-      false => page_turn,
+    let subject = format!("image {name}");
+    let placement = painted.get(at);
+    let read = match placement.map(|placement| (placement, placement.lie())) {
+      None | Some((_, Lie::AsKept)) => {
+        let dest = [first.x0, first.y0, first.x1, first.y1];
+        read_placed_raster(subject, &img, dest, lang, page_turn, warnings)
+      }
+      Some((placement, Lie::Turned(turn))) => read_through_placement(
+        subject,
+        &img,
+        placement,
+        Some(turn),
+        lang,
+        page_turn,
+        warnings,
+      ),
+      Some((placement, Lie::Mirrored(turn))) => read_through_placement(
+        subject,
+        &img.fliph(),
+        &placement.of_the_flipped_image(),
+        Some(turn),
+        lang,
+        page_turn,
+        warnings,
+      ),
+      Some((placement, Lie::Askew)) => {
+        read_through_placement(subject, &img, placement, None, lang, page_turn, warnings)
+      }
     };
-    reads.push(read_placed_raster(
-      format!("image {name}"),
-      &img,
-      dest,
-      lang,
-      expected,
-      warnings,
-    ));
+    reads.push(read);
   }
   // A raster that read as a word or two is no evidence of the page's turn; it does not vote.
   let votes: Vec<(u32, f64)> = reads
@@ -713,157 +808,209 @@ pub fn extract_layout_with_ocr(
   #[cfg(feature = "render")]
   let render_available = render_mode != RENDER_MODE_NEVER;
 
-  let mut results: Vec<PageLayout> = pool.install(|| {
-    page_entries
-      .par_iter()
-      .map(|&(page_num, page_id)| {
-        if let Some(list) = only_pages
-          && !list.contains(&page_num)
-        {
-          return native_layout(doc, page_num, page_id).layout;
+  // One page of the document. `handed` is the turn the page before it read at, when the pages
+  // are read in order and that page had something to say: a page the file says nothing of is
+  // expected to need the same turn, as the next sheet of a scan fed in sideways does.
+  let read_page = |page_num: u32, page_id: ObjectId, handed: u32| -> PageLayout {
+    if let Some(list) = only_pages
+      && !list.contains(&page_num)
+    {
+      return native_layout(doc, page_num, page_id).layout;
+    }
+    // Tier 1: native glyph placement (also yields image placements for tier 2).
+    let NativeLayout {
+      layout: native,
+      words: native_words,
+      fonts,
+      placements,
+    } = native_layout(doc, page_num, page_id);
+    let mut warnings = Vec::new();
+    let mut rotation = 0u32;
+    let path_ops = page_path_op_count(doc, page_id);
+    let outline = path_ops >= OUTLINE_PATH_OPS;
+
+    let geo = page_geometry(doc, page_id);
+    let mut native = native;
+
+    // Forced rendering replaces the page wholesale; the hybrid merge below is for the cascade.
+    // A render that read nothing leaves no trace and is not repeated by tier 3.
+    #[cfg(feature = "render")]
+    let mut rendered_already = false;
+    #[cfg(feature = "render")]
+    if render_mode == RENDER_MODE_ALWAYS {
+      let mut forced_rotation = 0u32;
+      let mut forced_warnings = Vec::new();
+      if let Some(mut words) = render_page_words(
+        &pdf_arc,
+        page_num,
+        render_dpi,
+        lang,
+        &geo,
+        &mut forced_rotation,
+        &mut forced_warnings,
+      ) {
+        rendered_already = true;
+        if !words.is_empty() {
+          warnings.extend(forced_warnings);
+          turn_layout(&mut words, &mut native.images, forced_rotation, geo.bbox);
+          let mut out =
+            finish_ocr_layout(native, words, &[], TextSource::Rendered, forced_rotation);
+          out.warnings.extend(warnings);
+          return out;
         }
-        // Tier 1: native glyph placement (also yields image placements for tier 2).
-        let NativeLayout {
-          layout: native,
-          words: native_words,
-          fonts,
-          turned_images,
-        } = native_layout(doc, page_num, page_id);
-        let mut warnings = Vec::new();
-        let mut rotation = 0u32;
-        let path_ops = page_path_op_count(doc, page_id);
-        let outline = path_ops >= OUTLINE_PATH_OPS;
+        warnings.push(format!(
+          "page {page_num}: forced render read no words; the cascade decided the page"
+        ));
+      }
+    }
 
-        let geo = page_geometry(doc, page_id);
-        let mut native = native;
+    let decision = page_needs_ocr(&native, min_len, path_ops, geo.bbox);
+    if decision == OcrDecision::Native {
+      return native;
+    }
 
-        // Forced rendering replaces the page wholesale; the hybrid merge below is for the cascade.
-        // A render that read nothing leaves no trace and is not repeated by tier 3.
-        #[cfg(feature = "render")]
-        let mut rendered_already = false;
-        #[cfg(feature = "render")]
-        if render_mode == RENDER_MODE_ALWAYS {
-          let mut forced_rotation = 0u32;
-          let mut forced_warnings = Vec::new();
-          if let Some(mut words) = render_page_words(
-            &pdf_arc,
-            page_num,
-            render_dpi,
-            lang,
-            &geo,
-            &mut forced_rotation,
-            &mut forced_warnings,
-          ) {
-            rendered_already = true;
-            if !words.is_empty() {
-              warnings.extend(forced_warnings);
-              turn_layout(&mut words, &mut native.images, forced_rotation, geo.bbox);
-              let mut out =
-                finish_ocr_layout(native, words, &[], TextSource::Rendered, forced_rotation);
-              out.warnings.extend(warnings);
-              return out;
-            }
+    // Tier 2: OCR embedded raster images.
+    #[cfg_attr(not(feature = "render"), allow(unused_mut))]
+    let mut ocr_words = if decision == OcrDecision::Ocr {
+      let (words, dominant) = ocr_page_image_words(
+        doc,
+        page_id,
+        lang,
+        &native.images,
+        &placements,
+        geo.bbox,
+        // What the page says of itself comes before what the page before it suggests.
+        match geo.rotate {
+          0 => handed,
+          said => said,
+        },
+        &mut warnings,
+      );
+      rotation = dominant;
+      words
+    } else {
+      Vec::new()
+    };
+    #[cfg_attr(not(feature = "render"), allow(unused_mut))]
+    let mut source = TextSource::Ocr;
+
+    // Tier 3: render + OCR for outline text, weak tier-2 results on path-heavy pages, and
+    // rasters tier 2 could not decode.
+    #[cfg(feature = "render")]
+    if render_available {
+      let escalate = decision == OcrDecision::RenderOnly
+        || (outline && tier2_is_weak(&ocr_words))
+        || (ocr_words.is_empty()
+          && (path_ops > 10
+            || page_has_form_xobjects(doc, page_id)
+            || page_has_image_xobjects(doc, page_id)));
+      if escalate && !rendered_already {
+        let mut render_rotation = 0u32;
+        let mut render_warnings = Vec::new();
+        if let Some(rendered) = render_page_words(
+          &pdf_arc,
+          page_num,
+          render_dpi,
+          lang,
+          &geo,
+          &mut render_rotation,
+          &mut render_warnings,
+        ) && ocr_score(&rendered) > ocr_score(&ocr_words)
+        {
+          if !ocr_words.is_empty() {
             warnings.push(format!(
-              "page {page_num}: forced render read no words; the cascade decided the page"
+              "page {page_num}: rendered page replaced {} weak tier-2 words",
+              ocr_words.len()
             ));
           }
+          ocr_words = rendered;
+          rotation = render_rotation;
+          warnings.extend(render_warnings);
+          source = TextSource::Rendered;
         }
-
-        let decision = page_needs_ocr(&native, min_len, path_ops, geo.bbox);
-        if decision == OcrDecision::Native {
-          return native;
-        }
-
-        // Tier 2: OCR embedded raster images.
-        #[cfg_attr(not(feature = "render"), allow(unused_mut))]
-        let mut ocr_words = if decision == OcrDecision::Ocr {
-          let (words, dominant) = ocr_page_image_words(
-            doc,
-            page_id,
-            lang,
-            &native.images,
-            &turned_images,
-            geo.bbox,
-            geo.rotate,
-            &mut warnings,
-          );
-          rotation = dominant;
-          words
-        } else {
-          Vec::new()
-        };
-        #[cfg_attr(not(feature = "render"), allow(unused_mut))]
-        let mut source = TextSource::Ocr;
-
-        // Tier 3: render + OCR for outline text, weak tier-2 results on path-heavy pages, and
-        // rasters tier 2 could not decode.
-        #[cfg(feature = "render")]
-        if render_available {
-          let escalate = decision == OcrDecision::RenderOnly
-            || (outline && tier2_is_weak(&ocr_words))
-            || (ocr_words.is_empty()
-              && (path_ops > 10
-                || page_has_form_xobjects(doc, page_id)
-                || page_has_image_xobjects(doc, page_id)));
-          if escalate && !rendered_already {
-            let mut render_rotation = 0u32;
-            let mut render_warnings = Vec::new();
-            if let Some(rendered) = render_page_words(
-              &pdf_arc,
-              page_num,
-              render_dpi,
-              lang,
-              &geo,
-              &mut render_rotation,
-              &mut render_warnings,
-            ) && ocr_score(&rendered) > ocr_score(&ocr_words)
-            {
-              if !ocr_words.is_empty() {
-                warnings.push(format!(
-                  "page {page_num}: rendered page replaced {} weak tier-2 words",
-                  ocr_words.len()
-                ));
-              }
-              ocr_words = rendered;
-              rotation = render_rotation;
-              warnings.extend(render_warnings);
-              source = TextSource::Rendered;
-            }
-          }
-        }
-        if outline && !render_available && (decision == OcrDecision::RenderOnly || tier2_is_weak(&ocr_words)) {
-          warnings.push(format!(
+      }
+    }
+    if outline
+      && !render_available
+      && (decision == OcrDecision::RenderOnly || tier2_is_weak(&ocr_words))
+    {
+      warnings.push(format!(
             "page {page_num}: {path_ops} path operators paint text as outlines; only the render tier can read them"
           ));
-        }
+    }
 
-        // Hybrid page: native words are real evidence and stay; OCR adds what they do not cover.
-        let native_count = native_words.len();
-        let (merged, dropped) = merge_native_and_ocr(native_words, ocr_words);
-        if merged.is_empty() {
-          warnings.push(format!("page {page_num}: OCR found no words"));
-        }
-        if native_count > 0 {
-          if merged.len() > native_count {
-            warnings.push(format!(
+    // Hybrid page: native words are real evidence and stay; OCR adds what they do not cover.
+    let native_count = native_words.len();
+    let (merged, dropped) = merge_native_and_ocr(native_words, ocr_words);
+    if merged.is_empty() {
+      warnings.push(format!("page {page_num}: OCR found no words"));
+    }
+    if native_count > 0 {
+      if merged.len() > native_count {
+        warnings.push(format!(
               "page {page_num}: {native_count} native words kept alongside OCR ({dropped} duplicates dropped)"
             ));
-          } else {
-            warnings.push(format!(
-              "page {page_num}: OCR found no new words; {native_count} native words kept"
-            ));
-          }
-        }
-        let mut merged = merged;
-        turn_layout(&mut merged, &mut native.images, rotation, geo.bbox);
-        let mut out = finish_ocr_layout(native, merged, &fonts, source, rotation);
-        out.warnings.extend(warnings);
-        out
-      })
-      .collect()
-  });
+      } else {
+        warnings.push(format!(
+          "page {page_num}: OCR found no new words; {native_count} native words kept"
+        ));
+      }
+    }
+    let mut merged = merged;
+    turn_layout(&mut merged, &mut native.images, rotation, geo.bbox);
+    let mut out = finish_ocr_layout(native, merged, &fonts, source, rotation);
+    out.warnings.extend(warnings);
+    out
+  };
+  let mut results: Vec<PageLayout> = match max_threads {
+    // One page at a time is pages in their order, so each can hand its turn to the next. This
+    // is how a batch reads: a process to a core, each with one thread.
+    1 => {
+      let mut handed = 0;
+      page_entries
+        .iter()
+        .map(|&(page_num, page_id)| {
+          let page = read_page(page_num, page_id, handed);
+          handed = turn_to_hand_on(&page);
+          page
+        })
+        .collect()
+    }
+    // Several at once finish in no fixed order, and a page that waited on the one before it
+    // would not be read at once: nothing is handed on, so that what comes out is the same
+    // however the pages were scheduled.
+    _ => pool.install(|| {
+      page_entries
+        .par_iter()
+        .map(|&(page_num, page_id)| read_page(page_num, page_id, 0))
+        .collect()
+    }),
+  };
   results.sort_unstable_by_key(|r| r.page);
   results
+}
+
+/// A page says how the sheets were fed when this many words of it read at this mean
+/// confidence: the bar a reading has to clear to stand without a search.
+const HAND_ON_WORDS: usize = 10;
+const HAND_ON_CONFIDENCE: f64 = 0.8;
+
+/// The turn a page hands to the page after it: the turn it read at, when it was read from the
+/// pictures kept in it and read well; and none otherwise. A page that read well the way it is
+/// hands on that nothing is expected, which ends a run of turned pages where it ends.
+fn turn_to_hand_on(page: &PageLayout) -> u32 {
+  let sure: Vec<f64> = page
+    .words
+    .iter()
+    .filter_map(|word| word.confidence)
+    .collect();
+  let read_well = page.source == TextSource::Ocr
+    && sure.len() >= HAND_ON_WORDS
+    && sure.iter().sum::<f64>() / sure.len() as f64 >= HAND_ON_CONFIDENCE;
+  match read_well {
+    true => page.content_rotation,
+    false => 0,
+  }
 }
 
 #[cfg(test)]

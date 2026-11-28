@@ -487,3 +487,30 @@ The four tables have twins too, which you asked for after the first two: `mediaT
 #### `mimedown`: what `frames` counts
 
 `frames` is now the frames of an animation and nothing else: an icon's sizes and a TIFF's pages are no longer counted in it, and stay in each format's own detail. This changes what a published package returns for those two formats, so it goes out as the next minor. No manifest changed for it.
+
+### What changed on 2026-11-27
+
+Asked for, and made, not proposed.
+
+#### One Rust version, in the root
+
+`rust-version` in the root `Cargo.toml` went from 1.99.1 to 1.100.0, the toolchain in use, and every crate now takes it from there: ten crates that stated none (`docxdown`, `jpegdown`, `mimedown`, `ocrdown`, `ooxmldown`, `pdfdown`, `pdfdown-ocr`, `pptxdown`, `rtfdown`, and `tiffdown`) gained `rust-version.workspace = true`. Stable 1.100.1 was out that day; CI installs the latest stable, so it builds. A machine on anything older than 1.100.0 is refused.
+
+#### `@d0paminedriven/docxdown-wasm` and `@d0paminedriven/pdfdown-wasm`
+
+`crates/docxdown-node/wasm/` and `crates/pdfdown-node/wasm/` are new, each laid out as `crates/docdown-node/wasm/` is.
+
+- Each `wasm/package.json` is the doc one with the names changed, at its base package's version (0.3.0 and 0.21.0). `version.sh` now moves four files for `docxdown` and seven for `pdfdown`.
+- Each binding's `package.json` gained the scripts `build:wasm-package` (with its three parts) and `test:wasm`, `build:wasm-package` at the end of `build:all`, and the dev dependencies `playwright-core`, `rolldown`, `rolldown-plugin-wasm`, and `tsdown` from the catalogs. `pdfdown`'s `build:all` keeps `build:superset`. `yarn.lock` moved with them.
+- Each binding's `.gitignore` gained the five lines for the package's generated scripts, and `.oxfmtrc.json` the five patterns. `pdfdown`'s own ignore lines are as they were.
+- `ci/wasm` and `ci/publish-wasm` are the doc binding's with the names changed, and each workflow has the `wasm` and `publish-wasm` jobs, with `wasm` among what every publish job waits on (`publish-ocr` too, for `pdfdown`).
+- **`pdfdown-wasm` needs Node 26**, for the reason `mimedown-wasm` does: its `engines` says so, its README says why, and its `wasm` job runs on Node 26 alone. `docxdown-wasm` reads no PDF and runs on 24 and 26 as the other packages do.
+- The workers are `DocxWorker` and `PdfWorker`, each with all thirteen of its build's promise verbs. Their sources were made from the doc ones by a script, one block to a verb; the suites, the page specs, and the READMEs were written for each.
+- `pdfdown-wasm` is the base build: it reads the text a PDF holds and neither recognizes nor renders, and `capabilities()` says so.
+
+Sizes, packed: `docxdown-wasm` 1.6 MB (each build 1.3 MB, 0.46 MB gzipped); `pdfdown-wasm` 4.7 MB (each build 4.2 MB, 1.5 MB gzipped).
+
+#### `crates/pdfdown-node`: one promise verb
+
+`capabilitiesAsync` is new, so that every verb of the binding has a promise twin and the worker can carry it. The OCR package's declarations gained it too, since it is the same binding with more features.
+

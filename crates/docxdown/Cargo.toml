@@ -1,11 +1,12 @@
 [package]
-description          = "convenient docx extraction"
-edition.workspace    = true
-keywords             = ["docx", "extraction", "metadata", "ooxml", "word document"]
-license              = { workspace = true }
-name                 = "docxdown"
-repository.workspace = true
-version              = "0.3.0"
+description            = "convenient docx extraction"
+edition.workspace      = true
+keywords               = ["docx", "extraction", "metadata", "ooxml", "word document"]
+license                = { workspace = true }
+name                   = "docxdown"
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.4.0"
 
 [dependencies]
 contentdown.workspace = true

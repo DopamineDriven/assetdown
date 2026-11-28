@@ -79,10 +79,92 @@ pub struct NativeLayout {
   pub layout: PageLayout,
   pub words: Vec<Word>,
   pub fonts: Vec<FontMeta>,
-  /// The names of the images the page paints, at least once, turned or mirrored. An image's
-  /// placement in `layout.images` is the box it fills, which does not say which way up it
-  /// lies there; an image not named here lies on the page the way up it is kept.
-  pub turned_images: Vec<String>,
+  /// How each of `layout.images` was painted, in the same order. An image's entry there is
+  /// the box it fills, which does not say which way up it lies in it; this does.
+  pub placements: Vec<Placement>,
+}
+
+/// How a painted image lies on its page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lie {
+  /// The way up it is kept. A hair of skew, a thousandth of a side, is not a turn.
+  AsKept,
+  /// Turned clockwise by this many degrees: 90, 180 or 270.
+  Turned(u32),
+  /// Mirrored left to right, and then turned clockwise by this many degrees: 0, 90, 180 or
+  /// 270. Its text reads backwards however the page is turned, until the image is flipped.
+  Mirrored(u32),
+  /// Turned by something that is no quarter turn, sheared, or flattened to nothing.
+  Askew,
+}
+
+/// The matrix an image was painted through: what carries the image's unit square, across from
+/// 0 to 1 and up from 0 to 1 with the image's top at 1, onto the page.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Placement {
+  matrix: [f64; 6],
+}
+
+impl Placement {
+  /// A placement by its matrix, `[a b c d e f]` as a PDF writes it.
+  pub fn new(matrix: [f64; 6]) -> Self {
+    Placement { matrix }
+  }
+
+  /// Where a point of the image lands on the page.
+  pub fn onto_page(&self, across: f64, up: f64) -> (f64, f64) {
+    let [a, b, c, d, e, f] = self.matrix;
+    (a * across + c * up + e, b * across + d * up + f)
+  }
+
+  /// The placement that lays the image, flipped left to right, where this one lays it as it
+  /// is. A mirrored placement of an image is a placement, not mirrored, of its flipped self.
+  pub fn of_the_flipped_image(&self) -> Placement {
+    let [a, b, c, d, e, f] = self.matrix;
+    Placement {
+      matrix: [-a, -b, c, d, e + a, f + b],
+    }
+  }
+
+  /// How the image lies on the page.
+  pub fn lie(&self) -> Lie {
+    const HAIR: f64 = 1e-3;
+    let [a, b, c, d, ..] = self.matrix;
+    let (across, up) = (a.hypot(b), c.hypot(d));
+    let area = a * d - b * c;
+    if !(across > 0.0 && up > 0.0 && area.is_finite() && area != 0.0) {
+      return Lie::Askew;
+    }
+    let mirrored = area < 0.0;
+    // A mirrored image's turn is that of its flipped self, whose side across points the other way.
+    let (a, b) = match mirrored {
+      true => (-a, -b),
+      false => (a, b),
+    };
+    let nothing = |part: f64, side: f64| part.abs() <= HAIR * side;
+    let turn = if nothing(b, across) && nothing(c, up) {
+      match (a > 0.0, d > 0.0) {
+        (true, true) => Some(0),
+        (false, false) => Some(180),
+        _ => None,
+      }
+    } else if nothing(a, across) && nothing(d, up) {
+      // Turned clockwise a quarter, an image's top points to the right and its right side down.
+      match (b < 0.0, c > 0.0) {
+        (true, true) => Some(90),
+        (false, false) => Some(270),
+        _ => None,
+      }
+    } else {
+      None
+    };
+    match (mirrored, turn) {
+      (false, Some(0)) => Lie::AsKept,
+      (false, Some(turn)) => Lie::Turned(turn),
+      (true, Some(turn)) => Lie::Mirrored(turn),
+      (_, None) => Lie::Askew,
+    }
+  }
 }
 
 pub fn native_layout(doc: &Document, page_num: u32, page_id: ObjectId) -> NativeLayout {
@@ -110,7 +192,7 @@ pub fn native_layout(doc: &Document, page_num: u32, page_id: ObjectId) -> Native
         layout,
         words: Vec::new(),
         fonts: Vec::new(),
-        turned_images: Vec::new(),
+        placements: Vec::new(),
       };
     }
   };
@@ -130,7 +212,7 @@ pub fn native_layout(doc: &Document, page_num: u32, page_id: ObjectId) -> Native
     layout,
     words: raw,
     fonts,
-    turned_images: interp.turned_images,
+    placements: interp.placements,
   }
 }
 

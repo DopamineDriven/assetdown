@@ -37,7 +37,7 @@ resolver = "3"
 edition      = "2024"
 license      = "MIT"
 repository   = "https://github.com/DopamineDriven/assetdown"
-rust-version = "1.99.1"
+rust-version = "1.100.0"
 
 [workspace.dependencies]
 encoding_rs = "0.8.44"

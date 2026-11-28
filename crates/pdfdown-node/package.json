@@ -33,10 +33,14 @@
     "artifacts:ocr": "napi artifacts --package-json-path ocr/package.json --npm-dir ocr/npm",
     "bench": "node --import @oxc-node/core/register benchmark/bench.ts",
     "build": "yarn build:base",
-    "build:all": "yarn build:base && yarn build:superset && yarn build:wasm",
+    "build:all": "yarn build:base && yarn build:superset && yarn build:wasm && yarn build:wasm-package",
     "build:base": "napi build --platform --esm --release --features render",
     "build:superset": "napi build --platform --esm --release --features ocr,render --package-json-path ocr/package.json --output-dir ocr --js pdfdown_ocr.napi.js",
     "build:wasm": "yarn build:wasm32",
+    "build:wasm-package": "yarn build:wasm-package:threads && yarn build:wasm-package:threadless && yarn build:wasm-package:worker",
+    "build:wasm-package:worker": "cd wasm && node ../node_modules/tsdown/dist/run.mjs",
+    "build:wasm-package:threadless": "napi build --platform --no-js --esm --release --target wasm32-wasip1 --package-json-path wasm/package.json --output-dir wasm",
+    "build:wasm-package:threads": "napi build --platform --no-js --esm --release --target wasm32-wasip1-threads --package-json-path wasm/package.json --output-dir wasm",
     "build:wasm32": "napi build --platform --esm --release --features render --target wasm32-wasip1-threads",
     "format": "run-p format:oxfmt format:rs format:toml",
     "format:oxfmt": "oxfmt",
@@ -49,7 +53,8 @@
     "prepare": "husky",
     "test": "yarn tsx --test \"__test__/**/*.spec.ts\"",
     "test:ocr": "yarn tsx --test \"ocr/__test__/**/*.spec.ts\"",
-    "test:wasi": "NAPI_RS_FORCE_WASI=error yarn tsx --test \"__test__/wasi.spec.ts\""
+    "test:wasi": "NAPI_RS_FORCE_WASI=error yarn tsx --test \"__test__/wasi.spec.ts\"",
+    "test:wasm": "yarn tsx --test \"wasm/__test__/**/*.spec.ts\""
   },
   "devDependencies": {
     "@azure-rest/ai-document-intelligence": "catalog:az",
@@ -73,7 +78,11 @@
     "npm-run-all2": "catalog:run-all",
     "oxfmt": "catalog:ox",
     "oxlint": "catalog:ox",
+    "playwright-core": "catalog:pw",
+    "rolldown": "catalog:rolldown",
+    "rolldown-plugin-wasm": "catalog:rolldown",
     "tinybench": "catalog:tiny",
+    "tsdown": "catalog:tsdown",
     "tslib": "catalog:ts",
     "tsx": "catalog:tsx",
     "typescript": "catalog:ts"

@@ -1,6 +1,6 @@
 {
   "name": "@d0paminedriven/jpegdown",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Convenient jpeg handling for Node",
   "keywords": [
     "N-API",

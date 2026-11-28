@@ -1,6 +1,6 @@
 {
   "name": "@d0paminedriven/pdfdown-wasm",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "description": "Rust-powered PDF parsing as WebAssembly, for Node, browsers, and edge runtimes",
   "keywords": [
     "N-API",

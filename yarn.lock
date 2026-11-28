@@ -2907,14 +2907,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/mssql@npm:^12.3.1":
-  version: 12.3.1
-  resolution: "@types/mssql@npm:12.3.1"
+"@types/mssql@npm:^12.3.2":
+  version: 12.3.2
+  resolution: "@types/mssql@npm:12.3.2"
   dependencies:
     "@types/node": "npm:*"
     tarn: "npm:^3.0.1"
     tedious: "npm:*"
-  checksum: 10c0/f9f96a7aab95d0b7efae3ba6c4e3216caa4a8657b69d0be0a65aa8628e072362539afc4fe6e34c0ed782d6a4c80d575a0b413d4abdbd1986613429a4caae0296
+  checksum: 10c0/2e5dec781745cb71486e4444df582a675d7b25691bd21b71492d4eeb6bbb1ae0867405ba80cb6203ed88a6961e1a6a8726cccaddb12b14029b9c74a273e22eac
   languageName: node
   linkType: hard
 
@@ -3795,9 +3795,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"mssql@npm:^12.8.1":
-  version: 12.8.1
-  resolution: "mssql@npm:12.8.1"
+"mssql@npm:^12.8.3":
+  version: 12.8.3
+  resolution: "mssql@npm:12.8.3"
   dependencies:
     "@tediousjs/connection-string": "npm:^1.1.2"
     commander: "npm:^11.0.0"
@@ -3806,7 +3806,7 @@ __metadata:
     tedious: "npm:^19.2.2 || ^20.0.0"
   bin:
     mssql: bin/mssql
-  checksum: 10c0/93ded0a84d32905e6bd7ef13c039912a794b5e5e765d3d75e9d6125a22f95c467128864684d18fc5d9f492ec92c700d35c4c83eb243dfa57078ac60d10d3bd5b
+  checksum: 10c0/1d71fb9462cb1b4905f8c597b5c2d5b4ad71761d555cbe73d232a7f1f26101d615dee09ea6a8d9f4bad4c0454ca2c656d0d211e8935370406a62a8b10123c71c
   languageName: node
   linkType: hard
 
